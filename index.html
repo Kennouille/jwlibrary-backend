@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fusionner Fichiers JW Library</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      color: #333;
+    }
+
+    .container {
+      background-color: #f9f9f9;
+      border-radius: 10px;
+      padding: 25px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+
+    h2 {
+      color: #2c3e50;
+      text-align: center;
+      margin-bottom: 25px;
+    }
+
+    label {
+      display: block;
+      margin: 15px 0 5px;
+      font-weight: bold;
+    }
+
+    input[type="file"], input[type="datetime-local"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      background-color: white;
+    }
+
+    button {
+      background-color: #3498db;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+      width: 100%;
+      margin: 20px 0;
+      transition: background-color 0.3s;
+    }
+
+    button:hover {
+      background-color: #2980b9;
+    }
+
+    #progressContainer {
+      width: 100%;
+      background-color: #ecf0f1;
+      border-radius: 5px;
+      margin: 20px 0;
+      height: 30px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #progressBar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #3498db, #2ecc71);
+      transition: width 0.3s ease-out;
+    }
+
+    #progressText {
+      position: absolute;
+      width: 100%;
+      text-align: center;
+      line-height: 30px;
+      color: #2c3e50;
+      font-weight: bold;
+    }
+
+    #progressDetails {
+      margin-top: 5px;
+      font-size: 14px;
+      color: #7f8c8d;
+      min-height: 20px;
+      text-align: center;
+    }
+
+    .step-indicator {
+      display: flex;
+      justify-content: space-between;
+      margin: 25px 0 15px;
+      position: relative;
+    }
+
+    .step-indicator::before {
+      content: "";
+      position: absolute;
+      top: 15px;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background-color: #ecf0f1;
+      z-index: 0;
+    }
+
+    .step {
+      text-align: center;
+      z-index: 1;
+      background-color: #f9f9f9;
+      padding: 0 10px;
+    }
+
+    .step .step-circle {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background-color: #bdc3c7;
+      color: white;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 5px;
+    }
+
+    .step.completed .step-circle {
+      background-color: #2ecc71;
+    }
+
+    .step.active .step-circle {
+      background-color: #3498db;
+      animation: pulse 1.5s infinite;
+    }
+
+    .conflict-container {
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      padding: 15px;
+      margin: 15px 0;
+      background-color: white;
+    }
+
+    .conflict-item {
+      margin-bottom: 10px;
+      padding: 10px;
+      border-bottom: 1px solid #eee;
+    }
+
+    #download {
+      display: block;
+      text-align: center;
+      padding: 15px;
+      background-color: #2ecc71;
+      color: white;
+      text-decoration: none;
+      border-radius: 5px;
+      margin-top: 20px;
+      font-weight: bold;
+      transition: background-color 0.3s;
+    }
+
+    #download:hover {
+      background-color: #27ae60;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h2>Fusionner des fichiers JW Library</h2>
+
+  <label for="file1">Sélectionner le premier fichier (.jwlibrary) :</label>
+  <input type="file" id="file1" accept=".jwlibrary">
+
+  <label for="file2">Sélectionner le deuxième fichier (.jwlibrary) :</label>
+  <input type="file" id="file2" accept=".jwlibrary">
+
+  <label for="local_datetime">Date et heure locales actuelles :</label>
+  <input type="datetime-local" id="local_datetime" name="local_datetime" required>
+
+  <div class="step-indicator">
+    <div class="step" id="step1">
+      <div class="step-circle">1</div>
+      <div>Chargement</div>
+    </div>
+    <div class="step" id="step2">
+      <div class="step-circle">2</div>
+      <div>Extraction</div>
+    </div>
+    <div class="step" id="step3">
+      <div class="step-circle">3</div>
+      <div>Analyse</div>
+    </div>
+    <div class="step" id="step4">
+      <div class="step-circle">4</div>
+      <div>Détection</div>
+    </div>
+    <div class="step" id="step5">
+      <div class="step-circle">5</div>
+      <div>Prêt...</div>
+    </div>
+  </div>
+
+  <div id="progressContainer">
+    <div id="progressBar"></div>
+    <div id="progressText">0%</div>
+  </div>
+  <div id="progressDetails">Prêt à commencer...</div>
+
+  <button id="mergeButton" onclick="startMerge()">Charger, Extraire & Analyser</button>
+
+  <div id="conflicts-section" class="hidden">
+    <h3>Conflits à résoudre</h3>
+    <div id="conflicts-notes" class="conflict-container">
+      <h4>Conflits de notes</h4>
+    </div>
+    <div id="conflicts-highlights" class="conflict-container">
+      <h4>Conflits de surlignages</h4>
+    </div>
+    <button id="resolveButton" onclick="resolveConflicts()">Valider la fusion</button>
+  </div>
+
+  <a id="download" href="#" download="fusionne.jwlibrary" class="hidden">📥 Télécharger le fichier fusionné</a>
+</div>
+
+<script>
+  const BASE_URL = "https://f19f-2806-2f0-5240-e791-708d-4e3e-8358-f07c.ngrok-free.app";
+  let currentProgress = 0;
+
+  // Met à jour la progression avec animation fluide
+  async function updateProgress(targetPercent, message, step) {
+    return new Promise(resolve => {
+      const startPercent = currentProgress;
+      const duration = 500; // durée animation en ms
+      const startTime = performance.now();
+
+      const animate = (currentTime) => {
+        const elapsed = currentTime - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        currentProgress = startPercent + (targetPercent - startPercent) * progress;
+
+        document.getElementById("progressBar").style.width = currentProgress + "%";
+        document.getElementById("progressText").textContent = Math.round(currentProgress) + "%";
+        if (message) document.getElementById("progressDetails").textContent = message;
+
+        if (step) updateStepIndicator(step, currentProgress);
+
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          resolve();
+        }
+      };
+
+      requestAnimationFrame(animate);
+    });
+  }
+
+  // Met à jour l'indicateur d'étapes
+  function updateStepIndicator(step, percent) {
+    const allSteps = document.querySelectorAll('.step');
+
+    allSteps.forEach((el, index) => {
+      el.classList.remove('active', 'completed');
+
+      if (index + 1 < step) {
+        el.classList.add('completed');
+      } else if (index + 1 === step) {
+        el.classList.add('active');
+      }
+    });
+  }
+
+  // Simule un traitement avec progression
+  async function simulateProcessing(duration, targetPercent, message, step) {
+    const startPercent = currentProgress;
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < duration) {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const current = startPercent + (targetPercent - startPercent) * progress;
+
+      await updateProgress(current, message, step);
+      await new Promise(r => setTimeout(r, 50));
+    }
+  }
+
+  // Télécharge un fichier avec progression
+  async function uploadWithProgress(url, formData) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          const percent = Math.round((e.loaded / e.total) * 30); // 0-30%
+          updateProgress(20 + percent, `Upload: ${Math.round(e.loaded/1024)}KB/${Math.round(e.total/1024)}KB`, 2);
+        }
+      };
+
+      xhr.onload = () => resolve(xhr.response);
+      xhr.onerror = () => reject(new Error("Upload failed"));
+
+      xhr.open("POST", url);
+      xhr.setRequestHeader("ngrok-skip-browser-warning", "true");
+      xhr.responseType = "json";
+      xhr.send(formData);
+    });
+  }
+
+  // Fonction principale
+  async function startMerge() {
+    try {
+      const file1 = document.getElementById('file1').files[0];
+      const file2 = document.getElementById('file2').files[0];
+
+      // Validations
+      if (!file1 || !file2) throw new Error("Veuillez sélectionner deux fichiers");
+      if (!file1.name.endsWith('.jwlibrary') || !file2.name.endsWith('.jwlibrary')) {
+        throw new Error("Seuls les fichiers .jwlibrary sont acceptés");
+      }
+
+      const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+      if (file1.size > MAX_SIZE || file2.size > MAX_SIZE) {
+        throw new Error("Fichier trop volumineux (>50MB)");
+      }
+
+      document.getElementById('mergeButton').disabled = true;
+
+      // Étape 1: Chargement (0-20%)
+      await updateProgress(5, "Préparation des fichiers...", 1);
+      await simulateProcessing(800, 20, "Chargement des fichiers...", 1);
+
+      // Étape 2: Upload (20-50%)
+      const formData = new FormData();
+      formData.append("file1", file1);
+      formData.append("file2", file2);
+
+      await updateProgress(20, "Début de l'upload...", 2);
+      const uploadResponse = await uploadWithProgress(`${BASE_URL}/upload`, formData);
+      console.log("Upload réussi:", uploadResponse);
+
+      // Étape 3: Extraction (50-80%)
+      await updateProgress(50, "Extraction des données...", 3);
+      await simulateProcessing(3000, 80, "Analyse des contenus...", 3);
+
+      // Étape 4: Analyse (80-100%)
+      await updateProgress(80, "Détection des conflits...", 4);
+
+      // Simulation de la réponse du serveur
+      await new Promise(r => setTimeout(r, 1500));
+
+      // Afficher les conflits (simulés)
+      document.getElementById('conflicts-section').classList.remove('hidden');
+      await updateProgress(100, "Prêt à fusionner!", 5);
+
+    } catch (error) {
+      console.error("Erreur:", error);
+      await updateProgress(currentProgress, `Erreur: ${error.message}`);
+      document.getElementById('mergeButton').disabled = false;
+    }
+  }
+
+  // Résolution des conflits
+  async function resolveConflicts() {
+    try {
+      document.getElementById('resolveButton').disabled = true;
+
+      // Récupération des choix
+      const getSelectedChoices = (prefix) => {
+        const choices = {};
+        document.querySelectorAll(`[name^="${prefix}_"]:checked`).forEach(el => {
+          choices[el.name.replace(`${prefix}_`, "")] = el.value;
+        });
+        return choices;
+      };
+
+      const payload = {
+        conflicts_notes: getSelectedChoices("note"),
+        conflicts_highlights: getSelectedChoices("highlight"),
+        local_datetime: document.getElementById('local_datetime').value
+      };
+
+      // Envoi au serveur
+      await updateProgress(100, "Fusion en cours...", 5);
+      const response = await fetch(`${BASE_URL}/merge`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true"
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) throw new Error("Échec de la fusion");
+
+      // Simulation du traitement final
+      await simulateProcessing(1000, 100, "Préparation du téléchargement...", 5);
+
+      // Téléchargement
+      const downloadLink = document.getElementById('download');
+      downloadLink.href = `${BASE_URL}/download?ngrok-skip-browser-warning=true`;
+      downloadLink.classList.remove('hidden');
+      downloadLink.click();
+
+    } catch (error) {
+      console.error("Erreur de fusion:", error);
+      await updateProgress(100, `Erreur: ${error.message}`);
+      document.getElementById('resolveButton').disabled = false;
+    }
+  }
+</script>
+</body>
+</html>
