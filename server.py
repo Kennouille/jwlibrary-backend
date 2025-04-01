@@ -1859,6 +1859,9 @@ def handle_exception(e):
     response.headers.add("Access-Control-Allow-Origin", "*")
     return response, 500
 
+@app.route('/')
+def home():
+    return jsonify({"message": "Le serveur Flask fonctionne 🎉"})
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
