@@ -1889,7 +1889,6 @@ def merge_data():
     }), 200
 
 
-
 @app.route('/download', methods=['GET'])
 def download_file():
     merged_jwlibrary = os.path.join(UPLOAD_FOLDER, "merged.jwlibrary")
@@ -1899,16 +1898,19 @@ def download_file():
     response.headers.add("Access-Control-Allow-Origin", "*")
     return response
 
+
 @app.errorhandler(Exception)
 def handle_exception(e):
     response = jsonify({"error": str(e)})
     response.headers.add("Access-Control-Allow-Origin", "*")
     return response, 500
 
+
 @app.route('/')
 def home():
     return jsonify({"message": "Le serveur Flask fonctionne 🎉"})
 
+
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(debug=True, host='0.0.0.0')
+
