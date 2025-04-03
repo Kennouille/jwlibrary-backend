@@ -1418,476 +1418,483 @@ def create_note_mapping(merged_db_path, file1_db, file2_db):
 
 @app.route('/merge', methods=['POST'])
 def merge_data():
-    global note_mapping  # Si vous souhaitez utiliser le scope global (optionnel)
-    payload = request.get_json()
-    conflict_choices_notes = payload.get("conflicts_notes", {})
-    conflict_choices_highlights = payload.get("conflicts_highlights", {})
-    local_datetime = payload.get("local_datetime")
-    print(f"local_datetime reçu du client : {local_datetime}")
-    if local_datetime:
-        merge_date = local_datetime if len(local_datetime) > 16 else local_datetime + ":00"
-    else:
-        merge_date = get_current_local_iso8601()
-
-    file1_db = os.path.join(EXTRACT_FOLDER, "file1_extracted", "userData.db")
-    file2_db = os.path.join(EXTRACT_FOLDER, "file2_extracted", "userData.db")
-
-    # Validation fichiers sources
-    if not all(os.path.exists(db) for db in [file1_db, file2_db]):
-        return jsonify({"error": "Fichiers source manquants"}), 400
-
-    data1 = read_notes_and_highlights(file1_db)
-    data2 = read_notes_and_highlights(file2_db)
-
-    # Fusion simple des Notes et Highlights (vous pouvez conserver votre logique ici)
-    notes_db1 = data1["notes"]
-    notes_db2 = data2["notes"]
-    merged_notes_list = []
-
-    # Concaténation avec vérification de doublon par title+content
-    for note in notes_db1:
-        merged_notes_list.append((file1_db,) + note)
-
-    for note in notes_db2:
-        _, title2, content2, *_ = note
-        existe = any(n[1] == title2 and n[2] == content2 for n in merged_notes_list)
-        if not existe:
-            merged_notes_list.append((file2_db,) + note)
-
-    highlights_db1 = data1["highlights"]
-    highlights_db2 = data2["highlights"]
-    merged_highlights_dict = {}
-    for h in highlights_db1:
-        _, color, loc, style, guid, version = h
-        merged_highlights_dict[guid] = (color, loc, style, version)
-    for h in highlights_db2:
-        _, color2, loc2, style2, guid2, version2 = h
-        if guid2 not in merged_highlights_dict:
-            merged_highlights_dict[guid2] = (color2, loc2, style2, version2)
+    try:
+        global note_mapping  # Si vous souhaitez utiliser le scope global (optionnel)
+        payload = request.get_json()
+        conflict_choices_notes = payload.get("conflicts_notes", {})
+        conflict_choices_highlights = payload.get("conflicts_highlights", {})
+        local_datetime = payload.get("local_datetime")
+        print(f"local_datetime reçu du client : {local_datetime}")
+        if local_datetime:
+            merge_date = local_datetime if len(local_datetime) > 16 else local_datetime + ":00"
         else:
-            (color1, loc1, style1, version1) = merged_highlights_dict[guid2]
-            if (color1 == color2 and loc1 == loc2 and style1 == style2 and version1 == version2):
-                continue
+            merge_date = get_current_local_iso8601()
+
+        file1_db = os.path.join(EXTRACT_FOLDER, "file1_extracted", "userData.db")
+        file2_db = os.path.join(EXTRACT_FOLDER, "file2_extracted", "userData.db")
+
+        # Validation fichiers sources
+        if not all(os.path.exists(db) for db in [file1_db, file2_db]):
+            return jsonify({"error": "Fichiers source manquants"}), 400
+
+        data1 = read_notes_and_highlights(file1_db)
+        data2 = read_notes_and_highlights(file2_db)
+
+        # Fusion simple des Notes et Highlights (vous pouvez conserver votre logique ici)
+        notes_db1 = data1["notes"]
+        notes_db2 = data2["notes"]
+        merged_notes_list = []
+
+        # Concaténation avec vérification de doublon par title+content
+        for note in notes_db1:
+            merged_notes_list.append((file1_db,) + note)
+
+        for note in notes_db2:
+            _, title2, content2, *_ = note
+            existe = any(n[1] == title2 and n[2] == content2 for n in merged_notes_list)
+            if not existe:
+                merged_notes_list.append((file2_db,) + note)
+
+        highlights_db1 = data1["highlights"]
+        highlights_db2 = data2["highlights"]
+        merged_highlights_dict = {}
+        for h in highlights_db1:
+            _, color, loc, style, guid, version = h
+            merged_highlights_dict[guid] = (color, loc, style, version)
+        for h in highlights_db2:
+            _, color2, loc2, style2, guid2, version2 = h
+            if guid2 not in merged_highlights_dict:
+                merged_highlights_dict[guid2] = (color2, loc2, style2, version2)
             else:
-                choice = conflict_choices_highlights.get(guid2, "file1")
-                if choice == "file2":
-                    merged_highlights_dict[guid2] = (color2, loc2, style2, version2)
+                (color1, loc1, style1, version1) = merged_highlights_dict[guid2]
+                if (color1 == color2 and loc1 == loc2 and style1 == style2 and version1 == version2):
+                    continue
+                else:
+                    choice = conflict_choices_highlights.get(guid2, "file1")
+                    if choice == "file2":
+                        merged_highlights_dict[guid2] = (color2, loc2, style2, version2)
 
-    # === Validation préalable ===
-    required_dbs = [
-        os.path.join(EXTRACT_FOLDER, "file1_extracted", "userData.db"),
-        os.path.join(EXTRACT_FOLDER, "file2_extracted", "userData.db")
-    ]
-    if not all(os.path.exists(db) for db in required_dbs):
-        return jsonify({"error": "Fichiers source manquants"}), 400
+        # === Validation préalable ===
+        required_dbs = [
+            os.path.join(EXTRACT_FOLDER, "file1_extracted", "userData.db"),
+            os.path.join(EXTRACT_FOLDER, "file2_extracted", "userData.db")
+        ]
+        if not all(os.path.exists(db) for db in required_dbs):
+            return jsonify({"error": "Fichiers source manquants"}), 400
 
-    # Création de la DB fusionnée
-    merged_db_path = os.path.join(UPLOAD_FOLDER, "merged_userData.db")
-    if os.path.exists(merged_db_path):
-        os.remove(merged_db_path)
-    base_db_path = os.path.join(EXTRACT_FOLDER, "file1_extracted", "userData.db")
-    create_merged_schema(merged_db_path, base_db_path)
+        # Création de la DB fusionnée
+        merged_db_path = os.path.join(UPLOAD_FOLDER, "merged_userData.db")
+        if os.path.exists(merged_db_path):
+            os.remove(merged_db_path)
+        base_db_path = os.path.join(EXTRACT_FOLDER, "file1_extracted", "userData.db")
+        create_merged_schema(merged_db_path, base_db_path)
 
-    # ... Après la création de merged_db_path et avant la fusion des autres mappings
-    # Fusion de la table IndependentMedia et PlaylistItems, etc.
-    location_id_map = merge_location_from_sources(merged_db_path, *required_dbs)
-    print("Location ID Map:", location_id_map)
+        # ... Après la création de merged_db_path et avant la fusion des autres mappings
+        # Fusion de la table IndependentMedia et PlaylistItems, etc.
+        location_id_map = merge_location_from_sources(merged_db_path, *required_dbs)
+        print("Location ID Map:", location_id_map)
 
-    independent_media_map = merge_independent_media(merged_db_path, file1_db, file2_db)
-    print("Mapping IndependentMedia:", independent_media_map)
+        independent_media_map = merge_independent_media(merged_db_path, file1_db, file2_db)
+        print("Mapping IndependentMedia:", independent_media_map)
 
-    item_id_map = merge_playlist_items(merged_db_path, file1_db, file2_db, independent_media_map)
-    print("Mapping PlaylistItems:", item_id_map)
+        item_id_map = merge_playlist_items(merged_db_path, file1_db, file2_db, independent_media_map)
+        print("Mapping PlaylistItems:", item_id_map)
 
-    # === INSÉRER LES NOTES et USERMARK DANS LA DB FUSIONNÉE AVANT de créer note_mapping ===
-    conn = sqlite3.connect(merged_db_path)
-    cursor = conn.cursor()
-    for note_tuple in merged_notes_list:
-        old_db_path, title, content, old_loc_id, usermark_guid, last_modified, created, block_type, block_identifier = note_tuple
-        new_guid = str(uuid.uuid4())
+        # === INSÉRER LES NOTES et USERMARK DANS LA DB FUSIONNÉE AVANT de créer note_mapping ===
+        conn = sqlite3.connect(merged_db_path)
+        cursor = conn.cursor()
+        for note_tuple in merged_notes_list:
+            old_db_path, title, content, old_loc_id, usermark_guid, last_modified, created, block_type, block_identifier = note_tuple
+            new_guid = str(uuid.uuid4())
 
-        # Appliquer le mapping de LocationId
-        normalized_key = (os.path.normpath(old_db_path), old_loc_id)
-        normalized_location_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
-        new_location_id = normalized_location_map.get(normalized_key)
+            # Appliquer le mapping de LocationId
+            normalized_key = (os.path.normpath(old_db_path), old_loc_id)
+            normalized_location_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
+            new_location_id = normalized_location_map.get(normalized_key)
 
-        # Appliquer le mapping de UserMarkId si possible
-        new_usermark_id = None
-        if usermark_guid:
-            cursor.execute("SELECT UserMarkId FROM UserMark WHERE UserMarkGuid = ?", (usermark_guid,))
-            result = cursor.fetchone()
-            if result:
-                new_usermark_id = result[0]
+            # Appliquer le mapping de UserMarkId si possible
+            new_usermark_id = None
+            if usermark_guid:
+                cursor.execute("SELECT UserMarkId FROM UserMark WHERE UserMarkGuid = ?", (usermark_guid,))
+                result = cursor.fetchone()
+                if result:
+                    new_usermark_id = result[0]
 
-        cursor.execute("""
-            INSERT INTO Note (Title, Content, Guid, LocationId, UserMarkId, LastModified, Created, BlockType, BlockIdentifier)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            title,
-            content,
-            new_guid,
-            new_location_id,
-            new_usermark_id,
-            last_modified,
-            created,
-            block_type,
-            block_identifier
-        ))
-
-    for guid, (color, loc, style, version) in merged_highlights_dict.items():
-        try:
             cursor.execute("""
-                INSERT INTO UserMark (ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version)
-                VALUES (?, ?, ?, ?, ?)
-            """, (color, loc, style, guid, version))
-        except Exception as e:
-            print(f"Erreur lors de l'insertion de UserMarkGuid={guid}: {e}")
-    # Gestion spécifique de LastModified
-    cursor.execute("DELETE FROM LastModified")
-    cursor.execute("INSERT INTO LastModified (LastModified) VALUES (?)", (merge_date,))
-    conn.commit()
-    conn.close()
+                INSERT INTO Note (Title, Content, Guid, LocationId, UserMarkId, LastModified, Created, BlockType, BlockIdentifier)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                title,
+                content,
+                new_guid,
+                new_location_id,
+                new_usermark_id,
+                last_modified,
+                created,
+                block_type,
+                block_identifier
+            ))
 
-    # Maintenant, créer le mapping des Notes à partir de la DB fusionnée
-    note_mapping = create_note_mapping(merged_db_path, file1_db, file2_db)
-    print("Note Mapping:", note_mapping)
+        for guid, (color, loc, style, version) in merged_highlights_dict.items():
+            try:
+                cursor.execute("""
+                    INSERT INTO UserMark (ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (color, loc, style, guid, version))
+            except Exception as e:
+                print(f"Erreur lors de l'insertion de UserMarkGuid={guid}: {e}")
+        # Gestion spécifique de LastModified
+        cursor.execute("DELETE FROM LastModified")
+        cursor.execute("INSERT INTO LastModified (LastModified) VALUES (?)", (merge_date,))
+        conn.commit()
+        conn.close()
 
-    # ===== Fusion des tables critiques et vérification =====
-    location_id_map = merge_location_from_sources(merged_db_path, file1_db, file2_db)
-    print("\n=== LOCATION VERIFICATION ===")
-    print(f"Total Locations: {len(location_id_map)}")
-    with sqlite3.connect(merged_db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT KeySymbol, COUNT(*) FROM Location GROUP BY KeySymbol")
-        for key, count in cursor.fetchall():
-            print(f"- {key}: {count} locations")
+        # Maintenant, créer le mapping des Notes à partir de la DB fusionnée
+        note_mapping = create_note_mapping(merged_db_path, file1_db, file2_db)
+        print("Note Mapping:", note_mapping)
 
-    usermark_id_map = merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map)
-    print("\n=== USERMARK VERIFICATION ===")
-    print(f"Total UserMaps mappés: {len(usermark_id_map)}")
-    with sqlite3.connect(merged_db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM UserMark")
-        total = cursor.fetchone()[0]
-        print(f"UserMarks dans la DB: {total}")
-        cursor.execute("""
-            SELECT ColorIndex, StyleIndex, COUNT(*) 
-            FROM UserMark 
-            GROUP BY ColorIndex, StyleIndex
-        """)
-        print("Répartition par couleur/style:")
-        for color, style, count in cursor.fetchall():
-            print(f"- Couleur {color}, Style {style}: {count} marques")
+        # ===== Fusion des tables critiques et vérification =====
+        location_id_map = merge_location_from_sources(merged_db_path, file1_db, file2_db)
+        print("\n=== LOCATION VERIFICATION ===")
+        print(f"Total Locations: {len(location_id_map)}")
+        with sqlite3.connect(merged_db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT KeySymbol, COUNT(*) FROM Location GROUP BY KeySymbol")
+            for key, count in cursor.fetchall():
+                print(f"- {key}: {count} locations")
 
-    print(f"Location IDs mappés: {location_id_map}")
-    print(f"UserMark IDs mappés: {usermark_id_map}")
+        usermark_id_map = merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map)
+        print("\n=== USERMARK VERIFICATION ===")
+        print(f"Total UserMaps mappés: {len(usermark_id_map)}")
+        with sqlite3.connect(merged_db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM UserMark")
+            total = cursor.fetchone()[0]
+            print(f"UserMarks dans la DB: {total}")
+            cursor.execute("""
+                SELECT ColorIndex, StyleIndex, COUNT(*) 
+                FROM UserMark 
+                GROUP BY ColorIndex, StyleIndex
+            """)
+            print("Répartition par couleur/style:")
+            for color, style, count in cursor.fetchall():
+                print(f"- Couleur {color}, Style {style}: {count} marques")
 
-    # ===== Vérification pré-fusion complète =====
-    print("\n=== VERIFICATION PRE-FUSION ===")
-    print("\n[VÉRIFICATION FICHIERS SOURCES]")
-    source_files = [
-        os.path.join(EXTRACT_FOLDER, "file1_extracted", "userData.db"),
-        os.path.join(EXTRACT_FOLDER, "file2_extracted", "userData.db")
-    ]
-    for file in source_files:
-        print(f"Vérification {file}... ", end="")
-        if not os.path.exists(file):
-            print("ERREUR: Fichier manquant")
-            return jsonify({"error": f"Fichier source manquant: {file}"}), 400
-        else:
-            print(f"OK ({os.path.getsize(file) / 1024:.1f} KB)")
+        print(f"Location IDs mappés: {location_id_map}")
+        print(f"UserMark IDs mappés: {usermark_id_map}")
 
-    print("\n[VÉRIFICATION SCHÉMA]")
+        # ===== Vérification pré-fusion complète =====
+        print("\n=== VERIFICATION PRE-FUSION ===")
+        print("\n[VÉRIFICATION FICHIERS SOURCES]")
+        source_files = [
+            os.path.join(EXTRACT_FOLDER, "file1_extracted", "userData.db"),
+            os.path.join(EXTRACT_FOLDER, "file2_extracted", "userData.db")
+        ]
+        for file in source_files:
+            print(f"Vérification {file}... ", end="")
+            if not os.path.exists(file):
+                print("ERREUR: Fichier manquant")
+                return jsonify({"error": f"Fichier source manquant: {file}"}), 400
+            else:
+                print(f"OK ({os.path.getsize(file) / 1024:.1f} KB)")
 
-    def verify_schema(db_path):
+        print("\n[VÉRIFICATION SCHÉMA]")
+
+        def verify_schema(db_path):
+            try:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = [t[0] for t in cursor.fetchall()]
+                print(f"Tables dans {os.path.basename(db_path)}: {len(tables)}")
+                required_tables = {'Bookmark', 'Location', 'UserMark', 'Note'}
+                missing = required_tables - set(tables)
+                if missing:
+                    print(f"  TABLES MANQUANTES: {missing}")
+                conn.close()
+                return not bool(missing)
+            except Exception as e:
+                print(f"  ERREUR: {str(e)}")
+                return False
+        if not all(verify_schema(db) for db in source_files):
+            return jsonify({"error": "Schéma de base de données incompatible"}), 400
+
+        print("\n[VÉRIFICATION BASE DE DESTINATION]")
+        print(f"Vérification {merged_db_path}... ", end="")
         try:
-            conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(merged_db_path)
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
             tables = [t[0] for t in cursor.fetchall()]
-            print(f"Tables dans {os.path.basename(db_path)}: {len(tables)}")
-            required_tables = {'Bookmark', 'Location', 'UserMark', 'Note'}
-            missing = required_tables - set(tables)
-            if missing:
-                print(f"  TABLES MANQUANTES: {missing}")
+            print(f"OK ({len(tables)} tables)")
             conn.close()
-            return not bool(missing)
         except Exception as e:
-            print(f"  ERREUR: {str(e)}")
-            return False
-    if not all(verify_schema(db) for db in source_files):
-        return jsonify({"error": "Schéma de base de données incompatible"}), 400
+            print(f"ERREUR: {str(e)}")
+            return jsonify({"error": "Base de destination corrompue"}), 500
 
-    print("\n[VÉRIFICATION BASE DE DESTINATION]")
-    print(f"Vérification {merged_db_path}... ", end="")
-    try:
+        print("\n[VÉRIFICATION SYSTÈME]")
+        try:
+            import psutil
+            mem = psutil.virtual_memory()
+            print(f"Mémoire disponible: {mem.available / 1024 / 1024:.1f} MB")
+            if mem.available < 500 * 1024 * 1024:
+                print("ATTENTION: Mémoire insuffisante")
+        except ImportError:
+            print("psutil non installé - vérification mémoire ignorée")
+
+        print("\n=== PRÊT POUR FUSION ===\n")
+
+        # --- FUSION DE BOOKMARKS (sans suppression préalable) ---
         conn = sqlite3.connect(merged_db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = [t[0] for t in cursor.fetchall()]
-        print(f"OK ({len(tables)} tables)")
+
+        for db_path in [file1_db, file2_db]:
+            source_conn = sqlite3.connect(db_path)
+            source_cursor = source_conn.cursor()
+
+            print(f"\nDEBUG: Contenu de {db_path} avant fusion:")
+            source_cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = [t[0] for t in source_cursor.fetchall()]
+            print(f"Tables disponibles: {tables}")
+
+            if 'Playlist' in tables:
+                source_cursor.execute("SELECT COUNT(*) FROM Playlist")
+                count = source_cursor.fetchone()[0]
+                print(f"Nombre de playlists: {count}")
+                source_cursor.execute("SELECT PlaylistId, Name FROM Playlist LIMIT 5")
+                print(f"Exemples de playlists: {source_cursor.fetchall()}")
+
+            source_cursor.execute("""
+                SELECT BookmarkId, LocationId, PublicationLocationId, Slot, Title, 
+                       Snippet, BlockType, BlockIdentifier
+                FROM Bookmark
+            """)
+            for row in source_cursor.fetchall():
+                b_id, loc_id, pub_loc_id, slot, title, snippet, block_type, block_id = row
+
+                new_loc_id = location_id_map.get((db_path, loc_id), loc_id)
+                new_pub_loc_id = location_id_map.get((db_path, pub_loc_id), pub_loc_id)
+
+                # Vérification de l'existence des locations
+                cursor.execute("SELECT 1 FROM Location WHERE LocationId IN (?, ?)", (new_loc_id, new_pub_loc_id))
+                if len(cursor.fetchall()) != 2:
+                    print(f"Attention : Location {new_loc_id} ou {new_pub_loc_id} manquante - Bookmark ignoré")
+                    continue
+
+                # Empêche les doublons exacts
+                cursor.execute("""
+                    SELECT 1 FROM Bookmark 
+                    WHERE PublicationLocationId=? AND Slot=?
+                """, (new_pub_loc_id, slot))
+                exists = cursor.fetchone()
+
+                if not exists:
+                    try:
+                        cursor.execute("""
+                            INSERT INTO Bookmark
+                            (LocationId, PublicationLocationId, Slot, Title,
+                             Snippet, BlockType, BlockIdentifier)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, (new_loc_id, new_pub_loc_id, slot, title, snippet, block_type, block_id))
+                    except sqlite3.IntegrityError as e:
+                        print(f"Erreur insertion BookmarkId={b_id}: {e}")
+                else:
+                    print(f"Bookmark ignoré : doublon PublicationLocationId={new_pub_loc_id}, Slot={slot}")
+
+            source_conn.close()
+
+        conn.commit()
         conn.close()
-    except Exception as e:
-        print(f"ERREUR: {str(e)}")
-        return jsonify({"error": "Base de destination corrompue"}), 500
 
-    print("\n[VÉRIFICATION SYSTÈME]")
-    try:
-        import psutil
-        mem = psutil.virtual_memory()
-        print(f"Mémoire disponible: {mem.available / 1024 / 1024:.1f} MB")
-        if mem.available < 500 * 1024 * 1024:
-            print("ATTENTION: Mémoire insuffisante")
-    except ImportError:
-        print("psutil non installé - vérification mémoire ignorée")
+        # --- SECTION BLOCKRANGE ---
+        conn = sqlite3.connect(merged_db_path)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM BlockRange")
+        existing_blockranges = {}
+        for db_path in [file1_db, file2_db]:
+            source_conn = sqlite3.connect(db_path)
+            source_cursor = source_conn.cursor()
+            source_cursor.execute("""
+                    SELECT br.BlockType, br.Identifier, br.StartToken, br.EndToken, um.UserMarkGuid
+                    FROM BlockRange br
+                    JOIN UserMark um ON br.UserMarkId = um.UserMarkId
+                """)
+            for row in source_cursor.fetchall():
+                block_type, identifier, start_token, end_token, usermark_guid = row
+                cursor.execute("SELECT UserMarkId FROM UserMark WHERE UserMarkGuid=?", (usermark_guid,))
+                new_usermark_id = cursor.fetchone()
+                if new_usermark_id:
+                    new_usermark_id = new_usermark_id[0]
+                    blockrange_key = (block_type, identifier, start_token, end_token, new_usermark_id)
+                    if blockrange_key not in existing_blockranges:
+                        cursor.execute("""
+                                INSERT INTO BlockRange
+                                (BlockType, Identifier, StartToken, EndToken, UserMarkId)
+                                VALUES (?, ?, ?, ?, ?)
+                            """, (block_type, identifier, start_token, end_token, new_usermark_id))
+                        existing_blockranges[blockrange_key] = True
+            source_conn.close()
+        conn.commit()
+        conn.close()
 
-    print("\n=== PRÊT POUR FUSION ===\n")
+        # Mapping inverse UserMarkId original → nouveau
+        usermark_guid_map = {}
+        conn = sqlite3.connect(merged_db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT UserMarkId, UserMarkGuid FROM UserMark")
+        for new_id, guid in cursor.fetchall():
+            usermark_guid_map[guid] = new_id
+        conn.close()
 
-    # --- FUSION DE BOOKMARKS (sans suppression préalable) ---
-    conn = sqlite3.connect(merged_db_path)
-    cursor = conn.cursor()
+        # Fusion des Notes
+        location_id_map = merge_location_from_sources(merged_db_path, file1_db, file2_db)
+        print("Location ID Map:", location_id_map)
 
-    for db_path in [file1_db, file2_db]:
-        source_conn = sqlite3.connect(db_path)
-        source_cursor = source_conn.cursor()
+        conn = sqlite3.connect(merged_db_path)
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM Note")
+        for db_path in [file1_db, file2_db]:
+            source_conn = sqlite3.connect(db_path)
+            source_cursor = source_conn.cursor()
+            source_cursor.execute("""
+                SELECT n.Guid, um.UserMarkGuid, n.LocationId, n.Title, n.Content,
+                       n.LastModified, n.Created, n.BlockType, n.BlockIdentifier
+                FROM Note n
+                LEFT JOIN UserMark um ON n.UserMarkId = um.UserMarkId
+            """)
+            for (guid, usermark_guid, location_id, title, content,
+                 last_modified, created, block_type, block_identifier) in source_cursor.fetchall():
+                new_usermark_id = usermark_guid_map.get(usermark_guid) if usermark_guid else None
+                normalized_key = (os.path.normpath(db_path), location_id)
+                normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
+                new_location_id = normalized_map.get(normalized_key) if location_id else None
 
-        print(f"\nDEBUG: Contenu de {db_path} avant fusion:")
-        source_cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = [t[0] for t in source_cursor.fetchall()]
-        print(f"Tables disponibles: {tables}")
+                if new_location_id is None and location_id:
+                    print(f"⚠️ LocationId {location_id} introuvable dans {db_path}")
 
-        if 'Playlist' in tables:
-            source_cursor.execute("SELECT COUNT(*) FROM Playlist")
-            count = source_cursor.fetchone()[0]
-            print(f"Nombre de playlists: {count}")
-            source_cursor.execute("SELECT PlaylistId, Name FROM Playlist LIMIT 5")
-            print(f"Exemples de playlists: {source_cursor.fetchall()}")
-
-        source_cursor.execute("""
-            SELECT BookmarkId, LocationId, PublicationLocationId, Slot, Title, 
-                   Snippet, BlockType, BlockIdentifier
-            FROM Bookmark
-        """)
-        for row in source_cursor.fetchall():
-            b_id, loc_id, pub_loc_id, slot, title, snippet, block_type, block_id = row
-
-            new_loc_id = location_id_map.get((db_path, loc_id), loc_id)
-            new_pub_loc_id = location_id_map.get((db_path, pub_loc_id), pub_loc_id)
-
-            # Vérification de l'existence des locations
-            cursor.execute("SELECT 1 FROM Location WHERE LocationId IN (?, ?)", (new_loc_id, new_pub_loc_id))
-            if len(cursor.fetchall()) != 2:
-                print(f"Attention : Location {new_loc_id} ou {new_pub_loc_id} manquante - Bookmark ignoré")
-                continue
-
-            # Empêche les doublons exacts
-            cursor.execute("""
-                SELECT 1 FROM Bookmark 
-                WHERE PublicationLocationId=? AND Slot=?
-            """, (new_pub_loc_id, slot))
-            exists = cursor.fetchone()
-
-            if not exists:
                 try:
                     cursor.execute("""
-                        INSERT INTO Bookmark
-                        (LocationId, PublicationLocationId, Slot, Title,
-                         Snippet, BlockType, BlockIdentifier)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (new_loc_id, new_pub_loc_id, slot, title, snippet, block_type, block_id))
-                except sqlite3.IntegrityError as e:
-                    print(f"Erreur insertion BookmarkId={b_id}: {e}")
-            else:
-                print(f"Bookmark ignoré : doublon PublicationLocationId={new_pub_loc_id}, Slot={slot}")
-
-        source_conn.close()
-
-    conn.commit()
-    conn.close()
-
-    # --- SECTION BLOCKRANGE ---
-    conn = sqlite3.connect(merged_db_path)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM BlockRange")
-    existing_blockranges = {}
-    for db_path in [file1_db, file2_db]:
-        source_conn = sqlite3.connect(db_path)
-        source_cursor = source_conn.cursor()
-        source_cursor.execute("""
-                SELECT br.BlockType, br.Identifier, br.StartToken, br.EndToken, um.UserMarkGuid
-                FROM BlockRange br
-                JOIN UserMark um ON br.UserMarkId = um.UserMarkId
-            """)
-        for row in source_cursor.fetchall():
-            block_type, identifier, start_token, end_token, usermark_guid = row
-            cursor.execute("SELECT UserMarkId FROM UserMark WHERE UserMarkGuid=?", (usermark_guid,))
-            new_usermark_id = cursor.fetchone()
-            if new_usermark_id:
-                new_usermark_id = new_usermark_id[0]
-                blockrange_key = (block_type, identifier, start_token, end_token, new_usermark_id)
-                if blockrange_key not in existing_blockranges:
-                    cursor.execute("""
-                            INSERT INTO BlockRange
-                            (BlockType, Identifier, StartToken, EndToken, UserMarkId)
-                            VALUES (?, ?, ?, ?, ?)
-                        """, (block_type, identifier, start_token, end_token, new_usermark_id))
-                    existing_blockranges[blockrange_key] = True
-        source_conn.close()
-    conn.commit()
-    conn.close()
-
-    # Mapping inverse UserMarkId original → nouveau
-    usermark_guid_map = {}
-    conn = sqlite3.connect(merged_db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT UserMarkId, UserMarkGuid FROM UserMark")
-    for new_id, guid in cursor.fetchall():
-        usermark_guid_map[guid] = new_id
-    conn.close()
-
-    # Fusion des Notes
-    location_id_map = merge_location_from_sources(merged_db_path, file1_db, file2_db)
-    print("Location ID Map:", location_id_map)
-
-    conn = sqlite3.connect(merged_db_path)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM Note")
-    for db_path in [file1_db, file2_db]:
-        source_conn = sqlite3.connect(db_path)
-        source_cursor = source_conn.cursor()
-        source_cursor.execute("""
-            SELECT n.Guid, um.UserMarkGuid, n.LocationId, n.Title, n.Content,
-                   n.LastModified, n.Created, n.BlockType, n.BlockIdentifier
-            FROM Note n
-            LEFT JOIN UserMark um ON n.UserMarkId = um.UserMarkId
-        """)
-        for (guid, usermark_guid, location_id, title, content,
-             last_modified, created, block_type, block_identifier) in source_cursor.fetchall():
-            new_usermark_id = usermark_guid_map.get(usermark_guid) if usermark_guid else None
-            normalized_key = (os.path.normpath(db_path), location_id)
-            normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
-            new_location_id = normalized_map.get(normalized_key) if location_id else None
-
-            if new_location_id is None and location_id:
-                print(f"⚠️ LocationId {location_id} introuvable dans {db_path}")
-
-            try:
-                cursor.execute("""
-                    INSERT INTO Note
-                    (Guid, UserMarkId, LocationId, Title, Content,
-                     LastModified, Created, BlockType, BlockIdentifier)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    guid,
-                    new_usermark_id,
-                    new_location_id,
-                    title,
-                    content,
-                    last_modified,
-                    created,
-                    block_type,
-                    block_identifier
-                ))
-            except sqlite3.IntegrityError as e:
-                if "UNIQUE constraint failed: Note.Guid" in str(e):
-                    print(f"Mise à jour de la note existante {guid}")
-                    cursor.execute("""
-                        UPDATE Note SET
-                            UserMarkId=?,
-                            LocationId=?,
-                            Title=?,
-                            Content=?,
-                            LastModified=?,
-                            BlockType=?,
-                            BlockIdentifier=?
-                        WHERE Guid=?
+                        INSERT INTO Note
+                        (Guid, UserMarkId, LocationId, Title, Content,
+                         LastModified, Created, BlockType, BlockIdentifier)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
+                        guid,
                         new_usermark_id,
                         new_location_id,
                         title,
                         content,
                         last_modified,
+                        created,
                         block_type,
-                        block_identifier,
-                        guid
+                        block_identifier
                     ))
-        source_conn.close()
-    conn.commit()
-    conn.close()
+                except sqlite3.IntegrityError as e:
+                    if "UNIQUE constraint failed: Note.Guid" in str(e):
+                        print(f"Mise à jour de la note existante {guid}")
+                        cursor.execute("""
+                            UPDATE Note SET
+                                UserMarkId=?,
+                                LocationId=?,
+                                Title=?,
+                                Content=?,
+                                LastModified=?,
+                                BlockType=?,
+                                BlockIdentifier=?
+                            WHERE Guid=?
+                        """, (
+                            new_usermark_id,
+                            new_location_id,
+                            title,
+                            content,
+                            last_modified,
+                            block_type,
+                            block_identifier,
+                            guid
+                        ))
+            source_conn.close()
+        conn.commit()
+        conn.close()
 
-    # --- Nouvelle étape : fusion des bookmarks
-    try:
-        bookmark_id_map = merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map)
-        print("Mapping BookmarkId :", bookmark_id_map)
-    except Exception as e:
-        print(f"Erreur lors de la fusion des bookmarks : {e}")
-        return jsonify({"error": "Échec de la fusion des bookmarks"}), 500
+        # --- Nouvelle étape : fusion des bookmarks
+        try:
+            bookmark_id_map = merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map)
+            print("Mapping BookmarkId :", bookmark_id_map)
+        except Exception as e:
+            print(f"Erreur lors de la fusion des bookmarks : {e}")
+            return jsonify({"error": "Échec de la fusion des bookmarks"}), 500
 
-    independent_media_map = merge_independent_media(merged_db_path, file1_db, file2_db)
-    print("Mapping IndependentMedia :", independent_media_map)
+        independent_media_map = merge_independent_media(merged_db_path, file1_db, file2_db)
+        print("Mapping IndependentMedia :", independent_media_map)
 
-    try:
-        merge_tags_and_tagmap(
-            merged_db_path,
-            file1_db,
-            file2_db,
-            note_mapping,
-            location_id_map,
-            item_id_map
+        try:
+            merge_tags_and_tagmap(
+                merged_db_path,
+                file1_db,
+                file2_db,
+                note_mapping,
+                location_id_map,
+                item_id_map
+            )
+        except Exception as e:
+            print(f"Échec de merge_tags_and_tagmap: {str(e)}")
+            return jsonify({"error": "Échec de la fusion des tags"}), 500
+
+        print("\n=== TAGS VERIFICATION ===")
+        with sqlite3.connect(merged_db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM Tag")
+            tags_count = cursor.fetchone()[0]
+            cursor.execute("SELECT COUNT(*) FROM TagMap")
+            tagmaps_count = cursor.fetchone()[0]
+            print(f"Tags: {tags_count}")
+            print(f"TagMaps: {tagmaps_count}")
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM TagMap 
+                WHERE NoteId NOT IN (SELECT NoteId FROM Note)
+            """)
+            orphaned = cursor.fetchone()[0]
+            print(f"TagMaps orphelins: {orphaned}")
+
+        merged_file, playlist_count, playlist_item_count, media_count, cleaned_items, integrity_check = merge_playlists(
+            merged_db_path, file1_db, file2_db, location_id_map, independent_media_map
         )
+
+        if not merged_file:
+            return jsonify({"error": "Échec de la fusion des playlists"}), 500
+
+        # --- Mise à jour des LocationId résiduels
+        location_replacements_flat = {}
+        for (db_path, old_id), new_id in location_id_map.items():
+            location_replacements_flat[old_id] = new_id
+
+        update_location_references(merged_db_path, location_replacements_flat)
+
+        print("\n=== VERIFICATION POST-FUSION ===")
+        with sqlite3.connect(merged_db_path) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM PlaylistItem")
+            count = cur.fetchone()[0]
+            print(f"Nombre d'enregistrements dans PlaylistItem après fusion : {count}")
+
+        return jsonify({
+            "status": "success",
+            "merged_file": merged_file,
+            "stats": {
+                "playlists": playlist_count,
+                "playlist_items": playlist_item_count,
+                "media_files": media_count,
+                "cleaned_items": cleaned_items
+            },
+            "integrity_check": integrity_check
+        }), 200
+
     except Exception as e:
-        print(f"Échec de merge_tags_and_tagmap: {str(e)}")
-        return jsonify({"error": "Échec de la fusion des tags"}), 500
+        import traceback
 
-    print("\n=== TAGS VERIFICATION ===")
-    with sqlite3.connect(merged_db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM Tag")
-        tags_count = cursor.fetchone()[0]
-        cursor.execute("SELECT COUNT(*) FROM TagMap")
-        tagmaps_count = cursor.fetchone()[0]
-        print(f"Tags: {tags_count}")
-        print(f"TagMaps: {tagmaps_count}")
-        cursor.execute("""
-            SELECT COUNT(*) 
-            FROM TagMap 
-            WHERE NoteId NOT IN (SELECT NoteId FROM Note)
-        """)
-        orphaned = cursor.fetchone()[0]
-        print(f"TagMaps orphelins: {orphaned}")
-
-    merged_file, playlist_count, playlist_item_count, media_count, cleaned_items, integrity_check = merge_playlists(
-        merged_db_path, file1_db, file2_db, location_id_map, independent_media_map
-    )
-
-    if not merged_file:
-        return jsonify({"error": "Échec de la fusion des playlists"}), 500
-
-    # --- Mise à jour des LocationId résiduels
-    location_replacements_flat = {}
-    for (db_path, old_id), new_id in location_id_map.items():
-        location_replacements_flat[old_id] = new_id
-
-    update_location_references(merged_db_path, location_replacements_flat)
-
-    print("\n=== VERIFICATION POST-FUSION ===")
-    with sqlite3.connect(merged_db_path) as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM PlaylistItem")
-        count = cur.fetchone()[0]
-        print(f"Nombre d'enregistrements dans PlaylistItem après fusion : {count}")
-
-    return jsonify({
-        "status": "success",
-        "merged_file": merged_file,
-        "stats": {
-            "playlists": playlist_count,
-            "playlist_items": playlist_item_count,
-            "media_files": media_count,
-            "cleaned_items": cleaned_items
-        },
-        "integrity_check": integrity_check
-    }), 200
+        traceback.print_exc()  # Affiche la trace complète dans les logs
+        return jsonify({"error": f"Erreur interne : {str(e)}"}), 500
 
 
 @app.route('/download', methods=['GET'])
