@@ -11,7 +11,7 @@ import time
 
 app = Flask(__name__)
 app.config['PROPAGATE_EXCEPTIONS'] = True
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, origins=["https://jwmerge.netlify.app"])
 
 UPLOAD_FOLDER = "uploads"
 EXTRACT_FOLDER = "extracted"
