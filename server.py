@@ -837,25 +837,21 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                     print(f"❌ Aucune référence valide pour TagMap {old_tagmap_id} (db: {db_path})")
                     continue
 
-                # Vérification de conflit éventuel
-                conflits = []
-                cursor.execute("SELECT 1 FROM TagMap WHERE TagId = ? AND Position = ?", (new_tag_id, position))
+                # Vérifie si une ligne identique existe déjà
+                cursor.execute("""
+                    SELECT 1 FROM TagMap 
+                    WHERE TagId = ? AND Position = ? AND
+                          ((NoteId IS ? OR NoteId = ?) AND
+                           (LocationId IS ? OR LocationId = ?) AND
+                           (PlaylistItemId IS ? OR PlaylistItemId = ?))
+                """, (
+                    new_tag_id, position,
+                    new_note_id, new_note_id,
+                    new_location_id, new_location_id,
+                    new_playlist_item_id, new_playlist_item_id
+                ))
                 if cursor.fetchone():
-                    if new_note_id:
-                        cursor.execute("SELECT 1 FROM TagMap WHERE TagId=? AND NoteId=?", (new_tag_id, new_note_id))
-                        if cursor.fetchone():
-                            conflits.append("TagId+NoteId déjà existant")
-                    if new_location_id:
-                        cursor.execute("SELECT 1 FROM TagMap WHERE TagId=? AND LocationId=?", (new_tag_id, new_location_id))
-                        if cursor.fetchone():
-                            conflits.append("TagId+LocationId déjà existant")
-                    if new_playlist_item_id:
-                        cursor.execute("SELECT 1 FROM TagMap WHERE TagId=? AND PlaylistItemId=?", (new_tag_id, new_playlist_item_id))
-                        if cursor.fetchone():
-                            conflits.append("TagId+PlaylistItemId déjà existant")
-
-                if conflits:
-                    print(f"❌ Conflit pour TagMap {old_tagmap_id} : {conflits}")
+                    print(f"❌ Doublon exact détecté — TagMap ignoré (TagId={new_tag_id}, Pos={position})")
                     continue
 
                 # Insertion
