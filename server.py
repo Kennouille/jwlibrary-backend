@@ -779,7 +779,6 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
     Fusionne les Tags et la table TagMap.
     Deux entrées de TagMap sont considérées identiques si, après mise à jour via les mappings,
     la référence pertinente (NoteId, LocationId ou PlaylistItemId), le TagId et la Position sont identiques.
-    Retourne un tuple (tag_id_map, tagmap_id_map).
     """
     print("\n[FUSION TAGS ET TAGMAP]")
     conn = sqlite3.connect(merged_db_path)
@@ -820,68 +819,68 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
             for row in src_cursor.fetchall():
                 old_tagmap_id, playlist_item_id, location_id, note_id, tag_id, position = row
 
-                print("🔍 Cherche:", (db_path, location_id))
-                print("📘 Dans map:", list(location_id_map.keys())[:5])
-
+                # Mapping des IDs
                 new_note_id = note_mapping.get((db_path, note_id)) if note_id else None
                 normalized_key = (os.path.normpath(db_path), location_id)
                 normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
                 new_location_id = normalized_map.get(normalized_key) if location_id else None
-
-                print("🔍 Recherche key:", normalized_key)
-                if normalized_key not in normalized_map:
-                    print("❌ Non trouvé dans location_id_map!")
-
                 new_playlist_item_id = playlist_item_id_map.get((db_path, playlist_item_id)) if playlist_item_id else None
                 new_tag_id = tag_id_map.get((db_path, tag_id))
 
-                # Vérification : une seule des 3 colonnes doit être définie
-                non_null_refs = [v for v in [new_note_id, new_location_id, new_playlist_item_id] if v is not None]
-                if len(non_null_refs) != 1:
-                    print(f"Aucune ou trop de références valides pour TagMap {old_tagmap_id} (db: {db_path}).")
+                print(f"[DEBUG] TagMap {old_tagmap_id} ({db_path}) : "
+                      f"NoteId={note_id}->{new_note_id}, "
+                      f"LocId={location_id}->{new_location_id}, "
+                      f"ItemId={playlist_item_id}->{new_playlist_item_id}")
+
+                # Refuser seulement si toutes les références sont nulles
+                if all(v is None for v in [new_note_id, new_location_id, new_playlist_item_id]):
+                    print(f"❌ Aucune référence valide pour TagMap {old_tagmap_id} (db: {db_path})")
                     continue
 
-                # Vérifier les contraintes uniques avant insertion
+                # Vérification de conflit éventuel
                 conflits = []
                 cursor.execute("SELECT 1 FROM TagMap WHERE TagId = ? AND Position = ?", (new_tag_id, position))
                 if cursor.fetchone():
-                    conflits.append(f"[DUP] TagId+Position existe déjà : ({new_tag_id}, {position})")
-
-                if new_note_id is not None:
-                    cursor.execute("SELECT 1 FROM TagMap WHERE TagId = ? AND NoteId = ?", (new_tag_id, new_note_id))
-                    if cursor.fetchone():
-                        conflits.append(f"[DUP] TagId+NoteId existe déjà : ({new_tag_id}, {new_note_id})")
-                elif new_location_id is not None:
-                    cursor.execute("SELECT 1 FROM TagMap WHERE TagId = ? AND LocationId = ?", (new_tag_id, new_location_id))
-                    if cursor.fetchone():
-                        conflits.append(f"[DUP] TagId+LocationId existe déjà : ({new_tag_id}, {new_location_id})")
-                elif new_playlist_item_id is not None:
-                    cursor.execute("SELECT 1 FROM TagMap WHERE TagId = ? AND PlaylistItemId = ?", (new_tag_id, new_playlist_item_id))
-                    if cursor.fetchone():
-                        conflits.append(f"[DUP] TagId+PlaylistItemId existe déjà : ({new_tag_id}, {new_playlist_item_id})")
+                    if new_note_id:
+                        cursor.execute("SELECT 1 FROM TagMap WHERE TagId=? AND NoteId=?", (new_tag_id, new_note_id))
+                        if cursor.fetchone():
+                            conflits.append("TagId+NoteId déjà existant")
+                    if new_location_id:
+                        cursor.execute("SELECT 1 FROM TagMap WHERE TagId=? AND LocationId=?", (new_tag_id, new_location_id))
+                        if cursor.fetchone():
+                            conflits.append("TagId+LocationId déjà existant")
+                    if new_playlist_item_id:
+                        cursor.execute("SELECT 1 FROM TagMap WHERE TagId=? AND PlaylistItemId=?", (new_tag_id, new_playlist_item_id))
+                        if cursor.fetchone():
+                            conflits.append("TagId+PlaylistItemId déjà existant")
 
                 if conflits:
-                    for c in conflits:
-                        print(c)
-                    print(f"❌ Insertion annulée pour TagMap {old_tagmap_id} (db: {db_path}) à cause d’un conflit UNIQUE.")
+                    print(f"❌ Conflit pour TagMap {old_tagmap_id} : {conflits}")
                     continue
 
-                # Insertion si pas de conflit
+                # Insertion
                 max_tagmap_id += 1
-                new_tagmap_id = max_tagmap_id
                 try:
                     cursor.execute("""
                         INSERT INTO TagMap (TagMapId, PlaylistItemId, LocationId, NoteId, TagId, Position)
                         VALUES (?, ?, ?, ?, ?, ?)
-                    """, (new_tagmap_id, new_playlist_item_id, new_location_id, new_note_id, new_tag_id, position))
-                    tagmap_id_map[(db_path, old_tagmap_id)] = new_tagmap_id
-                    print(f"Insertion OK TagMap {old_tagmap_id} pour TagId {new_tag_id}")
+                    """, (
+                        max_tagmap_id,
+                        new_playlist_item_id,
+                        new_location_id,
+                        new_note_id,
+                        new_tag_id,
+                        position
+                    ))
+                    tagmap_id_map[(db_path, old_tagmap_id)] = max_tagmap_id
+                    print(f"✅ Insertion TagMap {old_tagmap_id} OK")
                 except sqlite3.IntegrityError as e:
-                    print(f"Erreur insertion TagMap {old_tagmap_id}: {e}")
+                    print(f"❌ Erreur insertion TagMap {old_tagmap_id}: {e}")
 
     conn.commit()
     conn.close()
     return tag_id_map, tagmap_id_map
+
 
 
 def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
