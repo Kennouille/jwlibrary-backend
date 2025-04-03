@@ -1534,9 +1534,8 @@ def merge_data():
         conn = sqlite3.connect(merged_db_path)
         cursor = conn.cursor()
 
-        print("NOTE_TUPLE >>>", note_tuple)
-
         for note_tuple in merged_notes_list:
+            print("NOTE_TUPLE >>>", note_tuple)
             old_db_path, guid, title, content, old_loc_id, usermark_guid, last_modified, created, block_type, block_identifier = note_tuple
             new_guid = str(uuid.uuid4())
 
