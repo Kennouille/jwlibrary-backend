@@ -1456,15 +1456,37 @@ def merge_data():
         notes_db2 = data2["notes"]
         merged_notes_list = []
 
-        # Concaténation avec vérification de doublon par title+content
-        for note in notes_db1:
-            merged_notes_list.append((file1_db,) + note)
+        def format_note(db_path, note_row):
+            # Cette fonction garantit que chaque note ait 10 champs
+            (
+                note_id,
+                guid,
+                title,
+                content,
+                old_loc_id,
+                usermark_guid,
+                last_modified,
+                created,
+                block_type,
+                block_identifier
+            ) = note_row
+            return (
+                db_path, guid, title, content,
+                old_loc_id, usermark_guid,
+                last_modified, created,
+                block_type, block_identifier
+            )
 
+        # Ajout des notes du fichier 1
+        for note in notes_db1:
+            merged_notes_list.append(format_note(file1_db, note))
+
+        # Ajout des notes du fichier 2 sans doublons
         for note in notes_db2:
-            _, title2, content2, *_ = note
-            existe = any(n[1] == title2 and n[2] == content2 for n in merged_notes_list)
+            _, _, title2, content2, *_ = note
+            existe = any(n[2] == title2 and n[3] == content2 for n in merged_notes_list)
             if not existe:
-                merged_notes_list.append((file2_db,) + note)
+                merged_notes_list.append(format_note(file2_db, note))
 
         highlights_db1 = data1["highlights"]
         highlights_db2 = data2["highlights"]
@@ -1514,8 +1536,11 @@ def merge_data():
         # === INSÉRER LES NOTES et USERMARK DANS LA DB FUSIONNÉE AVANT de créer note_mapping ===
         conn = sqlite3.connect(merged_db_path)
         cursor = conn.cursor()
+
+        print("NOTE_TUPLE >>>", note_tuple)
+
         for note_tuple in merged_notes_list:
-            old_db_path, title, content, old_loc_id, usermark_guid, last_modified, created, block_type, block_identifier = note_tuple
+            old_db_path, guid, title, content, old_loc_id, usermark_guid, last_modified, created, block_type, block_identifier = note_tuple
             new_guid = str(uuid.uuid4())
 
             # Appliquer le mapping de LocationId
