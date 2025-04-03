@@ -1855,7 +1855,7 @@ def merge_data():
         print("Mapping IndependentMedia :", independent_media_map)
 
         try:
-            merge_tags_and_tagmap(
+            tag_id_map, tagmap_id_map = merge_tags_and_tagmap(
                 merged_db_path,
                 file1_db,
                 file2_db,
@@ -1866,6 +1866,9 @@ def merge_data():
         except Exception as e:
             print(f"Échec de merge_tags_and_tagmap: {str(e)}")
             return jsonify({"error": "Échec de la fusion des tags"}), 500
+
+        print(f"Tag ID Map: {tag_id_map}")
+        print(f"TagMap ID Map: {tagmap_id_map}")
 
         print("\n=== TAGS VERIFICATION ===")
         with sqlite3.connect(merged_db_path) as conn:
