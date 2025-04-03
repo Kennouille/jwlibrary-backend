@@ -25,7 +25,7 @@ def hello():
 Tu dois faire dans ton terminal :
 
 git add .
-git commit -m "Ajout du endpoint /hello"
+git commit -m "fix erreur"
 git push
 
 
