@@ -811,8 +811,18 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
             for row in src_cursor.fetchall():
                 old_tagmap_id, playlist_item_id, location_id, note_id, tag_id, position = row
 
+                print("🔍 Cherche:", (db_path, location_id))
+                print("📘 Dans map:", list(location_id_map.keys())[:5])
+
                 new_note_id = note_mapping.get((db_path, note_id)) if note_id else None
-                new_location_id = location_id_map.get((db_path, location_id)) if location_id else None
+                normalized_key = (os.path.normpath(db_path), location_id)
+                normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
+                new_location_id = normalized_map.get(normalized_key) if location_id else None
+
+                print("🔍 Recherche key:", normalized_key)
+                if normalized_key not in normalized_map:
+                    print("❌ Non trouvé dans location_id_map!")
+
                 new_playlist_item_id = playlist_item_id_map.get((db_path, playlist_item_id)) if playlist_item_id else None
                 new_tag_id = tag_id_map.get((db_path, tag_id))
 
@@ -1432,13 +1442,16 @@ def merge_data():
     notes_db1 = data1["notes"]
     notes_db2 = data2["notes"]
     merged_notes_list = []
-    for n in notes_db1:
-        merged_notes_list.append(n)
-    for n in notes_db2:
-        _, title2, content2 = n
-        existe = any((n1[1] == title2 and n1[2] == content2) for n1 in merged_notes_list)
+
+    # Concaténation avec vérification de doublon par title+content
+    for note in notes_db1:
+        merged_notes_list.append((file1_db,) + note)
+
+    for note in notes_db2:
+        _, title2, content2, *_ = note
+        existe = any(n[1] == title2 and n[2] == content2 for n in merged_notes_list)
         if not existe:
-            merged_notes_list.append(n)
+            merged_notes_list.append((file2_db,) + note)
 
     highlights_db1 = data1["highlights"]
     highlights_db2 = data2["highlights"]
@@ -1489,10 +1502,37 @@ def merge_data():
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
     for note_tuple in merged_notes_list:
-        title = note_tuple[1]
-        content = note_tuple[2]
+        old_db_path, title, content, old_loc_id, usermark_guid, last_modified, created, block_type, block_identifier = note_tuple
         new_guid = str(uuid.uuid4())
-        cursor.execute("INSERT INTO Note (Title, Content, Guid) VALUES (?, ?, ?)", (title, content, new_guid))
+
+        # Appliquer le mapping de LocationId
+        normalized_key = (os.path.normpath(old_db_path), old_loc_id)
+        normalized_location_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
+        new_location_id = normalized_location_map.get(normalized_key)
+
+        # Appliquer le mapping de UserMarkId si possible
+        new_usermark_id = None
+        if usermark_guid:
+            cursor.execute("SELECT UserMarkId FROM UserMark WHERE UserMarkGuid = ?", (usermark_guid,))
+            result = cursor.fetchone()
+            if result:
+                new_usermark_id = result[0]
+
+        cursor.execute("""
+            INSERT INTO Note (Title, Content, Guid, LocationId, UserMarkId, LastModified, Created, BlockType, BlockIdentifier)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            title,
+            content,
+            new_guid,
+            new_location_id,
+            new_usermark_id,
+            last_modified,
+            created,
+            block_type,
+            block_identifier
+        ))
+
     for guid, (color, loc, style, version) in merged_highlights_dict.items():
         try:
             cursor.execute("""
@@ -1705,6 +1745,9 @@ def merge_data():
     conn.close()
 
     # Fusion des Notes
+    location_id_map = merge_location_from_sources(merged_db_path, file1_db, file2_db)
+    print("Location ID Map:", location_id_map)
+
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM Note")
@@ -1720,7 +1763,13 @@ def merge_data():
         for (guid, usermark_guid, location_id, title, content,
              last_modified, created, block_type, block_identifier) in source_cursor.fetchall():
             new_usermark_id = usermark_guid_map.get(usermark_guid) if usermark_guid else None
-            new_location_id = location_id_map.get(location_id) if location_id else None
+            normalized_key = (os.path.normpath(db_path), location_id)
+            normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
+            new_location_id = normalized_map.get(normalized_key) if location_id else None
+
+            if new_location_id is None and location_id:
+                print(f"⚠️ LocationId {location_id} introuvable dans {db_path}")
+
             try:
                 cursor.execute("""
                     INSERT INTO Note
@@ -1765,9 +1814,6 @@ def merge_data():
     conn.commit()
     conn.close()
 
-    location_id_map = merge_location_from_sources(merged_db_path, file1_db, file2_db)
-    print("Location ID Map:", location_id_map)
-
     # --- Nouvelle étape : fusion des bookmarks
     try:
         bookmark_id_map = merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map)
@@ -1775,13 +1821,6 @@ def merge_data():
     except Exception as e:
         print(f"Erreur lors de la fusion des bookmarks : {e}")
         return jsonify({"error": "Échec de la fusion des bookmarks"}), 500
-
-    # --- Mise à jour des LocationId résiduels
-    location_replacements_flat = {}
-    for (db_path, old_id), new_id in location_id_map.items():
-        location_replacements_flat[old_id] = new_id
-
-    update_location_references(merged_db_path, location_replacements_flat)
 
     independent_media_map = merge_independent_media(merged_db_path, file1_db, file2_db)
     print("Mapping IndependentMedia :", independent_media_map)
@@ -1822,6 +1861,13 @@ def merge_data():
 
     if not merged_file:
         return jsonify({"error": "Échec de la fusion des playlists"}), 500
+
+    # --- Mise à jour des LocationId résiduels
+    location_replacements_flat = {}
+    for (db_path, old_id), new_id in location_id_map.items():
+        location_replacements_flat[old_id] = new_id
+
+    update_location_references(merged_db_path, location_replacements_flat)
 
     print("\n=== VERIFICATION POST-FUSION ===")
     with sqlite3.connect(merged_db_path) as conn:
