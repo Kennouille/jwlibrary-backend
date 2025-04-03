@@ -878,7 +878,6 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
     return tag_id_map, tagmap_id_map
 
 
-
 def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
     """
     Fusionne les PlaylistItem des deux bases sources dans la DB fusionnée.
@@ -1530,9 +1529,7 @@ def merge_data():
         # === INSÉRER LES NOTES et USERMARK DANS LA DB FUSIONNÉE AVANT de créer note_mapping ===
         conn = sqlite3.connect(merged_db_path)
         cursor = conn.cursor()
-
         for note_tuple in merged_notes_list:
-            print("NOTE_TUPLE >>>", note_tuple)
             old_db_path, guid, title, content, old_loc_id, usermark_guid, last_modified, created, block_type, block_identifier = note_tuple
             new_guid = str(uuid.uuid4())
 
@@ -1549,13 +1546,16 @@ def merge_data():
                 if result:
                     new_usermark_id = result[0]
 
+            # 🧩 C’est ici qu’il faut corriger :
+            note_guid = guid if guid else str(uuid.uuid4())  # <== Garantit un GUID pour la Note
+
             cursor.execute("""
-                INSERT INTO Note (Title, Content, Guid, LocationId, UserMarkId, LastModified, Created, BlockType, BlockIdentifier)
+                INSERT OR REPLACE INTO Note (Guid, Title, Content, LocationId, UserMarkId, LastModified, Created, BlockType, BlockIdentifier)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
+                note_guid,
                 title,
                 content,
-                new_guid,
                 new_location_id,
                 new_usermark_id,
                 last_modified,
