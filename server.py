@@ -1394,29 +1394,31 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
 
 
 def create_note_mapping(merged_db_path, file1_db, file2_db):
-    """Version ultra-robuste avec gestion d'erreur complète"""
-    mapping = {}  # Toujours retourner un dict valide
+    """Crée un mapping (source_db_path, old_note_id) -> new_note_id en se basant sur les GUID."""
+    mapping = {}
     try:
-        with sqlite3.connect(merged_db_path, timeout=30) as conn:
-            conn.execute("PRAGMA busy_timeout = 10000")
-            cursor = conn.cursor()
+        with sqlite3.connect(merged_db_path, timeout=30) as merged_conn:
+            merged_conn.execute("PRAGMA busy_timeout = 10000")
+            merged_cursor = merged_conn.cursor()
+            merged_cursor.execute("SELECT Guid, NoteId FROM Note")
+            merged_guid_map = {guid: note_id for guid, note_id in merged_cursor.fetchall() if guid}
 
-            for db_path in [file1_db, file2_db]:
-                if not os.path.exists(db_path):
-                    print(f"[WARN] Fichier DB manquant : {db_path}")
-                    continue
+        for db_path in [file1_db, file2_db]:
+            if not os.path.exists(db_path):
+                print(f"[WARN] Fichier DB manquant : {db_path}")
+                continue
 
-                with sqlite3.connect(db_path) as src_conn:
-                    query = "SELECT NoteId, Guid FROM Note"
-                    for row in src_conn.execute(query):
-                        cursor.execute("SELECT NoteId FROM Note WHERE Guid = ?", (row[1],))
-                        if (result := cursor.fetchone()):
-                            mapping[(db_path, row[0])] = result[0]
+            with sqlite3.connect(db_path) as src_conn:
+                src_cursor = src_conn.cursor()
+                src_cursor.execute("SELECT NoteId, Guid FROM Note")
+                for old_note_id, guid in src_cursor.fetchall():
+                    if guid and guid in merged_guid_map:
+                        mapping[(db_path, old_note_id)] = merged_guid_map[guid]
 
     except Exception as e:
         print(f"[ERREUR] create_note_mapping: {str(e)}")
 
-    return mapping or {}  # Double garantie
+    return mapping or {}
 
 
 @app.route('/merge', methods=['POST'])
