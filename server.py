@@ -10,6 +10,7 @@ import time
 
 
 app = Flask(__name__)
+app.config['PROPAGATE_EXCEPTIONS'] = True
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 UPLOAD_FOLDER = "uploads"
