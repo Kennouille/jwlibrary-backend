@@ -115,16 +115,27 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
 def read_notes_and_highlights(db_path):
     if not os.path.exists(db_path):
         return {"error": f"Base de données introuvable : {db_path}"}
+
     checkpoint_db(db_path)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute("SELECT NoteId, Title, Content FROM Note")
-    notes = cursor.fetchall()
+
+    # On lit toutes les infos nécessaires pour la fusion des Notes
+    cursor.execute("""
+        SELECT n.Title, n.Content, n.LocationId, um.UserMarkGuid,
+               n.LastModified, n.Created, n.BlockType, n.BlockIdentifier
+        FROM Note n
+        LEFT JOIN UserMark um ON n.UserMarkId = um.UserMarkId
+    """)
+    notes_raw = cursor.fetchall()
+    notes = [(db_path,) + row for row in notes_raw]  # on ajoute le chemin du fichier source
+
     cursor.execute("""
         SELECT UserMarkId, ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version
         FROM UserMark
     """)
     highlights = cursor.fetchall()
+
     conn.close()
     return {"notes": notes, "highlights": highlights}
 
