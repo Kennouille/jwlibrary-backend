@@ -24,7 +24,7 @@ def hello():
 
 Tu dois faire dans ton terminal :
 
-git add server.py
+git add .
 git commit -m "Ajout du endpoint /hello"
 git push
 
