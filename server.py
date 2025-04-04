@@ -706,7 +706,6 @@ def upload_files():
     file2.save(file2_path)
 
     response = jsonify({"message": "Fichiers userData.db reçus et enregistrés avec succès !"})
-    response.headers.add("Access-Control-Allow-Origin", "*")
     return response, 200
 
 
