@@ -362,15 +362,16 @@
         return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
       };
 
-      const collectMedia = async (zip, targetList) => {
+      const collectMedia = async (zip, targetList, skipNames = ["userData.db"]) => {
         for (const file of Object.values(zip.files)) {
-          const ext = file.name.toLowerCase().slice(-4);
-          if (mediaExtensions.some(e => file.name.toLowerCase().endsWith(e))) {
-            const hash = await hashFile(file);
-            targetList.push({ name: file.name, file, hash });
-          }
+          const lowerName = file.name.toLowerCase();
+          if (skipNames.includes(lowerName)) continue;
+
+          const hash = await hashFile(file);
+          targetList.push({ name: file.name, file, hash });
         }
       };
+
 
       await collectMedia(zip1, media1);
       await collectMedia(zip2, media2);
