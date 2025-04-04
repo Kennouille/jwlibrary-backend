@@ -678,23 +678,37 @@ def upload_files():
         response = jsonify({"message": "Route /upload fonctionne (GET) !"})
         response.headers.add("Access-Control-Allow-Origin", "*")
         return response, 200
+
     if 'file1' not in request.files or 'file2' not in request.files:
-        return jsonify({"error": "Veuillez envoyer deux fichiers .jwlibrary"}), 400
+        return jsonify({"error": "Veuillez envoyer deux fichiers userData.db"}), 400
+
     file1 = request.files['file1']
     file2 = request.files['file2']
-    file1_path = os.path.join(UPLOAD_FOLDER, "file1.jwlibrary")
-    file2_path = os.path.join(UPLOAD_FOLDER, "file2.jwlibrary")
+
+    # Définir les dossiers d'extraction (où sera placé chaque fichier userData.db)
+    extracted1 = os.path.join("extracted", "file1_extracted")
+    extracted2 = os.path.join("extracted", "file2_extracted")
+
+    os.makedirs(extracted1, exist_ok=True)
+    os.makedirs(extracted2, exist_ok=True)
+
+    # Supprimer les anciens fichiers s'ils existent
+    file1_path = os.path.join(extracted1, "userData.db")
+    file2_path = os.path.join(extracted2, "userData.db")
+
     if os.path.exists(file1_path):
         os.remove(file1_path)
     if os.path.exists(file2_path):
         os.remove(file2_path)
+
+    # Sauvegarde des fichiers userData.db
     file1.save(file1_path)
     file2.save(file2_path)
-    extract_file(file1_path, "file1_extracted")
-    extract_file(file2_path, "file2_extracted")
-    response = jsonify({"message": "Fichiers reçus et extraits (POST) !"})
+
+    response = jsonify({"message": "Fichiers userData.db reçus et enregistrés avec succès !"})
     response.headers.add("Access-Control-Allow-Origin", "*")
     return response, 200
+
 
 @app.route('/analyze', methods=['GET'])
 def validate_db_path(db_path):

@@ -177,7 +177,9 @@
     .hidden {
       display: none !important;
     }
+
   </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 <div class="container">
@@ -223,29 +225,28 @@
 
   <button id="mergeButton" onclick="startMerge()">Charger, Extraire & Analyser</button>
 
-  <div id="conflicts-section" class="hidden">
-    <h3>Conflits à résoudre</h3>
-    <div id="conflicts-notes" class="conflict-container">
-      <h4>Conflits de notes</h4>
-    </div>
-    <div id="conflicts-highlights" class="conflict-container">
-      <h4>Conflits de surlignages</h4>
-    </div>
-    <button id="resolveButton" onclick="resolveConflicts()">Valider la fusion</button>
+  <div id="merge-summary" class="conflict-container hidden">
+    <h3>Résumé de la fusion</h3>
+    <p id="summary-text">
+      Les deux fichiers ont été analysés et fusionnés avec succès.
+      Les notes, surlignages, marque-pages, playlists et autres contenus identiques ont été conservés.
+      Les éléments uniques de chaque fichier ont été ajoutés automatiquement.
+    </p>
   </div>
 
   <a id="download" href="#" download="fusionne.jwlibrary" class="hidden">📥 Télécharger le fichier fusionné</a>
+
 </div>
+
 
 <script>
   const BASE_URL = "https://jwlibrary-backend.onrender.com";
   let currentProgress = 0;
 
-  // Met à jour la progression avec animation fluide
   async function updateProgress(targetPercent, message, step) {
     return new Promise(resolve => {
       const startPercent = currentProgress;
-      const duration = 500; // durée animation en ms
+      const duration = 500;
       const startTime = performance.now();
 
       const animate = (currentTime) => {
@@ -270,22 +271,15 @@
     });
   }
 
-  // Met à jour l'indicateur d'étapes
-  function updateStepIndicator(step, percent) {
+  function updateStepIndicator(step) {
     const allSteps = document.querySelectorAll('.step');
-
     allSteps.forEach((el, index) => {
       el.classList.remove('active', 'completed');
-
-      if (index + 1 < step) {
-        el.classList.add('completed');
-      } else if (index + 1 === step) {
-        el.classList.add('active');
-      }
+      if (index + 1 < step) el.classList.add('completed');
+      else if (index + 1 === step) el.classList.add('active');
     });
   }
 
-  // Simule un traitement avec progression
   async function simulateProcessing(duration, targetPercent, message, step) {
     const startPercent = currentProgress;
     const startTime = Date.now();
@@ -300,15 +294,14 @@
     }
   }
 
-  // Télécharge un fichier avec progression
   async function uploadWithProgress(url, formData) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
 
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) {
-          const percent = Math.round((e.loaded / e.total) * 30); // 0-30%
-          updateProgress(20 + percent, `Upload: ${Math.round(e.loaded/1024)}KB/${Math.round(e.total/1024)}KB`, 2);
+          const percent = Math.round((e.loaded / e.total) * 30);
+          updateProgress(20 + percent, `Upload: ${Math.round(e.loaded / 1024)}KB/${Math.round(e.total / 1024)}KB`, 2);
         }
       };
 
@@ -322,51 +315,146 @@
     });
   }
 
-  // Fonction principale
   async function startMerge() {
     try {
       const file1 = document.getElementById('file1').files[0];
       const file2 = document.getElementById('file2').files[0];
+      const localDatetime = document.getElementById('local_datetime').value;
 
-      // Validations
-      if (!file1 || !file2) throw new Error("Veuillez sélectionner deux fichiers");
+      // Vérification des fichiers
+      if (!file1 || !file2) throw new Error("Veuillez sélectionner deux fichiers .jwlibrary");
       if (!file1.name.endsWith('.jwlibrary') || !file2.name.endsWith('.jwlibrary')) {
-        throw new Error("Seuls les fichiers .jwlibrary sont acceptés");
+        throw new Error("Les deux fichiers doivent avoir l'extension .jwlibrary");
       }
 
-      const MAX_SIZE = 50 * 1024 * 1024; // 50MB
+      // Vérification de la date/heure locale
+      if (!localDatetime) {
+        throw new Error("Veuillez indiquer la date et l'heure locales actuelles");
+      }
+
+      const MAX_SIZE = 50 * 1024 * 1024;
       if (file1.size > MAX_SIZE || file2.size > MAX_SIZE) {
         throw new Error("Fichier trop volumineux (>50MB)");
       }
 
-      document.getElementById('mergeButton').disabled = true;
+      const mergeButton = document.getElementById('mergeButton');
+      mergeButton.disabled = true;
 
-      // Étape 1: Chargement (0-20%)
       await updateProgress(5, "Préparation des fichiers...", 1);
       await simulateProcessing(800, 20, "Chargement des fichiers...", 1);
 
-      // Étape 2: Upload (20-50%)
+      // Nouvelle logique : extraire et filtrer les fichiers ZIP
+      const zip1 = await JSZip.loadAsync(file1);
+      const zip2 = await JSZip.loadAsync(file2);
+
+      // Récupération des userData.db
+      const userData1 = await zip1.file("userData.db").async("blob");
+      const userData2 = await zip2.file("userData.db").async("blob");
+
+      // Filtrage des fichiers médias (images / vidéos)
+      const mediaExtensions = [".jpg", ".jpeg", ".png", ".mp4"];
+      const media1 = [];
+      const media2 = [];
+
+      const hashFile = async (file) => {
+        const buffer = await file.async("arraybuffer");
+        const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+        return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+      };
+
+      const collectMedia = async (zip, targetList) => {
+        for (const file of Object.values(zip.files)) {
+          const ext = file.name.toLowerCase().slice(-4);
+          if (mediaExtensions.some(e => file.name.toLowerCase().endsWith(e))) {
+            const hash = await hashFile(file);
+            targetList.push({ name: file.name, file, hash });
+          }
+        }
+      };
+
+      await collectMedia(zip1, media1);
+      await collectMedia(zip2, media2);
+
+      // Comparaison des hash pour dédupliquer
+      const hashSet1 = new Set(media1.map(m => m.hash));
+      const uniqueMedia2 = media2.filter(m => !hashSet1.has(m.hash));
+
+      // Fusion des fichiers : tous ceux de file1 + ceux uniques de file2
+      const combinedMedia = [...media1, ...uniqueMedia2];
+
+      // Préparer le zip à reconstruire plus tard (frontend)
+      window.mediaToInclude = combinedMedia;
+      window.userData1 = userData1;
+      window.userData2 = userData2;
+
+      // Upload vers backend uniquement les 2 userData.db
       const formData = new FormData();
-      formData.append("file1", file1);
-      formData.append("file2", file2);
+      formData.append("file1", new File([userData1], "userData1.db"));
+      formData.append("file2", new File([userData2], "userData2.db"));
 
       await updateProgress(20, "Début de l'upload...", 2);
-      const uploadResponse = await uploadWithProgress(`${BASE_URL}/upload`, formData);
-      console.log("Upload réussi:", uploadResponse);
+      await uploadWithProgress(`${BASE_URL}/upload`, formData);
 
-      // Étape 3: Extraction (50-80%)
+
       await updateProgress(50, "Extraction des données...", 3);
       await simulateProcessing(3000, 80, "Analyse des contenus...", 3);
 
-      // Étape 4: Analyse (80-100%)
-      await updateProgress(80, "Détection des conflits...", 4);
+      await updateProgress(90, "Fusion en cours...", 4);
 
-      // Simulation de la réponse du serveur
-      await new Promise(r => setTimeout(r, 1500));
+      const local_datetime = document.getElementById('local_datetime').value;
+      const response = await fetch(`${BASE_URL}/merge`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "ngrok-skip-browser-warning": "true"
+        },
+        body: JSON.stringify({ local_datetime })
+      });
 
-      // Afficher les conflits (simulés)
-      document.getElementById('conflicts-section').classList.remove('hidden');
-      await updateProgress(100, "Prêt à fusionner!", 5);
+      if (!response.ok) throw new Error("Échec de la fusion");
+
+      await simulateProcessing(1000, 100, "Préparation du téléchargement...", 5);
+
+      // ✅ Assure que la barre est bien à 100%
+      await updateProgress(100, "Fichier prêt", 5);
+
+      // Étape 5 : marquée comme terminée
+      const step5 = document.getElementById("step5");
+      step5.classList.remove("active");
+      step5.classList.add("completed");
+
+      // Texte final
+      document.getElementById("progressDetails").textContent = "Fichier prêt";
+
+
+      // Afficher le bouton de téléchargement
+      const downloadLink = document.getElementById('download');
+      downloadLink.href = `${BASE_URL}/download?ngrok-skip-browser-warning=true`;
+      downloadLink.classList.remove('hidden');
+
+      // Résumé clair
+      const summaryText = document.getElementById('summary-text');
+      summaryText.innerHTML = `
+        La fusion est terminée. Les données identiques (notes, surlignages, marques-pages, playlists, etc.) ont été conservées.
+        Les éléments uniques de chaque fichier ont été ajoutés.<br><br>
+        <strong>💡 Si le téléchargement ne démarre pas automatiquement, cliquez sur le bouton ci-dessous.</strong>
+      `;
+      document.getElementById('merge-summary').classList.remove('hidden');
+
+      // Déclenche le téléchargement automatique
+      await rebuildFinalZip();
+
+      document.getElementById("progressDetails").textContent = "✅ Téléchargement terminé ou en cours.";
+
+      // Change le bouton pour relancer le téléchargement
+      mergeButton.textContent = "Débuter le téléchargement";
+      setTimeout(() => {
+        mergeButton.disabled = false;
+        mergeButton.textContent = "Débuter le téléchargement";
+        mergeButton.onclick = () => {
+          window.location.href = downloadLink.href;
+        };
+      }, 1000);
 
     } catch (error) {
       console.error("Erreur:", error);
@@ -375,54 +463,36 @@
     }
   }
 
-  // Résolution des conflits
-  async function resolveConflicts() {
-    try {
-      document.getElementById('resolveButton').disabled = true;
+  async function rebuildFinalZip() {
+    const zip = new JSZip();
 
-      // Récupération des choix
-      const getSelectedChoices = (prefix) => {
-        const choices = {};
-        document.querySelectorAll(`[name^="${prefix}_"]:checked`).forEach(el => {
-          choices[el.name.replace(`${prefix}_`, "")] = el.value;
-        });
-        return choices;
-      };
+    // 1. Télécharger le userData.db fusionné
+    const response = await fetch(`${BASE_URL}/download?ngrok-skip-browser-warning=true`);
+    const mergedBlob = await response.blob();
+    zip.file("userData.db", mergedBlob);
 
-      const payload = {
-        conflicts_notes: getSelectedChoices("note"),
-        conflicts_highlights: getSelectedChoices("highlight"),
-        local_datetime: document.getElementById('local_datetime').value
-      };
-
-      // Envoi au serveur
-      await updateProgress(100, "Fusion en cours...", 5);
-      const response = await fetch(`${BASE_URL}/merge`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true"
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!response.ok) throw new Error("Échec de la fusion");
-
-      // Simulation du traitement final
-      await simulateProcessing(1000, 100, "Préparation du téléchargement...", 5);
-
-      // Téléchargement
-      const downloadLink = document.getElementById('download');
-      downloadLink.href = `${BASE_URL}/download?ngrok-skip-browser-warning=true`;
-      downloadLink.classList.remove('hidden');
-      downloadLink.click();
-
-    } catch (error) {
-      console.error("Erreur de fusion:", error);
-      await updateProgress(100, `Erreur: ${error.message}`);
-      document.getElementById('resolveButton').disabled = false;
+    // 2. Ajouter les médias conservés
+    for (const media of window.mediaToInclude || []) {
+      const content = await media.file.async("arraybuffer");
+      zip.file(media.name, content);
     }
+
+    // 3. Générer le ZIP final
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+
+    // 4. Déclencher le téléchargement
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "fusionne.jwlibrary";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    // 5. Nettoyer le lien temporaire
+    URL.revokeObjectURL(url);
   }
+
 </script>
 </body>
 </html>
