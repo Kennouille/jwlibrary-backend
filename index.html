@@ -332,11 +332,6 @@
         throw new Error("Veuillez indiquer la date et l'heure locales actuelles");
       }
 
-      const MAX_SIZE = 50 * 1024 * 1024;
-      if (file1.size > MAX_SIZE || file2.size > MAX_SIZE) {
-        throw new Error("Fichier trop volumineux (>50MB)");
-      }
-
       const mergeButton = document.getElementById('mergeButton');
       mergeButton.disabled = true;
 
@@ -350,6 +345,12 @@
       // Récupération des userData.db
       const userData1 = await zip1.file("userData.db").async("blob");
       const userData2 = await zip2.file("userData.db").async("blob");
+
+      // Vérification taille des fichiers userData.db
+      const maxCombinedSize = 95 * 1024 * 1024; // 95MB
+      if (userData1.size + userData2.size > maxCombinedSize) {
+        throw new Error("Les fichiers userData.db sont trop volumineux (plus de 95MB combinés).");
+      }
 
       // Filtrage des fichiers médias (images / vidéos)
       const mediaExtensions = [".jpg", ".jpeg", ".png", ".mp4"];

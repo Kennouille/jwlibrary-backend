@@ -299,7 +299,7 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
 def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
     """
     Fusionne les bookmarks tout en respectant les doublons sur (PublicationLocationId, Slot).
-    Retourne un mapping { (db_path, old_id) : new_id } si tu veux l'étendre plus tard.
+    Retourne un mapping { (db_path, old_id) : new_id }.
     """
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
@@ -329,27 +329,31 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
                 new_loc_id = location_id_map.get((db_path, loc_id), loc_id)
                 new_pub_loc_id = location_id_map.get((db_path, pub_loc_id), pub_loc_id)
 
+                # Vérifie que les LocationIds existent bien
                 cursor.execute("SELECT 1 FROM Location WHERE LocationId IN (?, ?)", (new_loc_id, new_pub_loc_id))
                 if len(cursor.fetchall()) != 2:
                     print(f"⚠️  Location {new_loc_id} ou {new_pub_loc_id} manquante - Bookmark ignoré")
                     continue
 
+                # Vérifie si le couple (PublicationLocationId, Slot) existe déjà
                 cursor.execute("""
-                    SELECT 1 FROM Bookmark 
+                    SELECT BookmarkId FROM Bookmark
                     WHERE PublicationLocationId = ? AND Slot = ?
                 """, (new_pub_loc_id, slot))
-                if cursor.fetchone():
+                existing = cursor.fetchone()
+                if existing:
                     print(f"Bookmark ignoré : doublon PublicationLocationId={new_pub_loc_id}, Slot={slot}")
                     continue
 
+                # Insère la nouvelle ligne (sans imposer BookmarkId)
                 cursor.execute("""
                     INSERT INTO Bookmark
                     (LocationId, PublicationLocationId, Slot, Title,
                      Snippet, BlockType, BlockIdentifier)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (new_loc_id, new_pub_loc_id, slot, title, snippet, block_type, block_id))
-                # Pas besoin d'indiquer BookmarkId, il sera auto-généré
-                mapping[(db_path, old_id)] = cursor.lastrowid
+                new_id = cursor.lastrowid
+                mapping[(db_path, old_id)] = new_id
 
     conn.commit()
     conn.close()
