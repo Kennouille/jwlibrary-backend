@@ -1723,67 +1723,15 @@ def merge_data():
 
         print("\n=== PRÊT POUR FUSION ===\n")
 
-        # --- FUSION DE BOOKMARKS (sans suppression préalable) ---
-        conn = sqlite3.connect(merged_db_path)
-        cursor = conn.cursor()
-
-        for db_path in [file1_db, file2_db]:
-            source_conn = sqlite3.connect(db_path)
-            source_cursor = source_conn.cursor()
-
-            print(f"\nDEBUG: Contenu de {db_path} avant fusion:")
-            source_cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            tables = [t[0] for t in source_cursor.fetchall()]
-            print(f"Tables disponibles: {tables}")
-
-            if 'Playlist' in tables:
-                source_cursor.execute("SELECT COUNT(*) FROM Playlist")
-                count = source_cursor.fetchone()[0]
-                print(f"Nombre de playlists: {count}")
-                source_cursor.execute("SELECT PlaylistId, Name FROM Playlist LIMIT 5")
-                print(f"Exemples de playlists: {source_cursor.fetchall()}")
-
-            source_cursor.execute("""
-                SELECT BookmarkId, LocationId, PublicationLocationId, Slot, Title, 
-                       Snippet, BlockType, BlockIdentifier
-                FROM Bookmark
-            """)
-            for row in source_cursor.fetchall():
-                b_id, loc_id, pub_loc_id, slot, title, snippet, block_type, block_id = row
-
-                new_loc_id = location_id_map.get((db_path, loc_id), loc_id)
-                new_pub_loc_id = location_id_map.get((db_path, pub_loc_id), pub_loc_id)
-
-                # Vérification de l'existence des locations
-                cursor.execute("SELECT 1 FROM Location WHERE LocationId IN (?, ?)", (new_loc_id, new_pub_loc_id))
-                if len(cursor.fetchall()) != 2:
-                    print(f"Attention : Location {new_loc_id} ou {new_pub_loc_id} manquante - Bookmark ignoré")
-                    continue
-
-                # Empêche les doublons exacts
-                cursor.execute("""
-                    SELECT 1 FROM Bookmark 
-                    WHERE PublicationLocationId=? AND Slot=?
-                """, (new_pub_loc_id, slot))
-                exists = cursor.fetchone()
-
-                if not exists:
-                    try:
-                        cursor.execute("""
-                            INSERT INTO Bookmark
-                            (LocationId, PublicationLocationId, Slot, Title,
-                             Snippet, BlockType, BlockIdentifier)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (new_loc_id, new_pub_loc_id, slot, title, snippet, block_type, block_id))
-                    except sqlite3.IntegrityError as e:
-                        print(f"Erreur insertion BookmarkId={b_id}: {e}")
-                else:
-                    print(f"Bookmark ignoré : doublon PublicationLocationId={new_pub_loc_id}, Slot={slot}")
-
-            source_conn.close()
-
-        conn.commit()
-        conn.close()
+        # --- FUSION DE BOOKMARKS (désormais déléguée à merge_bookmarks) ---
+        print("\n=== FUSION BOOKMARKS ===")
+        bookmark_id_map = merge_bookmarks(
+            merged_db_path,
+            file1_db,
+            file2_db,
+            location_id_map
+        )
+        print(f"Mapping BookmarkId : {bookmark_id_map}")
 
         # --- SECTION BLOCKRANGE ---
         conn = sqlite3.connect(merged_db_path)
