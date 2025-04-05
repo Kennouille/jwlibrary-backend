@@ -482,7 +482,11 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
 def update_location_references(merged_db_path, location_replacements):
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
-    tables_with_single_location = ["InputField", "Note", "PlaylistItemLocationMap", "TagMap", "UserMark"]
+
+    tables_with_single_location = [
+        "InputField", "Note", "PlaylistItemLocationMap", "TagMap", "UserMark"
+    ]
+
     for table in tables_with_single_location:
         for old_loc, new_loc in location_replacements.items():
             try:
@@ -490,14 +494,43 @@ def update_location_references(merged_db_path, location_replacements):
                 print(f"{table} mis à jour: LocationId {old_loc} -> {new_loc}")
             except Exception as e:
                 print(f"Erreur mise à jour {table} pour LocationId {old_loc}: {e}")
-    # Pour Bookmark, mettre à jour LocationId et PublicationLocationId
+
+    # Mise à jour sécurisée pour Bookmark
     for old_loc, new_loc in location_replacements.items():
         try:
             cursor.execute("UPDATE Bookmark SET LocationId = ? WHERE LocationId = ?", (new_loc, old_loc))
-            cursor.execute("UPDATE Bookmark SET PublicationLocationId = ? WHERE PublicationLocationId = ?", (new_loc, old_loc))
-            print(f"Bookmark mis à jour: LocationId {old_loc} -> {new_loc} et PublicationLocationId {old_loc} -> {new_loc}")
+            print(f"Bookmark LocationId mis à jour: {old_loc} -> {new_loc}")
         except Exception as e:
-            print(f"Erreur mise à jour Bookmark pour LocationId {old_loc}: {e}")
+            print(f"Erreur mise à jour Bookmark LocationId {old_loc}: {e}")
+
+        try:
+            # Sélection des lignes concernées par PublicationLocationId
+            cursor.execute("""
+                SELECT BookmarkId, Slot FROM Bookmark
+                WHERE PublicationLocationId = ?
+            """, (old_loc,))
+            rows = cursor.fetchall()
+
+            for bookmark_id, slot in rows:
+                cursor.execute("""
+                    SELECT 1 FROM Bookmark
+                    WHERE PublicationLocationId = ? AND Slot = ? AND BookmarkId != ?
+                """, (new_loc, slot, bookmark_id))
+                conflict = cursor.fetchone()
+
+                if conflict:
+                    print(f"⚠️ Mise à jour ignorée pour Bookmark ID {bookmark_id} (conflit avec PublicationLocationId={new_loc}, Slot={slot})")
+                else:
+                    cursor.execute("""
+                        UPDATE Bookmark
+                        SET PublicationLocationId = ?
+                        WHERE BookmarkId = ?
+                    """, (new_loc, bookmark_id))
+                    print(f"Bookmark PublicationLocationId mis à jour: {old_loc} -> {new_loc} (BookmarkId {bookmark_id})")
+
+        except Exception as e:
+            print(f"Erreur sécurisée mise à jour PublicationLocationId {old_loc}: {e}")
+
     conn.commit()
     conn.close()
 
