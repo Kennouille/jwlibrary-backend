@@ -217,6 +217,8 @@
     </div>
   </div>
 
+  <div id="merge-log" class="console-log" style="font-family: monospace; margin-top: 1em;"></div>
+
   <div id="progressContainer">
     <div id="progressBar"></div>
     <div id="progressText">0%</div>
@@ -278,6 +280,12 @@
       if (index + 1 < step) el.classList.add('completed');
       else if (index + 1 === step) el.classList.add('active');
     });
+  }
+
+  function appendToMergeLog(text) {
+    const log = document.getElementById('merge-log');
+    log.innerHTML += `${text}<br>`;
+    log.scrollTop = log.scrollHeight;
   }
 
   async function simulateProcessing(duration, targetPercent, message, step) {
@@ -402,8 +410,19 @@
       await simulateProcessing(3000, 80, "Analyse des contenus...", 3);
 
       await updateProgress(90, "Fusion en cours...", 4);
+      appendToMergeLog("Fusion en cours, veuillez patienter...");
 
       const local_datetime = document.getElementById('local_datetime').value;
+
+      // Lancer une animation douce vers 99% pendant la fusion
+      let fusionProgress = 90;
+      const fusionInterval = setInterval(() => {
+        if (fusionProgress < 99) {
+          fusionProgress += 0.2;
+          updateProgress(fusionProgress, "Fusion en cours...", 4);
+        }
+      }, 500);
+
       const response = await fetch(`${BASE_URL}/merge`, {
         method: "POST",
         headers: {
@@ -412,6 +431,8 @@
         },
         body: JSON.stringify({ local_datetime })
       });
+
+      clearInterval(fusionInterval);
 
       if (!response.ok) throw new Error("Échec de la fusion");
 
