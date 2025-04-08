@@ -230,7 +230,7 @@ def create_table_if_missing(merged_conn, source_db_paths, table):
 
 def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
     if exclude_tables is None:
-        exclude_tables = ["Note", "UserMark"]
+        exclude_tables = ["Note", "UserMark", "Bookmark"]
     checkpoint_db(db1_path)
     checkpoint_db(db2_path)
     conn_db1 = sqlite3.connect(db1_path)
@@ -347,6 +347,8 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
                 if existing:
                     print(f"Bookmark ignoré : doublon PublicationLocationId={new_pub_loc_id}, Slot={slot}")
                     continue
+
+                print(f"Insertion Bookmark: old_id={old_id}, Slot={slot}, PubLocId={new_pub_loc_id}, Title='{title}'")
 
                 # Insère la nouvelle ligne (sans imposer BookmarkId)
                 cursor.execute("""
