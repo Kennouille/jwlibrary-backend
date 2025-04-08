@@ -57,3 +57,75 @@ button:hover {
 #download:hover {
     background: #218838;
 }
+
+.progress-bar {
+    transition: background-image 0.3s ease, box-shadow 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Pour l'effet de vague */
+.progress-bar.wave::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(255,255,255,0.8) 50%,
+        transparent 100%
+    );
+    animation: wave 2s infinite linear;
+}
+
+@keyframes wave {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+/* Ajoutez à votre section CSS existante */
+.file-construction {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 20px 0;
+}
+
+.construction-animation {
+    width: 100%;
+    height: 60px;
+    position: relative;
+    background-color: #f0f0f0;
+    border-radius: 5px;
+    overflow: hidden;
+    margin-bottom: 10px;
+}
+
+.construction-block {
+    position: absolute;
+    bottom: 0;
+    height: 0;
+    background-color: #3498db;
+    transition: height 0.3s ease, width 0.3s ease;
+    border-radius: 3px;
+}
+
+.construction-text {
+    font-size: 14px;
+    color: #7f8c8d;
+    text-align: center;
+    min-height: 20px;
+}
+
+.construction-dots {
+    display: inline-block;
+    animation: dotPulse 1.5s infinite steps(4);
+}
+
+@keyframes dotPulse {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+}

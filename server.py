@@ -1843,14 +1843,6 @@ def merge_data():
         conn.commit()
         conn.close()
 
-        # --- Nouvelle étape : fusion des bookmarks
-        try:
-            bookmark_id_map = merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map)
-            print("Mapping BookmarkId :", bookmark_id_map)
-        except Exception as e:
-            print(f"Erreur lors de la fusion des bookmarks : {e}")
-            return jsonify({"error": "Échec de la fusion des bookmarks"}), 500
-
         independent_media_map = merge_independent_media(merged_db_path, file1_db, file2_db)
         print("Mapping IndependentMedia :", independent_media_map)
 
