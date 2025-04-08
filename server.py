@@ -248,6 +248,10 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
     merged_cursor = merged_conn.cursor()
     source_db_paths = [db1_path, db2_path]
     for table in all_tables:
+        if table in {"Bookmark", "IndependentMedia"}:
+            print(f"Table {table} ignorée : fusion déjà gérée manuellement.")
+            continue
+
         create_table_if_missing(merged_conn, source_db_paths, table)
         merged_cursor.execute(f"PRAGMA table_info({table})")
         columns_info = merged_cursor.fetchall()
