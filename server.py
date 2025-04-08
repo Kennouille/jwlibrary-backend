@@ -63,51 +63,54 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
     """
     print("\n[FUSION INDEPENDENTMEDIA]")
     mapping = {}
-    merged_conn = sqlite3.connect(merged_db_path)
-    merged_cursor = merged_conn.cursor()
+    with sqlite3.connect(merged_db_path) as merged_conn:
+        merged_cursor = merged_conn.cursor()
 
-    for db_path in [file1_db, file2_db]:
-        print(f"Traitement de {db_path}")
-        with sqlite3.connect(db_path) as src_conn:
-            src_cursor = src_conn.cursor()
-            src_cursor.execute("""
-                SELECT IndependentMediaId, OriginalFilename, FilePath, MimeType, Hash
-                FROM IndependentMedia
-            """)
-            rows = src_cursor.fetchall()
-
-            for row in rows:
-                old_id, orig_fn, file_path, mime, hash_val = row
-                print(f"  - Média : {orig_fn}, Hash={hash_val}")
-
-                merged_cursor.execute("""
-                    SELECT IndependentMediaId, MimeType
+        for db_path in [file1_db, file2_db]:
+            print(f"Traitement de {db_path}")
+            with sqlite3.connect(db_path) as src_conn:
+                src_cursor = src_conn.cursor()
+                src_cursor.execute("""
+                    SELECT IndependentMediaId, OriginalFilename, FilePath, MimeType, Hash
                     FROM IndependentMedia
-                    WHERE OriginalFilename = ? AND FilePath = ? AND Hash = ?
-                """, (orig_fn, file_path, hash_val))
-                result = merged_cursor.fetchone()
+                """)
+                rows = src_cursor.fetchall()
 
-                if result:
-                    new_id, existing_mime = result
-                    if existing_mime != mime:
-                        print(f"    > Mise à jour MimeType pour ID {new_id}")
-                        merged_cursor.execute("""
-                            UPDATE IndependentMedia
-                            SET MimeType = ?
-                            WHERE IndependentMediaId = ?
-                        """, (mime, new_id))
-                else:
+                for row in rows:
+                    old_id, orig_fn, file_path, mime, hash_val = row
+                    print(f"  - Média : {orig_fn}, Hash={hash_val}")
+
+                    # Vérifie si la ligne existe déjà (évite doublons)
                     merged_cursor.execute("""
-                        INSERT INTO IndependentMedia (OriginalFilename, FilePath, MimeType, Hash)
-                        VALUES (?, ?, ?, ?)
-                    """, (orig_fn, file_path, mime, hash_val))
-                    new_id = merged_cursor.lastrowid
-                    print(f"    > Insertion nouvelle ligne ID {new_id}")
+                        SELECT IndependentMediaId, MimeType
+                        FROM IndependentMedia
+                        WHERE OriginalFilename = ? AND FilePath = ? AND Hash = ?
+                    """, (orig_fn, file_path, hash_val))
+                    result = merged_cursor.fetchone()
 
-                mapping[(db_path, old_id)] = new_id
+                    if result:
+                        new_id, existing_mime = result
+                        if existing_mime != mime:
+                            print(f"    > Mise à jour MimeType pour ID {new_id}")
+                            merged_cursor.execute("""
+                                UPDATE IndependentMedia
+                                SET MimeType = ?
+                                WHERE IndependentMediaId = ?
+                            """, (mime, new_id))
+                    else:
+                        # Insertion sans spécifier l'ID, SQLite gère automatiquement
+                        merged_cursor.execute("""
+                            INSERT INTO IndependentMedia (OriginalFilename, FilePath, MimeType, Hash)
+                            VALUES (?, ?, ?, ?)
+                        """, (orig_fn, file_path, mime, hash_val))
+                        new_id = merged_cursor.lastrowid
+                        print(f"    > Insertion nouvelle ligne ID {new_id}")
 
-    merged_conn.commit()
-    merged_conn.close()
+                    # Important : utiliser lastrowid OU l'ID trouvé
+                    mapping[(db_path, old_id)] = new_id
+
+        merged_conn.commit()
+
     print("Fusion IndependentMedia terminée.")
     return mapping
 
@@ -490,8 +493,26 @@ def update_location_references(merged_db_path, location_replacements):
     for table in tables_with_single_location:
         for old_loc, new_loc in location_replacements.items():
             try:
-                cursor.execute(f"UPDATE {table} SET LocationId = ? WHERE LocationId = ?", (new_loc, old_loc))
-                print(f"{table} mis à jour: LocationId {old_loc} -> {new_loc}")
+                if table == "InputField":
+                    # On gère ligne par ligne pour éviter les doublons
+                    cursor.execute("SELECT TextTag FROM InputField WHERE LocationId = ?", (old_loc,))
+                    texttags = cursor.fetchall()
+                    for (texttag,) in texttags:
+                        cursor.execute("""
+                            SELECT 1 FROM InputField WHERE LocationId = ? AND TextTag = ?
+                        """, (new_loc, texttag))
+                        if cursor.fetchone():
+                            print(
+                                f"⚠️ Mise à jour ignorée pour InputField: LocationId {old_loc} -> {new_loc}, TextTag={texttag}")
+                            continue
+                        cursor.execute("""
+                            UPDATE InputField SET LocationId = ?
+                            WHERE LocationId = ? AND TextTag = ?
+                        """, (new_loc, old_loc, texttag))
+                        print(f"InputField mis à jour: LocationId {old_loc} -> {new_loc}, TextTag={texttag}")
+                else:
+                    cursor.execute(f"UPDATE {table} SET LocationId = ? WHERE LocationId = ?", (new_loc, old_loc))
+                    print(f"{table} mis à jour: LocationId {old_loc} -> {new_loc}")
             except Exception as e:
                 print(f"Erreur mise à jour {table} pour LocationId {old_loc}: {e}")
 
@@ -1723,15 +1744,14 @@ def merge_data():
 
         print("\n=== PRÊT POUR FUSION ===\n")
 
-        # --- FUSION DE BOOKMARKS (désormais déléguée à merge_bookmarks) ---
+        # --- FUSION BOOKMARKS ---
         print("\n=== FUSION BOOKMARKS ===")
-        bookmark_id_map = merge_bookmarks(
-            merged_db_path,
-            file1_db,
-            file2_db,
-            location_id_map
-        )
-        print(f"Mapping BookmarkId : {bookmark_id_map}")
+        try:
+            bookmark_id_map = merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map)
+            print("Mapping BookmarkId :", bookmark_id_map)
+        except Exception as e:
+            print(f"Erreur lors de la fusion des bookmarks : {e}")
+            return jsonify({"error": "Échec de la fusion des bookmarks"}), 500
 
         # --- SECTION BLOCKRANGE ---
         conn = sqlite3.connect(merged_db_path)
@@ -1842,9 +1862,6 @@ def merge_data():
             source_conn.close()
         conn.commit()
         conn.close()
-
-        independent_media_map = merge_independent_media(merged_db_path, file1_db, file2_db)
-        print("Mapping IndependentMedia :", independent_media_map)
 
         try:
             tag_id_map, tagmap_id_map = merge_tags_and_tagmap(
