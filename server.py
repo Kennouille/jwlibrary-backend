@@ -508,9 +508,26 @@ def update_location_references(merged_db_path, location_replacements):
                             SELECT 1 FROM InputField WHERE LocationId = ? AND TextTag = ?
                         """, (new_loc, texttag))
                         if cursor.fetchone():
+                            # Conflit détecté, on cherche un TextTag libre
+                            base_tag = texttag
+                            i = 1
+                            new_tag = f"{base_tag}_{i}"
+                            while True:
+                                cursor.execute("""
+                                    SELECT 1 FROM InputField WHERE LocationId = ? AND TextTag = ?
+                                """, (new_loc, new_tag))
+                                if not cursor.fetchone():
+                                    break
+                                i += 1
+                                new_tag = f"{base_tag}_{i}"
+
+                            # Met à jour en modifiant le TextTag
+                            cursor.execute("""
+                                UPDATE InputField SET LocationId = ?, TextTag = ?
+                                WHERE LocationId = ? AND TextTag = ?
+                            """, (new_loc, new_tag, old_loc, base_tag))
                             print(
-                                f"⚠️ Mise à jour ignorée pour InputField: LocationId {old_loc} -> {new_loc}, TextTag={texttag}")
-                            continue
+                                f"⚠️ Conflit évité : LocationId {old_loc} -> {new_loc}, TextTag={base_tag} devient {new_tag}")
                         cursor.execute("""
                             UPDATE InputField SET LocationId = ?
                             WHERE LocationId = ? AND TextTag = ?
