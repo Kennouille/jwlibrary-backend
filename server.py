@@ -230,7 +230,7 @@ def create_table_if_missing(merged_conn, source_db_paths, table):
 
 def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
     if exclude_tables is None:
-        exclude_tables = ["Note", "UserMark", "Bookmark"]
+        exclude_tables = ["Note", "UserMark", "Bookmark", "InputField"]
     checkpoint_db(db1_path)
     checkpoint_db(db2_path)
     conn_db1 = sqlite3.connect(db1_path)
@@ -248,7 +248,7 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
     merged_cursor = merged_conn.cursor()
     source_db_paths = [db1_path, db2_path]
     for table in all_tables:
-        if table in {"Bookmark", "IndependentMedia"}:
+        if table in {"Bookmark", "IndependentMedia", "InputField"}:
             print(f"Table {table} ignorée : fusion déjà gérée manuellement.")
             continue
 
