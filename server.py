@@ -1415,7 +1415,8 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
                 'LastModified', 'Tag', 'TagMap', 'PlaylistItem',
                 'PlaylistItemAccuracy', 'PlaylistItemLocationMap',
                 'PlaylistItemMarker', 'PlaylistItemMarkerBibleVerseMap',
-                'PlaylistItemMarkerParagraphMap', 'PlaylistItemIndependentMediaMap'
+                'PlaylistItemMarkerParagraphMap', 'PlaylistItemIndependentMediaMap',
+                'InputField'  # ← ajoute ceci
             ]
         )
 
