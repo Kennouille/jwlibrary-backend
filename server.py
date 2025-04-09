@@ -1883,6 +1883,7 @@ def merge_data():
         conn.commit()
         conn.close()
 
+        # --- Étape 1 : fusion des Tags et TagMap (utilise location_id_map) ---
         try:
             tag_id_map, tagmap_id_map = merge_tags_and_tagmap(
                 merged_db_path,
@@ -1899,6 +1900,7 @@ def merge_data():
         print(f"Tag ID Map: {tag_id_map}")
         print(f"TagMap ID Map: {tagmap_id_map}")
 
+        # --- Vérification Tag ---
         print("\n=== TAGS VERIFICATION ===")
         with sqlite3.connect(merged_db_path) as conn:
             cursor = conn.cursor()
@@ -1916,6 +1918,7 @@ def merge_data():
             orphaned = cursor.fetchone()[0]
             print(f"TagMaps orphelins: {orphaned}")
 
+        # --- Étape 2 : fusion des playlists ---
         merged_file, playlist_count, playlist_item_count, media_count, cleaned_items, integrity_check = merge_playlists(
             merged_db_path, file1_db, file2_db, location_id_map, independent_media_map
         )
@@ -1923,13 +1926,14 @@ def merge_data():
         if not merged_file:
             return jsonify({"error": "Échec de la fusion des playlists"}), 500
 
-        # --- Mise à jour des LocationId résiduels
-        location_replacements_flat = {}
-        for (db_path, old_id), new_id in location_id_map.items():
-            location_replacements_flat[old_id] = new_id
-
+        # --- Étape 3 : mise à jour des LocationId résiduels (utilise le MÊME mapping) ---
+        print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
+        location_replacements_flat = {
+            old_id: new_id for (_, old_id), new_id in location_id_map.items()
+        }
         update_location_references(merged_db_path, location_replacements_flat)
 
+        # --- Étape 4 : vérification post-fusion ---
         print("\n=== VERIFICATION POST-FUSION ===")
         with sqlite3.connect(merged_db_path) as conn:
             cur = conn.cursor()
@@ -1937,6 +1941,7 @@ def merge_data():
             count = cur.fetchone()[0]
             print(f"Nombre d'enregistrements dans PlaylistItem après fusion : {count}")
 
+        # --- Résultat final ---
         return jsonify({
             "status": "success",
             "merged_file": merged_file,
