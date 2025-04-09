@@ -1817,10 +1817,6 @@ def merge_data():
             usermark_guid_map[guid] = new_id
         conn.close()
 
-        # Fusion des Notes
-        location_id_map = merge_location_from_sources(merged_db_path, file1_db, file2_db)
-        print("Location ID Map:", location_id_map)
-
         conn = sqlite3.connect(merged_db_path)
         cursor = conn.cursor()
         cursor.execute("DELETE FROM Note")
