@@ -490,10 +490,12 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
 
 def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
     print("\n[FUSION INPUTFIELD]")
+    inserted_count = 0
+    skipped_count = 0
+    missing_count = 0
+
     with sqlite3.connect(merged_db_path) as merged_conn:
         merged_cursor = merged_conn.cursor()
-        merged_cursor.execute("SELECT COALESCE(MAX(rowid), 0) FROM InputField")
-        max_row_id = merged_cursor.fetchone()[0]
 
         for db_path in [file1_db, file2_db]:
             with sqlite3.connect(db_path) as src_conn:
@@ -503,17 +505,20 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
 
                 for loc_id, tag, value in rows:
                     mapped_loc = location_id_map.get((db_path, loc_id))
+
                     if mapped_loc is None:
-                        print(f"⚠️ LocationId {loc_id} introuvable pour {tag} dans {db_path}")
+                        print(f"❌ LocationId {loc_id} (depuis {db_path}) non mappé — ligne ignorée")
+                        missing_count += 1
                         continue
 
-                    # Vérifie s’il existe déjà cette ligne exacte
+                    # Vérifie si déjà présent
                     merged_cursor.execute("""
                         SELECT 1 FROM InputField
                         WHERE LocationId = ? AND TextTag = ?
                     """, (mapped_loc, tag))
                     if merged_cursor.fetchone():
                         print(f"⏩ Doublon ignoré : LocationId={mapped_loc}, TextTag={tag}")
+                        skipped_count += 1
                         continue
 
                     try:
@@ -522,8 +527,14 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
                             VALUES (?, ?, ?)
                         """, (mapped_loc, tag, value))
                         print(f"✅ Insert InputField : Loc={mapped_loc}, Tag={tag}")
+                        inserted_count += 1
                     except Exception as e:
                         print(f"❌ Erreur insertion InputField ({mapped_loc}, {tag}): {e}")
+
+    print("\n=== STATISTIQUES INPUTFIELD ===")
+    print(f"✅ Lignes insérées     : {inserted_count}")
+    print(f"⏩ Doublons ignorés    : {skipped_count}")
+    print(f"❌ LocationId manquants : {missing_count}")
 
 
 def update_location_references(merged_db_path, location_replacements):
