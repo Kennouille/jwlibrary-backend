@@ -1739,8 +1739,7 @@ def merge_data():
         note_mapping = create_note_mapping(merged_db_path, file1_db, file2_db)
         print("Note Mapping:", note_mapping)
 
-        # ===== Fusion des tables critiques et vérification =====
-        location_id_map = merge_location_from_sources(merged_db_path, file1_db, file2_db)
+        # ===== Vérification du mapping déjà construit =====
         print("\n=== LOCATION VERIFICATION ===")
         print(f"Total Locations: {len(location_id_map)}")
         with sqlite3.connect(merged_db_path) as conn:
