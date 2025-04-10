@@ -369,17 +369,23 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
     return mapping
 
 
-def merge_usermark_with_id_relabeling(merged_db_path, source_db_path):
+def merge_usermark_with_id_relabeling(merged_db_path, source_db_path, location_id_map):
     conn_merged = sqlite3.connect(merged_db_path)
     cur_merged = conn_merged.cursor()
+
+    # Récupère les IDs existants pour éviter les conflits
     cur_merged.execute("SELECT UserMarkId FROM UserMark")
     existing_ids = set(row[0] for row in cur_merged.fetchall())
     current_max_id = max(existing_ids) if existing_ids else 0
+
+    # Charge les données source
     conn_source = sqlite3.connect(source_db_path)
     cur_source = conn_source.cursor()
     cur_source.execute("SELECT UserMarkId, ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version FROM UserMark")
     source_rows = cur_source.fetchall()
     conn_source.close()
+
+    # Création du mapping UserMarkId (si conflits)
     replacements = {}
     for row in source_rows:
         old_id = row[0]
@@ -390,6 +396,8 @@ def merge_usermark_with_id_relabeling(merged_db_path, source_db_path):
         else:
             replacements[old_id] = old_id
             existing_ids.add(old_id)
+
+    # Insertion dans la base fusionnée avec LocationId mappé
     for row in source_rows:
         old_id = row[0]
         new_id = replacements[old_id]
@@ -398,13 +406,18 @@ def merge_usermark_with_id_relabeling(merged_db_path, source_db_path):
         StyleIndex = row[3]
         UserMarkGuid = row[4]
         Version = row[5]
+
+        # Mapping du LocationId
+        mapped_loc_id = location_id_map.get((source_db_path, LocationId), LocationId)
+
         try:
             cur_merged.execute("""
                 INSERT INTO UserMark (UserMarkId, ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (new_id, ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version))
+            """, (new_id, ColorIndex, mapped_loc_id, StyleIndex, UserMarkGuid, Version))
         except Exception as e:
             print(f"Erreur insertion UserMark old_id={old_id}, new_id={new_id}: {e}")
+
     conn_merged.commit()
     conn_merged.close()
     return replacements
@@ -741,6 +754,8 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
         return [(db_path,) + row for row in rows]
 
     locations = read_locations(file1_db) + read_locations(file2_db)
+
+    print(f"[DEBUG] Total locations: file1={len(read_locations(file1_db))}, file2={len(read_locations(file2_db))}")
 
     conn = sqlite3.connect(merged_db_path)
     cur = conn.cursor()
