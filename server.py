@@ -497,7 +497,7 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
         for db_path in [file1_db, file2_db]:
             with sqlite3.connect(db_path) as src_conn:
                 src_cursor = src_conn.cursor()
-                src_cursor.execute("SELECT LocationId, TextTag, Content FROM InputField")
+                src_cursor.execute("SELECT LocationId, TextTag, Value FROM InputField")
                 rows = src_cursor.fetchall()
 
                 for loc_id, tag, content in rows:
