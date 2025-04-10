@@ -487,6 +487,43 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
 
     return blockrange_replacements
 
+def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
+    print("\n[FUSION INPUTFIELD]")
+    with sqlite3.connect(merged_db_path) as merged_conn:
+        merged_cursor = merged_conn.cursor()
+        merged_cursor.execute("SELECT COALESCE(MAX(rowid), 0) FROM InputField")
+        max_row_id = merged_cursor.fetchone()[0]
+
+        for db_path in [file1_db, file2_db]:
+            with sqlite3.connect(db_path) as src_conn:
+                src_cursor = src_conn.cursor()
+                src_cursor.execute("SELECT LocationId, TextTag, Content FROM InputField")
+                rows = src_cursor.fetchall()
+
+                for loc_id, tag, content in rows:
+                    mapped_loc = location_id_map.get((db_path, loc_id))
+                    if mapped_loc is None:
+                        print(f"⚠️ LocationId {loc_id} introuvable pour {tag} dans {db_path}")
+                        continue
+
+                    # Vérifie s’il existe déjà cette ligne exacte
+                    merged_cursor.execute("""
+                        SELECT 1 FROM InputField
+                        WHERE LocationId = ? AND TextTag = ?
+                    """, (mapped_loc, tag))
+                    if merged_cursor.fetchone():
+                        print(f"⏩ Doublon ignoré : LocationId={mapped_loc}, TextTag={tag}")
+                        continue
+
+                    try:
+                        merged_cursor.execute("""
+                            INSERT INTO InputField (LocationId, TextTag, Content)
+                            VALUES (?, ?, ?)
+                        """, (mapped_loc, tag, content))
+                        print(f"✅ Insert InputField : Loc={mapped_loc}, Tag={tag}")
+                    except Exception as e:
+                        print(f"❌ Erreur insertion InputField ({mapped_loc}, {tag}): {e}")
+
 
 def update_location_references(merged_db_path, location_replacements):
     conn = sqlite3.connect(merged_db_path)
@@ -679,73 +716,65 @@ def insert_usermark_if_needed(conn, usermark_tuple):
 
 
 def merge_location_from_sources(merged_db_path, file1_db, file2_db):
-    """
-    Fusionne la table Location des deux bases sources dans la base fusionnée.
-    Deux lignes sont considérées identiques si toutes les colonnes critiques sont égales :
-    (BookNumber, ChapterNumber, DocumentId, Track, IssueTagNumber, KeySymbol, MepsLanguage, Type, Title).
-    Retourne un mapping : {(db_source, ancien_LocationId) : nouveau_LocationId, ...}
-    """
     def read_locations(db_path):
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
         cur.execute("""
-            SELECT LocationId, BookNumber, ChapterNumber, DocumentId, Track, IssueTagNumber, KeySymbol, MepsLanguage, Type, Title
+            SELECT LocationId, BookNumber, ChapterNumber, DocumentId, Track,
+                   IssueTagNumber, KeySymbol, MepsLanguage, Type, Title
             FROM Location
         """)
         rows = cur.fetchall()
         conn.close()
-        # On garde l'info du chemin source pour le mapping
-        return [(db_path, ) + row for row in rows]
+        return [(db_path,) + row for row in rows]
 
-    # Lecture des données des deux sources
     locations = read_locations(file1_db) + read_locations(file2_db)
 
     conn = sqlite3.connect(merged_db_path)
     cur = conn.cursor()
 
-    # Optionnel : on vide la table Location dans la DB fusionnée pour repartir de zéro
     cur.execute("DELETE FROM Location")
 
-    location_id_map = {}    # Mapping final : {(db_source, old_LocationId) : new_LocationId}
-    existing_keys = {}      # Pour garder la trace des lignes déjà insérées
+    location_id_map = {}
     current_max_id = 0
-
-    def safe_str(val):
-        return str(val) if val is not None else "NULL"
 
     for entry in locations:
         db_source = entry[0]
         old_loc_id, book_num, chap_num, doc_id, track, issue, key_sym, meps_lang, loc_type, title = entry[1:]
 
-        # Construction de la clé de matching sur toutes les colonnes critiques
-        key = (
-            safe_str(book_num),
-            safe_str(chap_num),
-            safe_str(doc_id),
-            safe_str(track),
-            safe_str(issue),
-            safe_str(key_sym),
-            safe_str(meps_lang),
-            safe_str(loc_type),
-            safe_str(title)
-        )
+        # Vérifie si une ligne correspond à l'une des deux contraintes UNIQUE
+        cur.execute("""
+            SELECT LocationId FROM Location
+            WHERE 
+            (BookNumber IS ? AND ChapterNumber IS ? AND KeySymbol IS ? AND MepsLanguage IS ? AND Type IS ?)
+            OR
+            (KeySymbol IS ? AND IssueTagNumber IS ? AND MepsLanguage IS ? AND DocumentId IS ? AND Track IS ? AND Type IS ?)
+        """, (
+            book_num, chap_num, key_sym, meps_lang, loc_type,
+            key_sym, issue, meps_lang, doc_id, track, loc_type
+        ))
+        result = cur.fetchone()
 
-        if key in existing_keys:
-            new_loc_id = existing_keys[key]
+        if result:
+            new_loc_id = result[0]
         else:
             current_max_id += 1
             new_loc_id = current_max_id
-            existing_keys[key] = new_loc_id
-            new_row = (new_loc_id, book_num, chap_num, doc_id, track, issue, key_sym, meps_lang, loc_type, title)
+            new_row = (
+                new_loc_id, book_num, chap_num, doc_id, track, issue,
+                key_sym, meps_lang, loc_type, title
+            )
             try:
                 cur.execute("""
                     INSERT INTO Location
-                    (LocationId, BookNumber, ChapterNumber, DocumentId, Track, IssueTagNumber, KeySymbol, MepsLanguage, Type, Title)
+                    (LocationId, BookNumber, ChapterNumber, DocumentId, Track, IssueTagNumber,
+                     KeySymbol, MepsLanguage, Type, Title)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, new_row)
             except sqlite3.IntegrityError as e:
-                print(f"Erreur insertion Location pour {new_row}: {e}")
-        # Enregistre le mapping pour cette source et cet ancien ID
+                print(f"⚠️ Erreur insertion Location pour {new_row}: {e}")
+                continue
+
         location_id_map[(db_source, old_loc_id)] = new_loc_id
 
     conn.commit()
@@ -873,6 +902,7 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
     Fusionne les Tags et la table TagMap.
     Deux entrées de TagMap sont considérées identiques si, après mise à jour via les mappings,
     la référence pertinente (NoteId, LocationId ou PlaylistItemId), le TagId et la Position sont identiques.
+    Si une Position est en conflit, elle est automatiquement incrémentée jusqu'à trouver une place libre.
     """
     print("\n[FUSION TAGS ET TAGMAP]")
     conn = sqlite3.connect(merged_db_path)
@@ -913,7 +943,6 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
             for row in src_cursor.fetchall():
                 old_tagmap_id, playlist_item_id, location_id, note_id, tag_id, position = row
 
-                # Mapping des IDs
                 new_note_id = note_mapping.get((db_path, note_id)) if note_id else None
                 normalized_key = (os.path.normpath(db_path), location_id)
                 normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
@@ -926,29 +955,23 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                       f"LocId={location_id}->{new_location_id}, "
                       f"ItemId={playlist_item_id}->{new_playlist_item_id}")
 
-                # Refuser seulement si toutes les références sont nulles
                 if all(v is None for v in [new_note_id, new_location_id, new_playlist_item_id]):
                     print(f"❌ Aucune référence valide pour TagMap {old_tagmap_id} (db: {db_path})")
                     continue
 
-                # Vérifie si une ligne identique existe déjà
-                cursor.execute("""
-                    SELECT 1 FROM TagMap 
-                    WHERE TagId = ? AND Position = ? AND
-                          ((NoteId IS ? OR NoteId = ?) AND
-                           (LocationId IS ? OR LocationId = ?) AND
-                           (PlaylistItemId IS ? OR PlaylistItemId = ?))
-                """, (
-                    new_tag_id, position,
-                    new_note_id, new_note_id,
-                    new_location_id, new_location_id,
-                    new_playlist_item_id, new_playlist_item_id
-                ))
-                if cursor.fetchone():
-                    print(f"❌ Doublon exact détecté — TagMap ignoré (TagId={new_tag_id}, Pos={position})")
-                    continue
+                # Incrémenter dynamiquement la Position si nécessaire
+                tentative = position
+                while True:
+                    cursor.execute("""
+                        SELECT 1 FROM TagMap
+                        WHERE TagId = ? AND Position = ?
+                    """, (new_tag_id, tentative))
+                    if not cursor.fetchone():
+                        break
+                    tentative += 1
+                    print(f"⚠️ Conflit sur (TagId={new_tag_id}, Pos={tentative-1}) — tentative avec Pos={tentative}")
 
-                # Insertion
+                # Insertion avec Position ajustée
                 max_tagmap_id += 1
                 try:
                     cursor.execute("""
@@ -960,10 +983,10 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                         new_location_id,
                         new_note_id,
                         new_tag_id,
-                        position
+                        tentative
                     ))
                     tagmap_id_map[(db_path, old_tagmap_id)] = max_tagmap_id
-                    print(f"✅ Insertion TagMap {old_tagmap_id} OK")
+                    print(f"✅ Insertion TagMap {old_tagmap_id} OK (Position={tentative})")
                 except sqlite3.IntegrityError as e:
                     print(f"❌ Erreur insertion TagMap {old_tagmap_id}: {e}")
 
@@ -1931,6 +1954,9 @@ def merge_data():
         location_replacements_flat = {
             old_id: new_id for (_, old_id), new_id in location_id_map.items()
         }
+
+        merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
+
         update_location_references(merged_db_path, location_replacements_flat)
 
         # --- Étape 4 : vérification post-fusion ---
