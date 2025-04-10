@@ -755,8 +755,6 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
 
     locations = read_locations(file1_db) + read_locations(file2_db)
 
-    print(f"[DEBUG] Total locations: file1={len(read_locations(file1_db))}, file2={len(read_locations(file2_db))}")
-
     conn = sqlite3.connect(merged_db_path)
     cur = conn.cursor()
 
@@ -769,31 +767,39 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
         db_source = entry[0]
         old_loc_id, book_num, chap_num, doc_id, track, issue, key_sym, meps_lang, loc_type, title = entry[1:]
 
-        # Vérifie si une ligne correspond à l'une des deux contraintes UNIQUE
-        cur.execute("""
-            SELECT LocationId FROM Location
-            WHERE 
-            (BookNumber IS ? AND ChapterNumber IS ? AND KeySymbol IS ? AND MepsLanguage IS ? AND Type IS ?)
-            OR
-            (KeySymbol IS ? AND IssueTagNumber IS ? AND MepsLanguage IS ? AND DocumentId IS ? AND Track IS ? AND Type IS ?)
-        """, (
-            book_num, chap_num, key_sym, meps_lang, loc_type,
-            key_sym, issue, meps_lang, doc_id, track, loc_type
-        ))
-        result = cur.fetchone()
+        found = False
+        new_loc_id = None
 
-        if result:
-            print(f"⏩ Location ignorée (déjà existante): {old_loc_id} depuis {db_source}")
-            new_loc_id = result[0]
-        else:
+        # Vérifie première contrainte UNIQUE (pour publications classiques)
+        if None not in (book_num, chap_num, key_sym, meps_lang, loc_type):
+            cur.execute("""
+                SELECT LocationId FROM Location
+                WHERE BookNumber = ? AND ChapterNumber = ? AND KeySymbol = ? AND MepsLanguage = ? AND Type = ?
+            """, (book_num, chap_num, key_sym, meps_lang, loc_type))
+            result = cur.fetchone()
+            if result:
+                found = True
+                new_loc_id = result[0]
+
+        # Sinon vérifie deuxième contrainte UNIQUE (pour périodiques)
+        if not found and None not in (key_sym, issue, meps_lang, doc_id, track, loc_type):
+            cur.execute("""
+                SELECT LocationId FROM Location
+                WHERE KeySymbol = ? AND IssueTagNumber = ? AND MepsLanguage = ? AND DocumentId = ? AND Track = ? AND Type = ?
+            """, (key_sym, issue, meps_lang, doc_id, track, loc_type))
+            result = cur.fetchone()
+            if result:
+                found = True
+                new_loc_id = result[0]
+
+        # Si aucune correspondance, on insère une nouvelle ligne
+        if not found:
             current_max_id += 1
             new_loc_id = current_max_id
             new_row = (
                 new_loc_id, book_num, chap_num, doc_id, track, issue,
                 key_sym, meps_lang, loc_type, title
             )
-            print(f"Insertion Location depuis {db_source} : {new_row}")
-
             try:
                 cur.execute("""
                     INSERT INTO Location
@@ -801,9 +807,12 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
                      KeySymbol, MepsLanguage, Type, Title)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, new_row)
+                print(f"Insertion Location depuis {db_source} : {new_row}")
             except sqlite3.IntegrityError as e:
                 print(f"⚠️ Erreur insertion Location pour {new_row}: {e}")
                 continue
+        else:
+            print(f"⏩ Location ignorée (déjà existante): {old_loc_id} depuis {db_source}")
 
         location_id_map[(db_source, old_loc_id)] = new_loc_id
 
