@@ -783,6 +783,7 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
         result = cur.fetchone()
 
         if result:
+            print(f"⏩ Location ignorée (déjà existante): {old_loc_id} depuis {db_source}")
             new_loc_id = result[0]
         else:
             current_max_id += 1
@@ -791,6 +792,8 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
                 new_loc_id, book_num, chap_num, doc_id, track, issue,
                 key_sym, meps_lang, loc_type, title
             )
+            print(f"Insertion Location depuis {db_source} : {new_row}")
+
             try:
                 cur.execute("""
                     INSERT INTO Location
