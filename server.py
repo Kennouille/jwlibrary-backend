@@ -487,6 +487,7 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
 
     return blockrange_replacements
 
+
 def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
     print("\n[FUSION INPUTFIELD]")
     with sqlite3.connect(merged_db_path) as merged_conn:
@@ -500,7 +501,7 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
                 src_cursor.execute("SELECT LocationId, TextTag, Value FROM InputField")
                 rows = src_cursor.fetchall()
 
-                for loc_id, tag, content in rows:
+                for loc_id, tag, value in rows:
                     mapped_loc = location_id_map.get((db_path, loc_id))
                     if mapped_loc is None:
                         print(f"⚠️ LocationId {loc_id} introuvable pour {tag} dans {db_path}")
@@ -517,9 +518,9 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
 
                     try:
                         merged_cursor.execute("""
-                            INSERT INTO InputField (LocationId, TextTag, Content)
+                            INSERT INTO InputField (LocationId, TextTag, Value)
                             VALUES (?, ?, ?)
-                        """, (mapped_loc, tag, content))
+                        """, (mapped_loc, tag, value))
                         print(f"✅ Insert InputField : Loc={mapped_loc}, Tag={tag}")
                     except Exception as e:
                         print(f"❌ Erreur insertion InputField ({mapped_loc}, {tag}): {e}")
