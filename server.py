@@ -2008,6 +2008,7 @@ def merge_data():
 
         # A. Applique le mapping dans la table InputField (fusion)
         merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
+        print("✔ Fusion InputFields terminée")
 
         # B. Transforme le mapping en version plate pour les updates globaux
         location_replacements_flat = {
@@ -2016,6 +2017,7 @@ def merge_data():
 
         # C. Applique ce mapping à toutes les autres tables
         update_location_references(merged_db_path, location_replacements_flat)
+        print("✔ Mise à jour des références LocationId terminée")
 
         # --- Étape 4 : vérification post-fusion ---
         print("\n=== VERIFICATION POST-FUSION ===")
@@ -2034,6 +2036,9 @@ def merge_data():
         print(f"Éléments nettoyés : {cleaned_items}")
         print(f"Intégrité : {'✅ OK' if integrity_check else '⚠️ ÉCHEC'}")
 
+        print("✅ Tous les résultats sont prêts, retour JSON imminent")
+        print("merged_file =", merged_file)
+
         return jsonify({
             "status": "success",
             "merged_file": merged_file,
@@ -2048,7 +2053,7 @@ def merge_data():
 
     except Exception as e:
         import traceback
-        traceback.print_exc()  # Affiche la trace complète dans les logs
+        traceback.print_exc()
         return jsonify({"error": f"Erreur interne : {str(e)}"}), 500
 
 
