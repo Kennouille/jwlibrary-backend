@@ -509,29 +509,21 @@ def merge_usermark_with_id_relabeling(merged_db_path, source_db_path, location_i
 def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
     print("\n=== FUSION BLOCKRANGE ===")
 
-    # 1) Vérification préalable de la table BlockRange
+    # 1) Vérification initiale
     with sqlite3.connect(merged_db_path) as conn:
         cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM BlockRange")
+        print(f"BlockRanges initiaux: {cursor.fetchone()[0]}")
 
-        # Vérification des UserMark existants
-        cursor.execute("SELECT UserMarkId FROM UserMark ORDER BY UserMarkId")
-        existing_usermark_ids = [row[0] for row in cursor.fetchall()]
-        print(f"UserMarkIds existants: {existing_usermark_ids}")
-
-        # Vérification des BlockRange existants
-        cursor.execute("SELECT BlockType, Identifier, StartToken, EndToken, UserMarkId FROM BlockRange")
-        existing_blockranges = cursor.fetchall()
-        print(f"BlockRanges existants: {existing_blockranges}")
-
-    # 2) Récupération des mappings UserMarkGuid
+    # 2) Récupération des mappings
     try:
         with sqlite3.connect(merged_db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT UserMarkId, UserMarkGuid FROM UserMark")
             usermark_guid_map = {guid: uid for uid, guid in cursor.fetchall()}
-            print(f"Mapping UserMarkGuid: {usermark_guid_map}")
+            print(f"UserMark GUIDs: {usermark_guid_map}")
     except Exception as e:
-        print(f"❌ Erreur récupération UserMarkGuid: {e}")
+        print(f"❌ Erreur mapping UserMark: {e}")
         return False
 
     # 3) Traitement des sources
@@ -544,7 +536,7 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
                 with sqlite3.connect(db_path) as src_conn:
                     src_cursor = src_conn.cursor()
 
-                    # Requête optimisée avec vérification des UserMark
+                    # Requête optimisée
                     src_cursor.execute("""
                         SELECT br.BlockType, br.Identifier, br.StartToken, br.EndToken, um.UserMarkGuid
                         FROM BlockRange br
@@ -554,53 +546,50 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
 
                     for row in src_cursor.fetchall():
                         block_type, identifier, start_token, end_token, usermark_guid = row
-
-                        # Vérification du BlockType
-                        if not 1 <= block_type <= 2:
-                            print(f"❌ BlockType invalide: {block_type}")
-                            continue
-
                         new_usermark_id = usermark_guid_map.get(usermark_guid)
+
                         if not new_usermark_id:
-                            print(f"❌ UserMarkGuid non mappé: {usermark_guid}")
+                            print(f"⚠️ GUID non mappé: {usermark_guid}")
                             continue
 
-                        if new_usermark_id not in existing_usermark_ids:
-                            print(f"❌ UserMarkId {new_usermark_id} n'existe pas")
-                            continue
-
-                        # Vérification si le BlockRange existe déjà
-                        dest_cursor.execute("""
-                            SELECT 1 FROM BlockRange 
-                            WHERE BlockType=? AND Identifier=? 
-                            AND StartToken=? AND EndToken=? 
-                            AND UserMarkId=?
-                        """, (block_type, identifier, start_token, end_token, new_usermark_id))
-
-                        if dest_cursor.fetchone():
-                            print(f"⏩ BlockRange existe déjà: {row}")
-                            continue
-
-                        # Insertion sécurisée
                         try:
+                            # Vérification d'existence
                             dest_cursor.execute("""
-                                INSERT INTO BlockRange 
-                                (BlockType, Identifier, StartToken, EndToken, UserMarkId) 
+                                SELECT 1 FROM BlockRange
+                                WHERE BlockType=? AND Identifier=? AND UserMarkId=?
+                                AND StartToken=? AND EndToken=?
+                            """, (block_type, identifier, new_usermark_id, start_token, end_token))
+
+                            if dest_cursor.fetchone():
+                                print(f"⏩ Existe déjà: {row}")
+                                continue
+
+                            # Insertion
+                            dest_cursor.execute("""
+                                INSERT INTO BlockRange
+                                (BlockType, Identifier, StartToken, EndToken, UserMarkId)
                                 VALUES (?, ?, ?, ?, ?)
                             """, (block_type, identifier, start_token, end_token, new_usermark_id))
+
                             dest_conn.commit()
-                            print(f"✅ Insertion réussie: {row}")
+                            print(f"✅ Inserté: {row}")
+
                         except sqlite3.IntegrityError as e:
                             dest_conn.rollback()
-                            print(f"❌ Erreur d'intégrité: {e}")
-                            print("Détails de la ligne problématique:")
-                            print(f"BlockType: {block_type} (doit être 1 ou 2)")
-                            print(f"UserMarkId: {new_usermark_id} (existe: {new_usermark_id in existing_usermark_ids})")
+                            print(f"❌ Erreur intégrité: {e}")
+                            print(f"Ligne problématique: {row}")
+                            # Debug avancé
+                            dest_cursor.execute("PRAGMA foreign_key_check")
+                            print("Problèmes clés étrangères:", dest_cursor.fetchall())
                             return False
 
             except Exception as e:
-                print(f"❌ Erreur traitement {db_path}: {e}")
+                print(f"❌ Erreur fichier {db_path}: {e}")
                 return False
+
+        # Vérification finale
+        dest_cursor.execute("SELECT COUNT(*) FROM BlockRange")
+        print(f"Total BlockRanges après fusion: {dest_cursor.fetchone()[0]}")
 
     return True
 
@@ -2023,11 +2012,19 @@ def merge_data():
         conn.close()
 
         # --- FUSION BLOCKRANGE ---
-        print("\n=== FUSION BLOCKRANGE ===")
+        print("\n=== DEBUT FUSION BLOCKRANGE ===")
         if not merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
-            print("❌ Échec de la fusion BlockRange")
-            return jsonify({"error": "Erreur lors de la fusion BlockRange"}), 500
-        print("✅ Fusion BlockRange terminée")
+            print("ÉCHEC Fusion BlockRange")
+            return jsonify({"error": "BlockRange merge failed"}), 500
+
+        print("=== SUCCES FUSION COMPLETE ===")
+        return jsonify({"success": True})
+
+    except Exception as e:
+        print(f"ERREUR GLOBALE: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
         # Mapping inverse UserMarkId original → nouveau
         usermark_guid_map = {}
