@@ -1975,6 +1975,22 @@ def merge_data():
         # --- FUSION BOOKMARKS ---
         merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map)
 
+        # === INSÉRER LES USERMARKS AVANT DE FUSIONNER LES BLOCKRANGE ===
+        conn = sqlite3.connect(merged_db_path)
+        cursor = conn.cursor()
+
+        for guid, (color, loc, style, version) in merged_highlights_dict.items():
+            try:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO UserMark (ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (color, loc, style, guid, version))
+            except Exception as e:
+                print(f"Erreur lors de l'insertion de UserMarkGuid={guid}: {e}")
+
+        conn.commit()
+        conn.close()
+
         # --- FUSION BLOCKRANGE ---
         print("\n=== FUSION BLOCKRANGE ===")
         try:
