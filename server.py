@@ -2006,18 +2006,21 @@ def merge_data():
             orphaned = cursor.fetchone()[0]
             print(f"TagMaps orphelins: {orphaned}")
 
-        # --- Étape 2 : fusion des playlists ---
         print("\n▶️ Appel à merge_playlists...")
+
+        print(">>> AVANT merge_playlists")
         try:
             merged_file, playlist_count, playlist_item_count, media_count, cleaned_items, integrity_check = merge_playlists(
                 merged_db_path, file1_db, file2_db, location_id_map, independent_media_map
             )
             print("✅ merge_playlists terminé avec succès")
         except Exception as e:
+            print(">>> ERREUR ATTRAPÉE dans try/except")
             print(f"❌ ERREUR dans merge_playlists : {e}")
             import traceback
             traceback.print_exc()
             return jsonify({"error": "Erreur dans merge_playlists"}), 500
+        print(">>> APRES merge_playlists")
 
         if not merged_file:
             print("❌ Aucun fichier fusionné retourné")
