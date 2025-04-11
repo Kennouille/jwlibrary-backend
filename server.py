@@ -581,6 +581,8 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
 
                 with sqlite3.connect(merged_db_path) as conn:
                     cur = conn.cursor()
+                    print(
+                        f"🧪 Tentative d’insertion dans BlockRange: ({block_type}, {identifier}, {start_token}, {end_token}, UserMarkId={new_usermark_id})")
                     cur.execute("""
                         INSERT INTO BlockRange
                         (BlockType, Identifier, StartToken, EndToken, UserMarkId)
@@ -1839,6 +1841,22 @@ def merge_data():
 
         usermark_guid_map = merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map)
 
+        # === INSÉRER LES USERMARKS AVANT DE FUSIONNER LES BLOCKRANGE ===
+        conn = sqlite3.connect(merged_db_path)
+        cursor = conn.cursor()
+
+        for guid, (color, loc, style, version) in merged_highlights_dict.items():
+            try:
+                cursor.execute("""
+                    INSERT OR IGNORE INTO UserMark (ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (color, loc, style, guid, version))
+            except Exception as e:
+                print(f"Erreur lors de l'insertion de UserMarkGuid={guid}: {e}")
+
+        conn.commit()
+        conn.close()
+
         # === INSÉRER LES NOTES et USERMARK DANS LA DB FUSIONNÉE AVANT de créer note_mapping ===
         conn = sqlite3.connect(merged_db_path)
         cursor = conn.cursor()
@@ -2130,7 +2148,7 @@ def merge_data():
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({"error": f"Erreur interne : {str(e)}"}), 500
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/download', methods=['GET'])
