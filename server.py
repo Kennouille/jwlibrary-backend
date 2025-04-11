@@ -2046,7 +2046,7 @@ def merge_data():
             "integrity_check": integrity_check
         }), 200
 
-        except Exception as e:
+    except Exception as e:
         import traceback
         traceback.print_exc()  # Affiche la trace complète dans les logs
         return jsonify({"error": f"Erreur interne : {str(e)}"}), 500
