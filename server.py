@@ -543,16 +543,25 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
         try:
             with sqlite3.connect(db_path) as src_conn:
                 src_cursor = src_conn.cursor()
+                src_cursor.execute("SELECT COUNT(*) FROM BlockRange")
+                total = src_cursor.fetchone()[0]
+                print(f"  → {total} lignes dans BlockRange (sans JOIN)")
+
+                # Essai du SELECT sécurisé avec LEFT JOIN
                 src_cursor.execute("""
                     SELECT br.BlockType, br.Identifier, br.StartToken, br.EndToken, um.UserMarkGuid
                     FROM BlockRange br
-                    JOIN UserMark um ON br.UserMarkId = um.UserMarkId
+                    LEFT JOIN UserMark um ON br.UserMarkId = um.UserMarkId
                 """)
                 rows = src_cursor.fetchall()
-                print(f"  → {len(rows)} lignes récupérées dans BlockRange")
+                print(f"  → {len(rows)} lignes récupérées dans BlockRange avec LEFT JOIN")
         except Exception as e:
             print(f"❌ Erreur SQL dans {db_path} : {e}")
             return
+
+        # Filtrage manuel
+        rows = [r for r in rows if r[4] is not None]
+        print(f"  → {len(rows)} lignes conservées avec UserMarkGuid valide")
 
         for row in rows:
             try:
