@@ -1996,11 +1996,20 @@ def merge_data():
             print(f"TagMaps orphelins: {orphaned}")
 
         # --- Étape 2 : fusion des playlists ---
-        merged_file, playlist_count, playlist_item_count, media_count, cleaned_items, integrity_check = merge_playlists(
-            merged_db_path, file1_db, file2_db, location_id_map, independent_media_map
-        )
+        print("\n▶️ Appel à merge_playlists...")
+        try:
+            merged_file, playlist_count, playlist_item_count, media_count, cleaned_items, integrity_check = merge_playlists(
+                merged_db_path, file1_db, file2_db, location_id_map, independent_media_map
+            )
+            print("✅ merge_playlists terminé avec succès")
+        except Exception as e:
+            print(f"❌ ERREUR dans merge_playlists : {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": "Erreur dans merge_playlists"}), 500
 
         if not merged_file:
+            print("❌ Aucun fichier fusionné retourné")
             return jsonify({"error": "Échec de la fusion des playlists"}), 500
 
         # --- Étape 3 : mise à jour des LocationId résiduels ---
