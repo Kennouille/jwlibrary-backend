@@ -1806,6 +1806,8 @@ def merge_data():
         item_id_map = merge_playlist_items(merged_db_path, file1_db, file2_db, independent_media_map)
         print("Mapping PlaylistItems:", item_id_map)
 
+        usermark_guid_map = merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map)
+
         # === INSÉRER LES NOTES et USERMARK DANS LA DB FUSIONNÉE AVANT de créer note_mapping ===
         conn = sqlite3.connect(merged_db_path)
         cursor = conn.cursor()
@@ -1870,8 +1872,6 @@ def merge_data():
             cursor.execute("SELECT KeySymbol, COUNT(*) FROM Location GROUP BY KeySymbol")
             for key, count in cursor.fetchall():
                 print(f"- {key}: {count} locations")
-
-        usermark_guid_map = merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map)
 
         print("\n=== USERMARK VERIFICATION ===")
         print(f"Total UserMarks mappés (GUIDs) : {len(usermark_guid_map)}")
