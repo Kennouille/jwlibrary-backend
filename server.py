@@ -548,20 +548,22 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
                     FROM BlockRange br
                     JOIN UserMark um ON br.UserMarkId = um.UserMarkId
                 """)
-                for row in src_cursor.fetchall():
-                    key = tuple(row)
-                    if key in existing:
-                        print(f"⏩ BlockRange ignoré (déjà présent): {key}")
-                        continue
-
-                    block_type, identifier, start_token, end_token, usermark_guid = key
-                    new_usermark_id = usermark_guid_map.get(usermark_guid)
-
-                    if not new_usermark_id:
-                        print(f"❌ UserMarkGuid introuvable: {usermark_guid}")
-                        continue
-
+                rows = src_cursor.fetchall()
+                print(f"  → {len(rows)} lignes récupérées dans BlockRange")
+                for row in rows:
                     try:
+                        key = tuple(row)
+                        if key in existing:
+                            print(f"⏩ BlockRange ignoré (déjà présent): {key}")
+                            continue
+
+                        block_type, identifier, start_token, end_token, usermark_guid = key
+                        new_usermark_id = usermark_guid_map.get(usermark_guid)
+
+                        if not new_usermark_id:
+                            print(f"❌ UserMarkGuid introuvable: {usermark_guid}")
+                            continue
+
                         with sqlite3.connect(merged_db_path) as conn:
                             cur = conn.cursor()
                             cur.execute("""
@@ -573,12 +575,11 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
                             inserted += 1
                             print(f"✅ Insertion BlockRange: {key}")
                     except Exception as e:
-                        print(f"❌ Erreur insertion BlockRange {key}: {e}")
+                        print(f"❌ Erreur pendant l’insertion de la ligne {row} : {e}")
         except Exception as e:
-            print(f"❌ Erreur lors de la lecture de {db_path} : {e}")
+            print(f"❌ Erreur de lecture depuis {db_path} : {e}")
 
     print(f"\n🎯 Total BlockRange insérés : {inserted}")
-
 
 
 def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
