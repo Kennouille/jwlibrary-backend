@@ -552,12 +552,14 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
                             print(f"⚠️ GUID non mappé: {usermark_guid}")
                             continue
 
+                        print(
+                            f"🧪 Tentative d’insertion dans BlockRange: ({block_type}, {identifier}, {start_token}, {end_token}, UserMarkId={new_usermark_id})")
+
                         try:
                             # Vérification d'existence
                             dest_cursor.execute("""
                                 SELECT 1 FROM BlockRange
-                                WHERE BlockType=? AND Identifier=? AND UserMarkId=?
-                                AND StartToken=? AND EndToken=?
+                                WHERE BlockType=? AND Identifier=? AND UserMarkId=? AND StartToken=? AND EndToken=?
                             """, (block_type, identifier, new_usermark_id, start_token, end_token))
 
                             if dest_cursor.fetchone():
@@ -570,7 +572,6 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
                                 (BlockType, Identifier, StartToken, EndToken, UserMarkId)
                                 VALUES (?, ?, ?, ?, ?)
                             """, (block_type, identifier, start_token, end_token, new_usermark_id))
-
                             dest_conn.commit()
                             print(f"✅ Inserté: {row}")
 
@@ -578,14 +579,13 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
                             dest_conn.rollback()
                             print(f"❌ Erreur intégrité: {e}")
                             print(f"Ligne problématique: {row}")
-                            # Debug avancé
                             dest_cursor.execute("PRAGMA foreign_key_check")
                             print("Problèmes clés étrangères:", dest_cursor.fetchall())
-                            return False
 
-            except Exception as e:
-                print(f"❌ Erreur fichier {db_path}: {e}")
-                return False
+                        except Exception as e:
+                            print(f"❌ Erreur inconnue pendant l'insertion: {e}")
+                            import traceback
+                            traceback.print_exc()
 
         # Vérification finale
         dest_cursor.execute("SELECT COUNT(*) FROM BlockRange")
