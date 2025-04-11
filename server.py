@@ -565,6 +565,9 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
         rows = [r for r in rows if r[4] is not None]
         print(f"  → {len(rows)} lignes conservées avec UserMarkGuid valide")
 
+        conn = sqlite3.connect(merged_db_path)
+        cur = conn.cursor()
+
         for row in rows:
             try:
                 key = tuple(row)
@@ -581,20 +584,26 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
 
                 print(
                     f"🧪 Tentative d’insertion dans BlockRange: ({block_type}, {identifier}, {start_token}, {end_token}, UserMarkId={new_usermark_id})")
-                with sqlite3.connect(merged_db_path) as conn:
-                    cur = conn.cursor()
+                try:
                     cur.execute("""
                         INSERT INTO BlockRange
                         (BlockType, Identifier, StartToken, EndToken, UserMarkId)
                         VALUES (?, ?, ?, ?, ?)
                     """, (block_type, identifier, start_token, end_token, new_usermark_id))
+                    conn.commit()
                     existing.add(key)
                     print(f"✅ Insertion BlockRange: {key}")
+                except Exception as e:
+                    print(f"❌ ERREUR à l'insertion: {key} → {e}")
+                    import traceback
+                    traceback.print_exc()
 
             except Exception as e:
-                print(f"❌ Erreur pendant l’insertion de la ligne {row} : {e}")
+                print(f"❌ Erreur inattendue dans la ligne {row} : {e}")
                 import traceback
                 traceback.print_exc()
+
+        conn.close()
 
 
 def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
