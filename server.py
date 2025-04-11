@@ -1643,7 +1643,18 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
             print("⚠️ Avertissement: Le fichier semble trop petit")
 
         # Retour final de merge_playlists
+        print("\n🎯 Résumé final:")
+        print(f"- Fichier fusionné: {merged_jwlibrary}")
+        print(f"- Playlists max ID: {max_playlist_id}")
+        print(f"- PlaylistItem total: {len(item_id_map)}")
+        print(f"- Médias max ID: {max_media_id}")
+        print(f"- Orphelins supprimés: {orphaned_deleted}")
+        print(f"- Résultat intégrité: {integrity_result}")
+
         print(">>> Fin de merge_playlists, on retourne les valeurs")
+
+        print("✅ Tous les calculs terminés, retour imminent")
+
         return merged_jwlibrary, max_playlist_id, len(item_id_map), max_media_id, orphaned_deleted, integrity_result
 
 
