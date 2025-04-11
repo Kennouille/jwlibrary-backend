@@ -1846,14 +1846,6 @@ def merge_data():
                 block_identifier
             ))
 
-        for guid, (color, loc, style, version) in merged_highlights_dict.items():
-            try:
-                cursor.execute("""
-                    INSERT INTO UserMark (ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (color, loc, style, guid, version))
-            except Exception as e:
-                print(f"Erreur lors de l'insertion de UserMarkGuid={guid}: {e}")
         # Gestion spécifique de LastModified
         cursor.execute("DELETE FROM LastModified")
         cursor.execute("INSERT INTO LastModified (LastModified) VALUES (?)", (merge_date,))
