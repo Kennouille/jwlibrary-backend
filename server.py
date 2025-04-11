@@ -369,6 +369,87 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
     return mapping
 
 
+def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_guid_map):
+    print("\n=== FUSION DES NOTES ===")
+    inserted = 0
+    updated = 0
+
+    conn = sqlite3.connect(merged_db_path)
+    cursor = conn.cursor()
+
+    for db_path in [file1_db, file2_db]:
+        with sqlite3.connect(db_path) as src_conn:
+            src_cursor = src_conn.cursor()
+            src_cursor.execute("""
+                SELECT n.Guid, um.UserMarkGuid, n.LocationId, n.Title, n.Content,
+                       n.LastModified, n.Created, n.BlockType, n.BlockIdentifier
+                FROM Note n
+                LEFT JOIN UserMark um ON n.UserMarkId = um.UserMarkId
+            """)
+            for (guid, usermark_guid, location_id, title, content,
+                 last_modified, created, block_type, block_identifier) in src_cursor.fetchall():
+
+                # Mapper le LocationId
+                normalized_key = (os.path.normpath(db_path), location_id)
+                normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
+                new_location_id = normalized_map.get(normalized_key) if location_id else None
+
+                # Mapper le UserMarkId
+                new_usermark_id = usermark_guid_map.get(usermark_guid) if usermark_guid else None
+
+                if new_location_id is None:
+                    print(f"⚠️ LocationId introuvable pour Note guid={guid} (source: {db_path})")
+                    continue
+
+                try:
+                    cursor.execute("""
+                        INSERT INTO Note
+                        (Guid, UserMarkId, LocationId, Title, Content,
+                         LastModified, Created, BlockType, BlockIdentifier)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        guid,
+                        new_usermark_id,
+                        new_location_id,
+                        title,
+                        content,
+                        last_modified,
+                        created,
+                        block_type,
+                        block_identifier
+                    ))
+                    inserted += 1
+                except sqlite3.IntegrityError as e:
+                    if "UNIQUE constraint failed: Note.Guid" in str(e):
+                        cursor.execute("""
+                            UPDATE Note SET
+                                UserMarkId=?,
+                                LocationId=?,
+                                Title=?,
+                                Content=?,
+                                LastModified=?,
+                                BlockType=?,
+                                BlockIdentifier=?
+                            WHERE Guid=?
+                        """, (
+                            new_usermark_id,
+                            new_location_id,
+                            title,
+                            content,
+                            last_modified,
+                            block_type,
+                            block_identifier,
+                            guid
+                        ))
+                        updated += 1
+                    else:
+                        print(f"❌ Erreur insertion Note guid={guid}: {e}")
+
+    conn.commit()
+    conn.close()
+    print(f"✅ Notes insérées: {inserted}, mises à jour: {updated}")
+
+
 def merge_usermark_with_id_relabeling(merged_db_path, source_db_path, location_id_map):
     conn_merged = sqlite3.connect(merged_db_path)
     cur_merged = conn_merged.cursor()
@@ -424,81 +505,62 @@ def merge_usermark_with_id_relabeling(merged_db_path, source_db_path, location_i
 
 
 def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
-    # 1) Récupère le maximum des BlockRangeId déjà présents
-    conn_merged = sqlite3.connect(merged_db_path)
-    cur_merged = conn_merged.cursor()
-    cur_merged.execute("SELECT MAX(BlockRangeId) FROM BlockRange")
-    row = cur_merged.fetchone()
-    current_max_id = row[0] if row and row[0] is not None else 0
-    conn_merged.close()
+    print("\n=== FUSION BLOCKRANGE ===")
 
-    # 2) Fonction interne pour lire la table BlockRange d'une source
-    def read_blockrange(db_path):
-        conn = sqlite3.connect(db_path)
-        cur = conn.cursor()
-        cur.execute("SELECT BlockRangeId, BlockType, Identifier, StartToken, EndToken, UserMarkId FROM BlockRange")
-        rows = cur.fetchall()
-        conn.close()
-        return rows
+    # 1) Récupère les UserMarkGuid -> UserMarkId
+    conn = sqlite3.connect(merged_db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT UserMarkId, UserMarkGuid FROM UserMark")
+    usermark_guid_map = {guid: uid for uid, guid in cursor.fetchall()}
+    conn.close()
 
-    # 3) Lecture des deux sources
-    rows1 = read_blockrange(file1_db)
-    rows2 = read_blockrange(file2_db)
-    combined_rows = rows1 + rows2
+    # 2) Crée une set des BlockRange déjà présents (pour éviter doublons)
+    existing = set()
+    conn = sqlite3.connect(merged_db_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT br.BlockType, br.Identifier, br.StartToken, br.EndToken, um.UserMarkGuid
+        FROM BlockRange br
+        JOIN UserMark um ON br.UserMarkId = um.UserMarkId
+    """)
+    for row in cursor.fetchall():
+        existing.add(tuple(row))
+    conn.close()
 
-    # 4) Fusion : clé = (old_id, Identifier, StartToken, EndToken, UserMarkId)
-    blockrange_replacements = {}
-    existing_ids = set()
+    # 3) Parcourt les 2 fichiers
+    for db_path in [file1_db, file2_db]:
+        with sqlite3.connect(db_path) as src_conn:
+            src_cursor = src_conn.cursor()
+            src_cursor.execute("""
+                SELECT br.BlockType, br.Identifier, br.StartToken, br.EndToken, um.UserMarkGuid
+                FROM BlockRange br
+                JOIN UserMark um ON br.UserMarkId = um.UserMarkId
+            """)
+            for row in src_cursor.fetchall():
+                key = tuple(row)
+                if key in existing:
+                    print(f"⏩ BlockRange ignoré (déjà présent): {key}")
+                    continue
 
-    # On recharge les IDs existants (pour détecter si old_id existe déjà)
-    conn_merged = sqlite3.connect(merged_db_path)
-    cur_merged = conn_merged.cursor()
-    cur_merged.execute("SELECT BlockRangeId FROM BlockRange")
-    for r in cur_merged.fetchall():
-        existing_ids.add(r[0])
-    conn_merged.close()
+                block_type, identifier, start_token, end_token, usermark_guid = key
+                new_usermark_id = usermark_guid_map.get(usermark_guid)
 
-    # 5) Parcours de toutes les lignes
-    for row in combined_rows:
-        old_id, BlockType, Identifier, StartToken, EndToken, user_mark_id = row
-        key = (old_id, Identifier, StartToken, EndToken, user_mark_id)
+                if not new_usermark_id:
+                    print(f"❌ UserMarkGuid introuvable: {usermark_guid}")
+                    continue
 
-        # Si la ligne est déjà traitée, on saute
-        if key in blockrange_replacements:
-            continue
-
-        # Ouvre la connexion à chaque insertion pour éviter conflits
-        conn_merged = sqlite3.connect(merged_db_path)
-        cur_merged = conn_merged.cursor()
-
-        if old_id in existing_ids:
-            # Cet ID est déjà utilisé => on génère un nouvel ID
-            current_max_id += 1
-            new_id = current_max_id
-            # On supprime la ligne existante avec old_id pour éviter les doublons
-            cur_merged.execute("DELETE FROM BlockRange WHERE BlockRangeId = ?", (old_id,))
-        else:
-            # Sinon, on garde old_id
-            new_id = old_id
-            existing_ids.add(old_id)
-            current_max_id = max(current_max_id, new_id)
-
-        # On utilise le même new_id pour la colonne UserMarkId
-        blockrange_replacements[key] = new_id
-        new_row = (new_id, BlockType, Identifier, StartToken, EndToken, new_id)
-
-        try:
-            cur_merged.execute("""
-                INSERT INTO BlockRange (BlockRangeId, BlockType, Identifier, StartToken, EndToken, UserMarkId)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, new_row)
-        except Exception as e:
-            print(f"Erreur insertion BlockRange, row {new_row}: {e}")
-
-        conn_merged.commit()
-        conn_merged.close()
-
-    return blockrange_replacements
+                with sqlite3.connect(merged_db_path) as conn:
+                    cur = conn.cursor()
+                    try:
+                        cur.execute("""
+                            INSERT INTO BlockRange
+                            (BlockType, Identifier, StartToken, EndToken, UserMarkId)
+                            VALUES (?, ?, ?, ?, ?)
+                        """, (block_type, identifier, start_token, end_token, new_usermark_id))
+                        existing.add(key)
+                        print(f"✅ Insertion BlockRange: {key}")
+                    except Exception as e:
+                        print(f"❌ Erreur insertion BlockRange {key}: {e}")
 
 
 def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
@@ -651,58 +713,51 @@ def merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_
         """)
         rows = cur.fetchall()
         conn.close()
-        return rows
+        return [(db_path,) + row for row in rows]
 
-    # Lire les usermarks des deux bases
-    usermarks1 = read_usermarks(file1_db)
-    usermarks2 = read_usermarks(file2_db)
-    all_usermarks = usermarks1 + usermarks2
+    all_usermarks = read_usermarks(file1_db) + read_usermarks(file2_db)
 
+    normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
     conn = sqlite3.connect(merged_db_path)
     cur = conn.cursor()
 
-    # Récupérer le maximum des UserMarkId existants
-    cur.execute("SELECT MAX(UserMarkId) FROM UserMark")
-    max_id = cur.fetchone()[0] or 0
+    cur.execute("SELECT COALESCE(MAX(UserMarkId), 0) FROM UserMark")
+    max_id = cur.fetchone()[0]
 
-    # Dictionnaire pour mapper les anciens IDs aux nouveaux
-    usermark_id_map = {}
+    usermark_guid_map = {}
 
-    for um in all_usermarks:
-        um_id = um[0]
-        # Mapper le LocationId si nécessaire
-        mapped_loc_id = location_id_map.get(um[2], um[2])
+    for db_path, um_id, color, loc_id, style, guid, version in all_usermarks:
+        if not guid:
+            continue
 
-        # Vérifier si ce UserMark existe déjà (par GUID)
-        cur.execute("SELECT UserMarkId FROM UserMark WHERE UserMarkGuid=?", (um[4],))
+        mapped_loc_id = normalized_map.get((os.path.normpath(db_path), loc_id))
+
+        cur.execute("SELECT UserMarkId FROM UserMark WHERE UserMarkGuid=?", (guid,))
         existing = cur.fetchone()
 
         if existing:
-            usermark_id_map[um_id] = existing[0]
+            usermark_guid_map[guid] = existing[0]
         else:
             max_id += 1
-            new_um = (max_id, um[1], mapped_loc_id, um[3], um[4], um[5])
             try:
                 cur.execute("""
                     INSERT INTO UserMark 
                     (UserMarkId, ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, new_um)
-                usermark_id_map[um_id] = max_id
+                """, (max_id, color, mapped_loc_id, style, guid, version))
+                usermark_guid_map[guid] = max_id
             except sqlite3.IntegrityError:
-                # En cas de conflit, on incrémente à nouveau et on réessaye
                 max_id += 1
-                new_um = (max_id, um[1], mapped_loc_id, um[3], um[4], um[5])
                 cur.execute("""
                     INSERT INTO UserMark 
                     (UserMarkId, ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, new_um)
-                usermark_id_map[um_id] = max_id
+                """, (max_id, color, mapped_loc_id, style, guid, version))
+                usermark_guid_map[guid] = max_id
 
     conn.commit()
     conn.close()
-    return usermark_id_map
+    return usermark_guid_map
 
 
 def insert_usermark_if_needed(conn, usermark_tuple):
@@ -757,8 +812,6 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
 
     conn = sqlite3.connect(merged_db_path)
     cur = conn.cursor()
-
-    cur.execute("DELETE FROM Location")
 
     location_id_map = {}
     current_max_id = 0
@@ -1193,10 +1246,40 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
                             """, (new_item_id, new_loc_id, mm_type, duration))
                         except sqlite3.IntegrityError as e:
                             print(f"Erreur PlaylistItemLocationMap: {e}")
-                    else:
-                        print(f"  ⚠️ Mapping manquant pour Item={old_item_id}, Location={old_loc_id} (db: {db_path})")
+                        else:
+                            print(
+                                f"⚠️ Mapping manquant : ItemId={old_item_id}, LocationId={old_loc_id} (dans {os.path.basename(db_path)})")
 
-        # 3. Fusion PlaylistItemMarker
+        # 3. Fusion PlaylistItemMediaMap
+        print("\n[FUSION PlaylistItemMediaMap]")
+        for db_path in [file1_db, file2_db]:
+            with sqlite3.connect(db_path) as src_conn:
+                src_cur = src_conn.cursor()
+                src_cur.execute("""
+                    SELECT PlaylistItemId, MediaFileId, OrderIndex
+                    FROM PlaylistItemMediaMap
+                """)
+                rows = src_cur.fetchall()
+                print(f"{len(rows)} lignes trouvées dans {os.path.basename(db_path)}")
+
+                for old_item_id, old_media_id, order_idx in rows:
+                    new_item_id = item_id_map.get((db_path, old_item_id))
+                    new_media_id = independent_media_map.get((db_path, old_media_id))
+
+                    if new_item_id and new_media_id:
+                        try:
+                            cursor.execute("""
+                                INSERT OR IGNORE INTO PlaylistItemMediaMap
+                                (PlaylistItemId, MediaFileId, OrderIndex)
+                                VALUES (?, ?, ?)
+                            """, (new_item_id, new_media_id, order_idx))
+                        except sqlite3.IntegrityError as e:
+                            print(f"Erreur PlaylistItemMediaMap: {e}")
+                    else:
+                        print(
+                            f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, MediaFileId={old_media_id} (db: {db_path})")
+
+        # 4. Fusion PlaylistItemMarker
         print("\n[FUSION PLAYLISTITEMMARKER]")
         cursor.execute("SELECT MAX(PlaylistItemMarkerId) FROM PlaylistItemMarker")
         max_marker_id = cursor.fetchone()[0] or 0
@@ -1236,8 +1319,36 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         print(f"ID max final: {max_marker_id}")
         print(f"Total markers mappés: {len(marker_id_map)}")
 
-        # 4. Fusion des PlaylistItemMarker*Map (BibleVerse/Paragraph)
+        # 5. Fusion des PlaylistItemMarkerMap et Marker*Map (BibleVerse/Paragraph)
         print("\n[FUSION MARKER MAPS]")
+
+        # 5.1. Fusion de PlaylistItemMarkerMap (principale)
+        print("\nFusion PlaylistItemMarkerMap")
+        for db_path in [file1_db, file2_db]:
+            with sqlite3.connect(db_path) as src_conn:
+                src_cur = src_conn.cursor()
+                src_cur.execute("""
+                    SELECT PlaylistItemId, PlaylistItemMarkerId, OrderInList
+                    FROM PlaylistItemMarkerMap
+                """)
+                mappings = src_cur.fetchall()
+                print(f"{len(mappings)} mappings trouvés dans {os.path.basename(db_path)}")
+                for old_item_id, old_marker_id, order in mappings:
+                    new_item_id = item_id_map.get((db_path, old_item_id))
+                    new_marker_id = marker_id_map.get((db_path, old_marker_id))
+                    if new_item_id and new_marker_id:
+                        try:
+                            cursor.execute("""
+                                INSERT OR IGNORE INTO PlaylistItemMarkerMap
+                                (PlaylistItemId, PlaylistItemMarkerId, OrderInList)
+                                VALUES (?, ?, ?)
+                            """, (new_item_id, new_marker_id, order))
+                        except sqlite3.IntegrityError as e:
+                            print(f"Erreur PlaylistItemMarkerMap: {e}")
+                    else:
+                        print(f"⚠️ Mapping manquant item={old_item_id}, marker={old_marker_id} (db: {db_path})")
+
+        # 5.2. Fusion des PlaylistItemMarkerBibleVerseMap et ParagraphMap
         for map_type in ['BibleVerse', 'Paragraph']:
             table_name = f'PlaylistItemMarker{map_type}Map'
             if not cursor.execute(
@@ -1254,7 +1365,6 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
                     print(f"{len(maps)} entries dans {os.path.basename(db_path)}")
                     for row in maps:
                         old_marker_id = row[0]
-                        # Si marker_id_map n'est disponible pour ce marker
                         new_marker_id = marker_id_map.get((db_path, old_marker_id))
                         if new_marker_id:
                             new_row = (new_marker_id,) + row[1:]
@@ -1264,7 +1374,7 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
                             except sqlite3.IntegrityError as e:
                                 print(f"Erreur {table_name}: {e}")
 
-        # 5. Fusion de PlaylistItemIndependentMediaMap
+        # 6. Fusion de PlaylistItemIndependentMediaMap
         print("\n[FUSION INDEPENDENTMEDIAMAP]")
         if cursor.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='PlaylistItemIndependentMediaMap'"
@@ -1334,50 +1444,52 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         }
         print(f"Résumé intermédiaire: {playlist_results}")
 
-        # 10. (Optionnel) Fusion de la table Playlist si elle existe – ici on l'ignore car vous n'avez pas de table Playlist
-        if cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Playlist'").fetchone():
-            print("\n=== DEBUT FUSION PLAYLIST ===")
+        # 10. (Optionnel) Fusion de la table Playlist si elle existe
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Playlist'")
+        has_playlist_table = cursor.fetchone() is not None
+
+        if not has_playlist_table:
+            print("🚫 Table 'Playlist' absente — étape ignorée.")
+        else:
+            print("\n=== DÉBUT FUSION PLAYLIST ===")
             cursor.execute("SELECT MAX(PlaylistId) FROM Playlist")
             max_playlist_id = cursor.fetchone()[0] or 0
             print(f"ID max initial Playlist: {max_playlist_id}")
             playlist_id_map = {}
+
             for db_path in [file1_db, file2_db]:
-                source_conn = sqlite3.connect(db_path)
-                source_cursor = source_conn.cursor()
-                source_cursor.execute("""
-                    SELECT PlaylistId, Name, Description, IconId, OrderIndex, LastModified
-                    FROM Playlist
-                """)
-                playlists = source_cursor.fetchall()
-                print(f"{len(playlists)} playlists trouvées dans {os.path.basename(db_path)}")
-                for pl_id, name, desc, icon, order_idx, modified in playlists:
-                    original_name = name
-                    suffix = 1
-                    while True:
-                        cursor.execute("SELECT 1 FROM Playlist WHERE Name = ?", (name,))
-                        if not cursor.fetchone():
-                            break
-                        name = f"{original_name} ({suffix})"
-                        suffix += 1
-                    max_playlist_id += 1
-                    try:
-                        cursor.execute("""
-                            INSERT INTO Playlist VALUES (?, ?, ?, ?, ?, ?)
-                        """, (max_playlist_id, name, desc, icon, order_idx, modified))
-                        playlist_id_map[(db_path, pl_id)] = max_playlist_id
-                    except sqlite3.IntegrityError as e:
-                        print(f"ERREUR Playlist {pl_id}: {str(e)}")
-                source_conn.close()
+                with sqlite3.connect(db_path) as source_conn:
+                    source_cursor = source_conn.cursor()
+                    source_cursor.execute("""
+                        SELECT PlaylistId, Name, Description, IconId, OrderIndex, LastModified
+                        FROM Playlist
+                    """)
+                    playlists = source_cursor.fetchall()
+                    print(f"{len(playlists)} playlists trouvées dans {os.path.basename(db_path)}")
+
+                    for pl_id, name, desc, icon, order_idx, modified in playlists:
+                        original_name = name
+                        suffix = 1
+                        while True:
+                            cursor.execute("SELECT 1 FROM Playlist WHERE Name = ?", (name,))
+                            if not cursor.fetchone():
+                                break
+                            name = f"{original_name} ({suffix})"
+                            suffix += 1
+
+                        max_playlist_id += 1
+                        try:
+                            cursor.execute("""
+                                INSERT INTO Playlist
+                                (PlaylistId, Name, Description, IconId, OrderIndex, LastModified)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            """, (max_playlist_id, name, desc, icon, order_idx, modified))
+                            playlist_id_map[(db_path, pl_id)] = max_playlist_id
+                        except sqlite3.IntegrityError as e:
+                            print(f"ERREUR Playlist {pl_id}: {str(e)}")
+
             print(f"Playlist fusionnée - ID max final: {max_playlist_id}")
             print(f"Total playlists fusionnées: {len(playlist_id_map)}")
-        else:
-            # Vérifie si la table Playlist existe avant d'agir
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Playlist'")
-            if cursor.fetchone():
-                print("Fusion de la table Playlist...")
-                # (Tu peux mettre ici la future logique si un jour Playlist est utilisée)
-            else:
-                print("Table Playlist non trouvée - étape ignorée")
 
         # 11. Vérification de cohérence
         print("\n=== VERIFICATION COHERENCE ===")
@@ -1748,9 +1860,10 @@ def merge_data():
             for key, count in cursor.fetchall():
                 print(f"- {key}: {count} locations")
 
-        usermark_id_map = merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map)
+        usermark_guid_map = merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map)
+
         print("\n=== USERMARK VERIFICATION ===")
-        print(f"Total UserMaps mappés: {len(usermark_id_map)}")
+        print(f"Total UserMarks mappés (GUIDs) : {len(usermark_guid_map)}")
         with sqlite3.connect(merged_db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM UserMark")
@@ -1766,7 +1879,7 @@ def merge_data():
                 print(f"- Couleur {color}, Style {style}: {count} marques")
 
         print(f"Location IDs mappés: {location_id_map}")
-        print(f"UserMark IDs mappés: {usermark_id_map}")
+        print(f"UserMark GUIDs mappés: {usermark_guid_map}")
 
         # ===== Vérification pré-fusion complète =====
         print("\n=== VERIFICATION PRE-FUSION ===")
@@ -1830,44 +1943,10 @@ def merge_data():
         print("\n=== PRÊT POUR FUSION ===\n")
 
         # --- FUSION BOOKMARKS ---
-        print("\n=== FUSION BOOKMARKS ===")
-        try:
-            bookmark_id_map = merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map)
-            print("Mapping BookmarkId :", bookmark_id_map)
-        except Exception as e:
-            print(f"Erreur lors de la fusion des bookmarks : {e}")
-            return jsonify({"error": "Échec de la fusion des bookmarks"}), 500
+        merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map)
 
-        # --- SECTION BLOCKRANGE ---
-        conn = sqlite3.connect(merged_db_path)
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM BlockRange")
-        existing_blockranges = {}
-        for db_path in [file1_db, file2_db]:
-            source_conn = sqlite3.connect(db_path)
-            source_cursor = source_conn.cursor()
-            source_cursor.execute("""
-                    SELECT br.BlockType, br.Identifier, br.StartToken, br.EndToken, um.UserMarkGuid
-                    FROM BlockRange br
-                    JOIN UserMark um ON br.UserMarkId = um.UserMarkId
-                """)
-            for row in source_cursor.fetchall():
-                block_type, identifier, start_token, end_token, usermark_guid = row
-                cursor.execute("SELECT UserMarkId FROM UserMark WHERE UserMarkGuid=?", (usermark_guid,))
-                new_usermark_id = cursor.fetchone()
-                if new_usermark_id:
-                    new_usermark_id = new_usermark_id[0]
-                    blockrange_key = (block_type, identifier, start_token, end_token, new_usermark_id)
-                    if blockrange_key not in existing_blockranges:
-                        cursor.execute("""
-                                INSERT INTO BlockRange
-                                (BlockType, Identifier, StartToken, EndToken, UserMarkId)
-                                VALUES (?, ?, ?, ?, ?)
-                            """, (block_type, identifier, start_token, end_token, new_usermark_id))
-                        existing_blockranges[blockrange_key] = True
-            source_conn.close()
-        conn.commit()
-        conn.close()
+        # --- FUSION BLOCKRANGE ---
+        merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db)
 
         # Mapping inverse UserMarkId original → nouveau
         usermark_guid_map = {}
@@ -1878,71 +1957,8 @@ def merge_data():
             usermark_guid_map[guid] = new_id
         conn.close()
 
-        conn = sqlite3.connect(merged_db_path)
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM Note")
-        for db_path in [file1_db, file2_db]:
-            source_conn = sqlite3.connect(db_path)
-            source_cursor = source_conn.cursor()
-            source_cursor.execute("""
-                SELECT n.Guid, um.UserMarkGuid, n.LocationId, n.Title, n.Content,
-                       n.LastModified, n.Created, n.BlockType, n.BlockIdentifier
-                FROM Note n
-                LEFT JOIN UserMark um ON n.UserMarkId = um.UserMarkId
-            """)
-            for (guid, usermark_guid, location_id, title, content,
-                 last_modified, created, block_type, block_identifier) in source_cursor.fetchall():
-                new_usermark_id = usermark_guid_map.get(usermark_guid) if usermark_guid else None
-                normalized_key = (os.path.normpath(db_path), location_id)
-                normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
-                new_location_id = normalized_map.get(normalized_key) if location_id else None
-
-                if new_location_id is None and location_id:
-                    print(f"⚠️ LocationId {location_id} introuvable dans {db_path}")
-
-                try:
-                    cursor.execute("""
-                        INSERT INTO Note
-                        (Guid, UserMarkId, LocationId, Title, Content,
-                         LastModified, Created, BlockType, BlockIdentifier)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        guid,
-                        new_usermark_id,
-                        new_location_id,
-                        title,
-                        content,
-                        last_modified,
-                        created,
-                        block_type,
-                        block_identifier
-                    ))
-                except sqlite3.IntegrityError as e:
-                    if "UNIQUE constraint failed: Note.Guid" in str(e):
-                        print(f"Mise à jour de la note existante {guid}")
-                        cursor.execute("""
-                            UPDATE Note SET
-                                UserMarkId=?,
-                                LocationId=?,
-                                Title=?,
-                                Content=?,
-                                LastModified=?,
-                                BlockType=?,
-                                BlockIdentifier=?
-                            WHERE Guid=?
-                        """, (
-                            new_usermark_id,
-                            new_location_id,
-                            title,
-                            content,
-                            last_modified,
-                            block_type,
-                            block_identifier,
-                            guid
-                        ))
-            source_conn.close()
-        conn.commit()
-        conn.close()
+        # --- FUSION NOTES ---
+        merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_guid_map)
 
         # --- Étape 1 : fusion des Tags et TagMap (utilise location_id_map) ---
         try:
@@ -1987,14 +2003,18 @@ def merge_data():
         if not merged_file:
             return jsonify({"error": "Échec de la fusion des playlists"}), 500
 
-        # --- Étape 3 : mise à jour des LocationId résiduels (utilise le MÊME mapping) ---
+        # --- Étape 3 : mise à jour des LocationId résiduels ---
         print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
-        location_replacements_flat = {
-            old_id: new_id for (_, old_id), new_id in location_id_map.items()
-        }
 
+        # A. Applique le mapping dans la table InputField (fusion)
         merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
 
+        # B. Transforme le mapping en version plate pour les updates globaux
+        location_replacements_flat = {
+            old_id: new_id for (_, old_id), new_id in sorted(location_id_map.items())
+        }
+
+        # C. Applique ce mapping à toutes les autres tables
         update_location_references(merged_db_path, location_replacements_flat)
 
         # --- Étape 4 : vérification post-fusion ---
@@ -2006,6 +2026,14 @@ def merge_data():
             print(f"Nombre d'enregistrements dans PlaylistItem après fusion : {count}")
 
         # --- Résultat final ---
+        print("\n=== FUSION TERMINÉE AVEC SUCCÈS ===")
+        print(f"Fichier fusionné : {merged_file}")
+        print(f"Playlists fusionnées : {playlist_count}")
+        print(f"Items fusionnés : {playlist_item_count}")
+        print(f"Médias traités : {media_count}")
+        print(f"Éléments nettoyés : {cleaned_items}")
+        print(f"Intégrité : {'✅ OK' if integrity_check else '⚠️ ÉCHEC'}")
+
         return jsonify({
             "status": "success",
             "merged_file": merged_file,
@@ -2018,9 +2046,8 @@ def merge_data():
             "integrity_check": integrity_check
         }), 200
 
-    except Exception as e:
+        except Exception as e:
         import traceback
-
         traceback.print_exc()  # Affiche la trace complète dans les logs
         return jsonify({"error": f"Erreur interne : {str(e)}"}), 500
 
