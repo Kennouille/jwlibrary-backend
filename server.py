@@ -588,6 +588,8 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
                     print(f"✅ Insertion BlockRange: {key}")
             except Exception as e:
                 print(f"❌ Erreur pendant l’insertion de la ligne {row} : {e}")
+                import traceback
+                traceback.print_exc()  # ← ajoute ça ici
 
 
 def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
