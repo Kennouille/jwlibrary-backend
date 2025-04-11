@@ -1957,7 +1957,15 @@ def merge_data():
         merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map)
 
         # --- FUSION BLOCKRANGE ---
-        merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db)
+        print("\n=== FUSION BLOCKRANGE ===")
+        try:
+            merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db)
+            print("✅ Fusion BlockRange terminée")
+        except Exception as e:
+            print(f"❌ ERREUR durant la fusion de BlockRange : {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": "Erreur lors de la fusion BlockRange"}), 500
 
         # Mapping inverse UserMarkId original → nouveau
         usermark_guid_map = {}
