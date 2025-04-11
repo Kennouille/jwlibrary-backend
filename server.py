@@ -1990,21 +1990,27 @@ def merge_data():
 
         # --- Vérification Tag ---
         print("\n=== TAGS VERIFICATION ===")
-        with sqlite3.connect(merged_db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM Tag")
-            tags_count = cursor.fetchone()[0]
-            cursor.execute("SELECT COUNT(*) FROM TagMap")
-            tagmaps_count = cursor.fetchone()[0]
-            print(f"Tags: {tags_count}")
-            print(f"TagMaps: {tagmaps_count}")
-            cursor.execute("""
-                SELECT COUNT(*) 
-                FROM TagMap 
-                WHERE NoteId NOT IN (SELECT NoteId FROM Note)
-            """)
-            orphaned = cursor.fetchone()[0]
-            print(f"TagMaps orphelins: {orphaned}")
+        try:
+            with sqlite3.connect(merged_db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM Tag")
+                tags_count = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM TagMap")
+                tagmaps_count = cursor.fetchone()[0]
+                print(f"Tags: {tags_count}")
+                print(f"TagMaps: {tagmaps_count}")
+                cursor.execute("""
+                    SELECT COUNT(*) 
+                    FROM TagMap 
+                    WHERE NoteId NOT IN (SELECT NoteId FROM Note)
+                """)
+                orphaned = cursor.fetchone()[0]
+                print(f"TagMaps orphelins: {orphaned}")
+        except Exception as e:
+            print(f"❌ ERREUR dans la vérification des tags : {e}")
+            import traceback
+            traceback.print_exc()
+            return jsonify({"error": "Erreur lors de la vérification des tags"}), 500
 
         print("\n▶️ Appel à merge_playlists...")
 
