@@ -508,59 +508,77 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
     print("\n=== FUSION BLOCKRANGE ===")
 
     # 1) Récupère les UserMarkGuid -> UserMarkId
-    conn = sqlite3.connect(merged_db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT UserMarkId, UserMarkGuid FROM UserMark")
-    usermark_guid_map = {guid: uid for uid, guid in cursor.fetchall()}
-    conn.close()
+    try:
+        conn = sqlite3.connect(merged_db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT UserMarkId, UserMarkGuid FROM UserMark")
+        usermark_guid_map = {guid: uid for uid, guid in cursor.fetchall()}
+        conn.close()
+    except Exception as e:
+        print(f"❌ Erreur lors de la lecture des UserMark : {e}")
+        return
 
-    # 2) Crée une set des BlockRange déjà présents (pour éviter doublons)
+    # 2) Crée un set des BlockRange déjà présents (pour éviter doublons)
     existing = set()
-    conn = sqlite3.connect(merged_db_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT br.BlockType, br.Identifier, br.StartToken, br.EndToken, um.UserMarkGuid
-        FROM BlockRange br
-        JOIN UserMark um ON br.UserMarkId = um.UserMarkId
-    """)
-    for row in cursor.fetchall():
-        existing.add(tuple(row))
-    conn.close()
+    try:
+        conn = sqlite3.connect(merged_db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT br.BlockType, br.Identifier, br.StartToken, br.EndToken, um.UserMarkGuid
+            FROM BlockRange br
+            JOIN UserMark um ON br.UserMarkId = um.UserMarkId
+        """)
+        for row in cursor.fetchall():
+            existing.add(tuple(row))
+        conn.close()
+    except Exception as e:
+        print(f"❌ Erreur lors de la lecture des BlockRange existants : {e}")
+        return
 
-    # 3) Parcourt les 2 fichiers
+    inserted = 0  # 🔢 compteur d'inserts réussis
+
+    # 3) Parcourt les 2 fichiers sources
     for db_path in [file1_db, file2_db]:
-        with sqlite3.connect(db_path) as src_conn:
-            src_cursor = src_conn.cursor()
-            src_cursor.execute("""
-                SELECT br.BlockType, br.Identifier, br.StartToken, br.EndToken, um.UserMarkGuid
-                FROM BlockRange br
-                JOIN UserMark um ON br.UserMarkId = um.UserMarkId
-            """)
-            for row in src_cursor.fetchall():
-                key = tuple(row)
-                if key in existing:
-                    print(f"⏩ BlockRange ignoré (déjà présent): {key}")
-                    continue
+        print(f"\nTraitement de {db_path}")
+        try:
+            with sqlite3.connect(db_path) as src_conn:
+                src_cursor = src_conn.cursor()
+                src_cursor.execute("""
+                    SELECT br.BlockType, br.Identifier, br.StartToken, br.EndToken, um.UserMarkGuid
+                    FROM BlockRange br
+                    JOIN UserMark um ON br.UserMarkId = um.UserMarkId
+                """)
+                for row in src_cursor.fetchall():
+                    key = tuple(row)
+                    if key in existing:
+                        print(f"⏩ BlockRange ignoré (déjà présent): {key}")
+                        continue
 
-                block_type, identifier, start_token, end_token, usermark_guid = key
-                new_usermark_id = usermark_guid_map.get(usermark_guid)
+                    block_type, identifier, start_token, end_token, usermark_guid = key
+                    new_usermark_id = usermark_guid_map.get(usermark_guid)
 
-                if not new_usermark_id:
-                    print(f"❌ UserMarkGuid introuvable: {usermark_guid}")
-                    continue
+                    if not new_usermark_id:
+                        print(f"❌ UserMarkGuid introuvable: {usermark_guid}")
+                        continue
 
-                with sqlite3.connect(merged_db_path) as conn:
-                    cur = conn.cursor()
                     try:
-                        cur.execute("""
-                            INSERT INTO BlockRange
-                            (BlockType, Identifier, StartToken, EndToken, UserMarkId)
-                            VALUES (?, ?, ?, ?, ?)
-                        """, (block_type, identifier, start_token, end_token, new_usermark_id))
-                        existing.add(key)
-                        print(f"✅ Insertion BlockRange: {key}")
+                        with sqlite3.connect(merged_db_path) as conn:
+                            cur = conn.cursor()
+                            cur.execute("""
+                                INSERT INTO BlockRange
+                                (BlockType, Identifier, StartToken, EndToken, UserMarkId)
+                                VALUES (?, ?, ?, ?, ?)
+                            """, (block_type, identifier, start_token, end_token, new_usermark_id))
+                            existing.add(key)
+                            inserted += 1
+                            print(f"✅ Insertion BlockRange: {key}")
                     except Exception as e:
                         print(f"❌ Erreur insertion BlockRange {key}: {e}")
+        except Exception as e:
+            print(f"❌ Erreur lors de la lecture de {db_path} : {e}")
+
+    print(f"\n🎯 Total BlockRange insérés : {inserted}")
+
 
 
 def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
