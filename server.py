@@ -20,6 +20,13 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(EXTRACT_FOLDER, exist_ok=True)
 
 
+def normalize_mapping_keys(mapping):
+    return {
+        (os.path.normpath(k[0]), k[1]): v
+        for k, v in mapping.items()
+    }
+
+
 def get_current_local_iso8601():
     now_local = datetime.datetime.now()
     return now_local.strftime("%Y-%m-%dT%H:%M:%S")
@@ -1279,6 +1286,8 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
                 print(f"{len(rows)} lignes trouvées dans {os.path.basename(db_path)}")
 
                 for old_item_id, old_media_id, order_idx in rows:
+                    print(
+                        f"Mapping demandé pour ({db_path}, {old_item_id}) → {item_id_map.get((db_path, old_item_id))}")
                     new_item_id = item_id_map.get((db_path, old_item_id))
                     new_media_id = independent_media_map.get((db_path, old_media_id))
 
