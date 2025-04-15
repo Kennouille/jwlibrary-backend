@@ -303,6 +303,7 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
                                         f"INSERT INTO {table} ({columns_joined}) VALUES ({placeholders})", new_row
                                     )
                         else:
+                            print(f"✅ Insertion dans {table} depuis {source_path}: {row}")
                             merged_cursor.execute(
                                 f"INSERT OR IGNORE INTO {table} ({columns_joined}) VALUES ({placeholders})", row
                             )
