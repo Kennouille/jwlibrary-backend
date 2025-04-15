@@ -1857,20 +1857,27 @@ def merge_data():
             # 🧩 C’est ici qu’il faut corriger :
             note_guid = guid if guid else str(uuid.uuid4())  # <== Garantit un GUID pour la Note
 
-            cursor.execute("""
-                INSERT OR REPLACE INTO Note (Guid, Title, Content, LocationId, UserMarkId, LastModified, Created, BlockType, BlockIdentifier)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                note_guid,
-                title,
-                content,
-                new_location_id,
-                new_usermark_id,
-                last_modified,
-                created,
-                block_type,
-                block_identifier
-            ))
+            cursor.execute("SELECT 1 FROM Note WHERE Guid = ?", (note_guid,))
+            exists = cursor.fetchone()
+
+            if exists:
+                # En cas de conflit, on conserve la note déjà présente (celle de file1)
+                print(f"Note avec GUID {note_guid} déjà existante, insertion ignorée.")
+            else:
+                cursor.execute("""
+                    INSERT INTO Note (Guid, Title, Content, LocationId, UserMarkId, LastModified, Created, BlockType, BlockIdentifier)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    note_guid,
+                    title,
+                    content,
+                    new_location_id,
+                    new_usermark_id,
+                    last_modified,
+                    created,
+                    block_type,
+                    block_identifier
+                ))
 
         # Gestion spécifique de LastModified
         cursor.execute("DELETE FROM LastModified")
