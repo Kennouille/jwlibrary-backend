@@ -1830,9 +1830,11 @@ def merge_data():
         # === INSÉRER LES NOTES et USERMARK DANS LA DB FUSIONNÉE AVANT de créer note_mapping ===
         conn = sqlite3.connect(merged_db_path)
         cursor = conn.cursor()
+        # --- Insertion des NOTES dans merge_data (dans la boucle sur merged_notes_list)
         for note_tuple in merged_notes_list:
             old_db_path, guid, title, content, old_loc_id, usermark_guid, last_modified, created, block_type, block_identifier = note_tuple
-            new_guid = str(uuid.uuid4())
+
+            new_guid = guid if guid else str(uuid.uuid4())
 
             # Appliquer le mapping de LocationId
             normalized_key = (os.path.normpath(old_db_path), old_loc_id)
@@ -1847,21 +1849,42 @@ def merge_data():
                 if result:
                     new_usermark_id = result[0]
 
-            # 🧩 C’est ici qu’il faut corriger :
-            note_guid = guid if guid else str(uuid.uuid4())  # <== Garantit un GUID pour la Note
+            # On va maintenant vérifier si une note avec ce GUID existe déjà dans la DB fusionnée
+            cursor.execute("SELECT Title, Content FROM Note WHERE Guid = ?", (new_guid,))
+            existing = cursor.fetchone()
 
-            cursor.execute("SELECT 1 FROM Note WHERE Guid = ?", (note_guid,))
-            exists = cursor.fetchone()
-
-            if exists:
-                # En cas de conflit, on conserve la note déjà présente (celle de file1)
-                print(f"Note avec GUID {note_guid} déjà existante, insertion ignorée.")
+            if existing:
+                if existing[0] == title and existing[1] == content:
+                    # La note existe déjà et est identique, on n'insère rien
+                    print(f"Note avec GUID {new_guid} déjà présente et identique, insertion ignorée.")
+                else:
+                    # Conflit : le GUID existe, mais le contenu est différent.
+                    # On génère un nouveau GUID pour préserver l'information
+                    new_guid_conflict = str(uuid.uuid4())
+                    print(
+                        f"Conflit pour GUID {new_guid}: contenu différent. Insertion de la note avec nouveau GUID {new_guid_conflict}.")
+                    new_guid = new_guid_conflict  # On met à jour pour cette insertion
+                    cursor.execute("""
+                        INSERT INTO Note (Guid, Title, Content, LocationId, UserMarkId, LastModified, Created, BlockType, BlockIdentifier)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        new_guid,
+                        title,
+                        content,
+                        new_location_id,
+                        new_usermark_id,
+                        last_modified,
+                        created,
+                        block_type,
+                        block_identifier
+                    ))
             else:
+                # Aucune note existante, on insère directement
                 cursor.execute("""
                     INSERT INTO Note (Guid, Title, Content, LocationId, UserMarkId, LastModified, Created, BlockType, BlockIdentifier)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    note_guid,
+                    new_guid,
                     title,
                     content,
                     new_location_id,
