@@ -1612,10 +1612,7 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
             exclude_tables=[
                 'Note', 'UserMark', 'Location', 'BlockRange',
                 'LastModified', 'Tag', 'TagMap', 'PlaylistItem',
-                'PlaylistItemAccuracy', 'PlaylistItemLocationMap',
-                'PlaylistItemMarker', 'PlaylistItemMarkerBibleVerseMap',
-                'PlaylistItemMarkerParagraphMap', 'PlaylistItemIndependentMediaMap',
-                'InputField'  # ← ajoute ceci
+                'InputField'  # ← ne pas exclure les *Map, ni Playlist
             ]
         )
 
