@@ -1124,15 +1124,7 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
 
 
 def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
-    """
-    Fusionne les PlaylistItem des deux bases sources dans la DB fusionnée.
-    Deux lignes sont considérées identiques si (Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
-    sont strictement identiques (après normalisation).
-    Si im_mapping est fourni, il peut être utilisé pour mettre à jour le ThumbnailFilePath.
-    Retourne un mapping : {(db_source, ancien_PlaylistItemId) : nouveau_PlaylistItemId, ...}
-    """
     print("\n[FUSION PLAYLISTITEMS]")
-    # Fonctions de normalisation
 
     def safe_text(val):
         return val if val is not None else ""
@@ -1143,17 +1135,15 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
     with sqlite3.connect(merged_db_path, timeout=30) as conn:
         conn.execute("PRAGMA busy_timeout = 10000")
         cursor = conn.cursor()
+
         # Vérifier que la table PlaylistItem existe
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='PlaylistItem'")
         if not cursor.fetchone():
             print("[ERREUR] La table PlaylistItem n'existe pas dans la DB fusionnée.")
             return {}
-        cursor.execute("SELECT COALESCE(MAX(PlaylistItemId), 0) FROM PlaylistItem")
-        max_id = cursor.fetchone()[0]
-        print(f"ID max initial: {max_id}")
 
         item_id_map = {}
-        existing_items = {}  # clé de matching -> nouvel ID
+        existing_items = {}  # clé normalisée -> nouvel ID
 
         def read_playlist_items(db_path):
             with sqlite3.connect(db_path) as src_conn:
@@ -1163,7 +1153,6 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                     FROM PlaylistItem
                 """)
                 rows = cur_source.fetchall()
-            # Ajoute le chemin de la source pour différencier
             return [(db_path,) + row for row in rows]
 
         playlist_items = read_playlist_items(file1_db) + read_playlist_items(file2_db)
@@ -1172,45 +1161,37 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
         for item in playlist_items:
             db_source = item[0]
             old_id, label, start_trim, end_trim, accuracy, end_action, thumb_path = item[1:]
-            # Normalisation des valeurs pour la comparaison
+
             norm_label = safe_text(label)
             norm_start = safe_number(start_trim)
             norm_end = safe_number(end_trim)
             norm_thumb = safe_text(thumb_path)
-            # Si im_mapping doit transformer thumb_path, appliquez ici (pour l'instant on laisse inchangé)
-            new_thumb_path = norm_thumb
+            new_thumb_path = norm_thumb  # tu peux appliquer im_mapping ici si besoin
 
             key = (norm_label, norm_start, norm_end, accuracy, end_action, new_thumb_path)
+
             if key in existing_items:
                 new_playlist_item_id = existing_items[key]
                 print(f"Doublon détecté pour key {key}. Réutilisation de l'ID {new_playlist_item_id}")
             else:
-                max_id += 1
-                new_playlist_item_id = max_id
-                existing_items[key] = new_playlist_item_id
-                new_row = (new_playlist_item_id, label, start_trim, end_trim, accuracy, end_action, thumb_path)
                 try:
-                    # Utiliser INSERT OR IGNORE pour éviter les erreurs et vérifier ensuite l'insertion
                     cursor.execute("""
-                        INSERT OR IGNORE INTO PlaylistItem 
-                        (PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, new_row)
-                    # Vérifier si l'insertion a bien eu lieu (si la ligne existe maintenant)
-                    cursor.execute("SELECT PlaylistItemId FROM PlaylistItem WHERE PlaylistItemId=?", (new_playlist_item_id,))
-                    if cursor.fetchone():
-                        print(f"Insertion réussie : {new_row}")
-                    else:
-                        print(f"Aucune insertion pour {new_row} (peut-être déjà existant)")
+                        INSERT INTO PlaylistItem 
+                        (Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (label, start_trim, end_trim, accuracy, end_action, thumb_path))
+                    new_playlist_item_id = cursor.lastrowid
+                    existing_items[key] = new_playlist_item_id
+                    print(f"Insertion réussie avec nouvel ID {new_playlist_item_id} : {label}")
                 except sqlite3.IntegrityError as e:
                     print(f"Erreur insertion PlaylistItem {old_id}: {e}")
                     continue
+
             item_id_map[(db_source, old_id)] = new_playlist_item_id
 
         conn.commit()
-        print(f"ID max final: {max_id}")
         print(f"Total items mappés: {len(item_id_map)}")
-    return item_id_map
+        return item_id_map
 
 
 def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, independent_media_map):
