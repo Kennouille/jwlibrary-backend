@@ -240,6 +240,9 @@ def create_table_if_missing(merged_conn, source_db_paths, table):
 def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
     if exclude_tables is None:
         exclude_tables = ["Note", "UserMark", "Bookmark", "InputField"]
+
+    print("🧩 Tables exclues :", exclude_tables)
+
     checkpoint_db(db1_path)
     checkpoint_db(db2_path)
 
@@ -258,9 +261,11 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
     all_tables = (tables1 | tables2) - set(exclude_tables)
     merged_conn = sqlite3.connect(merged_db_path)
     merged_cursor = merged_conn.cursor()
-
     source_db_paths = [db1_path, db2_path]
+
     for table in all_tables:
+        print(f"🔍 Vérification fusion pour table : {table}")
+
         if table in {"Bookmark", "IndependentMedia", "InputField"}:
             print(f"Table {table} ignorée : fusion déjà gérée manuellement.")
             continue
@@ -271,12 +276,11 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
         if not columns_info:
             print(f"Table {table} n'a pas pu être créée dans la base fusionnée, on passe.")
             continue
-
         columns = [col[1] for col in columns_info]
         columns_joined = ", ".join(columns)
         placeholders = ", ".join(["?"] * len(columns))
 
-        for source_path in source_db_paths:
+        for source_path in [db1_path, db2_path]:
             with sqlite3.connect(source_path) as source_conn:
                 source_cursor = source_conn.cursor()
                 try:
@@ -309,7 +313,6 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
                                         f"INSERT INTO {table} ({columns_joined}) VALUES ({placeholders})", new_row
                                     )
                         else:
-                            # Génère une clause WHERE pour toutes les colonnes sauf l'ID
                             where_clause = " AND ".join([f"{col}=?" for col in columns[1:]])
                             check_query = f"SELECT 1 FROM {table} WHERE {where_clause} LIMIT 1"
                             try:
@@ -321,7 +324,9 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
 
                             if not exists:
                                 try:
-                                    cur_max = merged_cursor.execute(f"SELECT MAX({columns[0]}) FROM {table}").fetchone()[0] or 0
+                                    cur_max = merged_cursor.execute(
+                                        f"SELECT MAX({columns[0]}) FROM {table}"
+                                    ).fetchone()[0] or 0
                                     new_id = cur_max + 1
                                     new_row = (new_id,) + row[1:]
                                     print(f"✅ Insertion dans {table} depuis {source_path}: {new_row}")
