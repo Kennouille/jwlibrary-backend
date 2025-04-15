@@ -1680,16 +1680,13 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
 
         print("✅ Tous les calculs terminés, retour imminent")
 
-        return merged_jwlibrary, max_playlist_id, len(item_id_map), max_media_id, orphaned_deleted, integrity_result
-
-
+        return merged_jwlibrary, max_playlist_id, len(item_id_map), max_media_id, orphaned_deleted, integrity_result, item_id_map
 
     except Exception as e:
 
         print(f"ERREUR CRITIQUE dans merge_playlists: {str(e)}")
 
         return None, 0, 0, 0, 0, "error"
-
 
     finally:
 
@@ -2077,9 +2074,13 @@ def merge_data():
 
         print(">>> AVANT merge_playlists")
         try:
-            merged_file, playlist_count, playlist_item_count, media_count, cleaned_items, integrity_check = merge_playlists(
+            merged_file, playlist_count, playlist_item_count, media_count, cleaned_items, integrity_check, item_id_map = merge_playlists(
                 merged_db_path, file1_db, file2_db, location_id_map, independent_media_map
             )
+            # DEBUG temporaire
+            for key in item_id_map:
+                print("Clé FINALE de item_id_map :", key)
+
             print("✅ merge_playlists terminé avec succès")
         except Exception as e:
             print(">>> ERREUR ATTRAPÉE dans try/except")
