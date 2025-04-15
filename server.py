@@ -1259,7 +1259,7 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
                 mappings = src_cur.fetchall()
                 print(f"{len(mappings)} mappings trouvés dans {os.path.basename(db_path)}")
                 for old_item_id, old_loc_id, mm_type, duration in mappings:
-                    new_item_id = item_id_map.get((db_path, old_item_id))
+                    new_item_id = item_id_map.get((os.path.normpath(db_path), old_item_id))
                     new_loc_id = location_id_map.get((db_path, old_loc_id))
                     if new_item_id and new_loc_id:
                         try:
@@ -1288,7 +1288,7 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
                 for old_item_id, old_media_id, order_idx in rows:
                     print(
                         f"Mapping demandé pour ({db_path}, {old_item_id}) → {item_id_map.get((db_path, old_item_id))}")
-                    new_item_id = item_id_map.get((db_path, old_item_id))
+                    new_item_id = item_id_map.get((os.path.normpath(db_path), old_item_id))
                     new_media_id = independent_media_map.get((db_path, old_media_id))
 
                     if new_item_id and new_media_id:
@@ -1323,7 +1323,7 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
                 for row in markers:
                     old_marker_id = row[0]
                     old_item_id = row[1]
-                    new_item_id = item_id_map.get((db_path, old_item_id))
+                    new_item_id = item_id_map.get((os.path.normpath(db_path), old_item_id))
 
                     if new_item_id is None:
                         print(f"    > ID item introuvable pour marker {old_marker_id} — ignoré")
@@ -1359,7 +1359,7 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
                 mappings = src_cur.fetchall()
                 print(f"{len(mappings)} mappings trouvés dans {os.path.basename(db_path)}")
                 for old_item_id, old_marker_id, order in mappings:
-                    new_item_id = item_id_map.get((db_path, old_item_id))
+                    new_item_id = item_id_map.get((os.path.normpath(db_path), old_item_id))
                     new_marker_id = marker_id_map.get((db_path, old_marker_id))
                     if new_item_id and new_marker_id:
                         try:
@@ -1414,7 +1414,7 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
                     media_maps = source_cursor.fetchall()
                     print(f"{len(media_maps)} entries dans {os.path.basename(db_path)}")
                     for old_item_id, old_media_id, duration in media_maps:
-                        new_item_id = item_id_map.get((db_path, old_item_id))
+                        new_item_id = item_id_map.get((os.path.normpath(db_path), old_item_id))
                         new_media_id = independent_media_map.get((db_path, old_media_id))
                         if new_item_id and new_media_id:
                             try:
