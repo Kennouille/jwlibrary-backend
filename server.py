@@ -277,6 +277,7 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
                 try:
                     source_cursor.execute(f"SELECT * FROM {table}")
                     rows = source_cursor.fetchall()
+                    print(f"📊 {len(rows)} lignes dans {table} depuis {source_path}")
                 except Exception as e:
                     print(f"Erreur lors de la lecture de {table} dans {source_path}: {e}")
                     rows = []
