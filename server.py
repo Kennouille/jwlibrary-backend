@@ -65,7 +65,7 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
     """
     Fusionne la table IndependentMedia des deux bases sources dans la base fusionnée.
     Deux lignes sont considérées identiques si (OriginalFilename, FilePath, Hash) sont identiques.
-    Si une ligne existe déjà mais avec un MimeType différent, le MimeType est mis à jour.
+    Si une ligne existe déjà, on ignore la nouvelle pour préserver les données existantes.
     Retourne un mapping : {(db_source, ancien_ID) : nouveau_ID, ...}
     """
     print("\n[FUSION INDEPENDENTMEDIA]")
@@ -97,15 +97,9 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
 
                     if result:
                         new_id, existing_mime = result
-                        if existing_mime != mime:
-                            print(f"    > Mise à jour MimeType pour ID {new_id}")
-                            merged_cursor.execute("""
-                                UPDATE IndependentMedia
-                                SET MimeType = ?
-                                WHERE IndependentMediaId = ?
-                            """, (mime, new_id))
+                        # Au lieu de mettre à jour le MimeType, on ignore simplement la nouvelle ligne
+                        print(f"    > Ligne déjà présente pour ID {new_id} (ignorée pour {db_path})")
                     else:
-                        # Insertion sans spécifier l'ID, SQLite gère automatiquement
                         merged_cursor.execute("""
                             INSERT INTO IndependentMedia (OriginalFilename, FilePath, MimeType, Hash)
                             VALUES (?, ?, ?, ?)
@@ -113,7 +107,6 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
                         new_id = merged_cursor.lastrowid
                         print(f"    > Insertion nouvelle ligne ID {new_id}")
 
-                    # Important : utiliser lastrowid OU l'ID trouvé
                     mapping[(db_path, old_id)] = new_id
 
         merged_conn.commit()
