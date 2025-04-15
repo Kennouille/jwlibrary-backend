@@ -830,6 +830,7 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
     def read_locations(db_path):
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
+
         cur.execute("""
             SELECT LocationId, BookNumber, ChapterNumber, DocumentId, Track,
                    IssueTagNumber, KeySymbol, MepsLanguage, Type, Title
@@ -844,8 +845,12 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
     conn = sqlite3.connect(merged_db_path)
     cur = conn.cursor()
 
+    # ✅ Fix pour démarrer avec le bon ID
+    cur.execute("SELECT MAX(LocationId) FROM Location")
+    max_existing_id = cur.fetchone()[0]
+    current_max_id = max_existing_id if max_existing_id is not None else 0
+
     location_id_map = {}
-    current_max_id = 0
 
     for entry in locations:
         db_source = entry[0]
