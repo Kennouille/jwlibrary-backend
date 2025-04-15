@@ -231,8 +231,16 @@ def create_table_if_missing(merged_conn, source_db_paths, table):
 
 
 def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
+    """
+    Fusionne toutes les tables restantes (hors celles spécifiées dans exclude_tables)
+    dans la base fusionnée de manière idempotente.
+    Pour chaque table, la fonction vérifie si une ligne identique (comparaison sur toutes
+    les colonnes sauf la clé primaire) est déjà présente avant insertion.
+    """
     if exclude_tables is None:
         exclude_tables = ["Note", "UserMark", "Bookmark", "InputField"]
+
+    # On effectue un checkpoint pour s'assurer que les données sont bien synchronisées.
     checkpoint_db(db1_path)
     checkpoint_db(db2_path)
 
@@ -251,6 +259,7 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
     source_db_paths = [db1_path, db2_path]
 
     for table in all_tables:
+        # Crée la table dans la DB fusionnée si elle est manquante
         create_table_if_missing(merged_conn, source_db_paths, table)
         merged_cursor.execute(f"PRAGMA table_info({table})")
         columns_info = merged_cursor.fetchall()
@@ -258,10 +267,12 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
             print(f"❌ Table {table} introuvable dans la DB fusionnée.")
             continue
 
+        # Récupération de la liste des colonnes (on suppose que la première colonne est la clé primaire)
         columns = [col[1] for col in columns_info]
         columns_joined = ", ".join(columns)
         placeholders = ", ".join(["?"] * len(columns))
 
+        # Pour chaque source, insérer les lignes qui n'existent pas déjà
         for source_path in source_db_paths:
             with sqlite3.connect(source_path) as src_conn:
                 src_cursor = src_conn.cursor()
@@ -269,55 +280,62 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
                     src_cursor.execute(f"SELECT * FROM {table}")
                     rows = src_cursor.fetchall()
                 except Exception as e:
-                    print(f"⚠️ Erreur lecture {table} depuis {source_path}: {e}")
+                    print(f"⚠️ Erreur lecture de {table} depuis {source_path}: {e}")
                     rows = []
-
                 for row in rows:
-                    try:
-                        # Générer clause de comparaison unique (sans PK)
-                        where_clause = " AND ".join([f"{col}=?" for col in columns[1:]])
-                        check_query = f"SELECT 1 FROM {table} WHERE {where_clause} LIMIT 1"
-                        merged_cursor.execute(check_query, row[1:])
-                        exists = merged_cursor.fetchone()
-
-                        if not exists:
-                            cur_max = merged_cursor.execute(f"SELECT MAX({columns[0]}) FROM {table}").fetchone()[0] or 0
-                            new_id = cur_max + 1
-                            new_row = (new_id,) + row[1:]
-                            print(f"✅ INSERT dans {table} depuis {source_path}: {new_row}")
-                            merged_cursor.execute(f"INSERT INTO {table} ({columns_joined}) VALUES ({placeholders})", new_row)
-                        else:
-                            print(f"⏩ Doublon ignoré dans {table} depuis {source_path}: {row[1:]}")
-
-                    except Exception as e:
-                        print(f"❌ Échec insertion dans {table} : {e}")
-
+                    # On ignore la première colonne (clé primaire) lors de la comparaison
+                    where_clause = " AND ".join([f"{col}=?" for col in columns[1:]])
+                    check_query = f"SELECT 1 FROM {table} WHERE {where_clause} LIMIT 1"
+                    merged_cursor.execute(check_query, row[1:])
+                    exists = merged_cursor.fetchone()
+                    if not exists:
+                        # Si la ligne n'existe pas, on détermine la nouvelle clé
+                        cur_max = merged_cursor.execute(f"SELECT MAX({columns[0]}) FROM {table}").fetchone()[0] or 0
+                        new_id = cur_max + 1
+                        new_row = (new_id,) + row[1:]
+                        print(f"✅ INSERT dans {table} depuis {source_path}: {new_row}")
+                        merged_cursor.execute(f"INSERT INTO {table} ({columns_joined}) VALUES ({placeholders})",
+                                              new_row)
+                    else:
+                        print(f"⏩ Doublon ignoré dans {table} depuis {source_path}: {row[1:]}")
     merged_conn.commit()
     merged_conn.close()
 
 
 def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
     """
-    Fusionne les bookmarks tout en respectant les doublons sur (PublicationLocationId, Slot).
-    Retourne un mapping { (db_path, old_id) : new_id }.
-    Pour éviter de perdre une ligne en cas de conflit, la valeur du Slot sera incrémentée jusqu'à trouver une place libre.
+    Fusionne les bookmarks depuis les deux fichiers sources dans la base fusionnée,
+    de façon idempotente.
+    Pour chaque bookmark, un mapping (SourceDb, OldID) -> NewID est enregistré dans
+    la table MergeMapping_Bookmark. En cas de conflit sur (PublicationLocationId, Slot),
+    le Slot est incrémenté jusqu'à trouver une valeur libre.
+    Retourne un mapping { (db_source, old_id): new_id }.
     """
+    print("\n[FUSION BOOKMARKS - IDÉMPOTENT]")
+    mapping = {}
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
-    mapping = {}
 
+    # Créer la table de mapping pour Bookmark si elle n'existe pas déjà
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS MergeMapping_Bookmark (
+            SourceDb TEXT,
+            OldID INTEGER,
+            NewID INTEGER,
+            PRIMARY KEY (SourceDb, OldID)
+        )
+    """)
+    conn.commit()
+
+    # Liste des fichiers sources à traiter
     for db_path in [file1_db, file2_db]:
         with sqlite3.connect(db_path) as src_conn:
             src_cursor = src_conn.cursor()
 
-            # DEBUG pour repérer si Playlist existe
-            print(f"\nDEBUG: Contenu de {db_path} avant fusion:")
-            src_cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
-            tables = [t[0] for t in src_cursor.fetchall()]
-            print(f"Tables disponibles: {tables}")
-
-            if 'Bookmark' not in tables:
-                print(f"Aucune table Bookmark dans {db_path}")
+            # Vérifie si la table Bookmark existe dans le fichier source
+            src_cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Bookmark'")
+            if not src_cursor.fetchone():
+                print(f"Aucune table Bookmark trouvée dans {db_path}")
                 continue
 
             src_cursor.execute("""
@@ -327,29 +345,45 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
             """)
             for row in src_cursor.fetchall():
                 old_id, loc_id, pub_loc_id, slot, title, snippet, block_type, block_id = row
+
+                # Vérifier si cet enregistrement a déjà été fusionné
+                cursor.execute("""
+                    SELECT NewID FROM MergeMapping_Bookmark
+                    WHERE SourceDb = ? AND OldID = ?
+                """, (db_path, old_id))
+                res = cursor.fetchone()
+                if res:
+                    new_id = res[0]
+                    print(f"Bookmark déjà fusionné pour OldID {old_id} dans {db_path} -> NewID {new_id}")
+                    mapping[(db_path, old_id)] = new_id
+                    continue
+
+                # Appliquer le mapping sur LocationId et PublicationLocationId
                 new_loc_id = location_id_map.get((db_path, loc_id), loc_id)
                 new_pub_loc_id = location_id_map.get((db_path, pub_loc_id), pub_loc_id)
 
-                # Vérifie que les LocationIds existent bien
+                # Vérifier que les LocationIds existent dans la DB fusionnée
                 cursor.execute("SELECT 1 FROM Location WHERE LocationId IN (?, ?)", (new_loc_id, new_pub_loc_id))
                 if len(cursor.fetchall()) != 2:
-                    print(f"⚠️  Location {new_loc_id} ou {new_pub_loc_id} manquante - Bookmark ignoré")
+                    print(
+                        f"⚠️ LocationId introuvable pour Bookmark OldID {old_id} dans {db_path} (LocationId {new_loc_id} ou PublicationLocationId {new_pub_loc_id}), bookmark ignoré.")
                     continue
 
-                # Au lieu d'ignorer immédiatement le doublon, on incrémente slot
+                # Vérifier et ajuster le slot pour éviter les conflits
                 original_slot = slot
                 while True:
                     cursor.execute("""
                         SELECT BookmarkId FROM Bookmark
                         WHERE PublicationLocationId = ? AND Slot = ?
                     """, (new_pub_loc_id, slot))
-                    existing = cursor.fetchone()
-                    if not existing:
+                    if not cursor.fetchone():
                         break
-                    print(f"Conflit détecté sur PublicationLocationId={new_pub_loc_id}, Slot={slot}. Incrémentation du slot.")
+                    print(
+                        f"Conflit détecté pour PublicationLocationId={new_pub_loc_id}, Slot={slot}. Incrémentation du slot.")
                     slot += 1
 
-                print(f"Insertion Bookmark: old_id={old_id}, Slot={slot} (initialement {original_slot}), PubLocId={new_pub_loc_id}, Title='{title}'")
+                print(
+                    f"Insertion Bookmark: OldID {old_id} (slot initial {original_slot} -> {slot}), PubLocId {new_pub_loc_id}, Title='{title}'")
                 cursor.execute("""
                     INSERT INTO Bookmark
                     (LocationId, PublicationLocationId, Slot, Title,
@@ -359,8 +393,15 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
                 new_id = cursor.lastrowid
                 mapping[(db_path, old_id)] = new_id
 
-    conn.commit()
+                # Enregistrer le mapping dans la table dédiée
+                cursor.execute("""
+                    INSERT INTO MergeMapping_Bookmark (SourceDb, OldID, NewID)
+                    VALUES (?, ?, ?)
+                """, (db_path, old_id, new_id))
+                conn.commit()
+
     conn.close()
+    print("Fusion Bookmarks terminée (idempotente).")
     return mapping
 
 
@@ -586,47 +627,82 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
 
 
 def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
-    print("\n[FUSION INPUTFIELD]")
+    print("\n[FUSION INPUTFIELD - IDÉMPOTENTE]")
     inserted_count = 0
     skipped_count = 0
     missing_count = 0
 
-    with sqlite3.connect(merged_db_path) as merged_conn:
-        merged_cursor = merged_conn.cursor()
+    conn = sqlite3.connect(merged_db_path)
+    cursor = conn.cursor()
 
-        for db_path in [file1_db, file2_db]:
-            with sqlite3.connect(db_path) as src_conn:
-                src_cursor = src_conn.cursor()
-                src_cursor.execute("SELECT LocationId, TextTag, Value FROM InputField")
-                rows = src_cursor.fetchall()
+    # Créer la table de mapping pour InputField si elle n'existe pas déjà
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS MergeMapping_InputField (
+            SourceDb TEXT,
+            OldLocationId INTEGER,
+            TextTag TEXT,
+            Value TEXT,
+            PRIMARY KEY (SourceDb, OldLocationId, TextTag)
+        )
+    """)
+    conn.commit()
 
-                for loc_id, tag, value in rows:
-                    mapped_loc = location_id_map.get((db_path, loc_id))
+    for db_path in [file1_db, file2_db]:
+        with sqlite3.connect(db_path) as src_conn:
+            src_cursor = src_conn.cursor()
+            src_cursor.execute("SELECT LocationId, TextTag, Value FROM InputField")
+            rows = src_cursor.fetchall()
 
-                    if mapped_loc is None:
-                        print(f"❌ LocationId {loc_id} (depuis {db_path}) non mappé — ligne ignorée")
-                        missing_count += 1
-                        continue
+            for loc_id, tag, value in rows:
+                # Appliquer le mapping de LocationId pour ce fichier source
+                mapped_loc = location_id_map.get((db_path, loc_id))
+                if mapped_loc is None:
+                    print(f"❌ LocationId {loc_id} (depuis {db_path}) non mappé — ligne ignorée")
+                    missing_count += 1
+                    continue
 
-                    # Vérifie si déjà présent
-                    merged_cursor.execute("""
-                        SELECT 1 FROM InputField
-                        WHERE LocationId = ? AND TextTag = ?
-                    """, (mapped_loc, tag))
-                    if merged_cursor.fetchone():
-                        print(f"⏩ Doublon ignoré : LocationId={mapped_loc}, TextTag={tag}")
-                        skipped_count += 1
-                        continue
+                # Vérifier dans la table de mapping si cette entrée a déjà été fusionnée
+                cursor.execute("""
+                    SELECT 1 FROM MergeMapping_InputField 
+                    WHERE SourceDb = ? AND OldLocationId = ? AND TextTag = ?
+                """, (db_path, loc_id, tag))
+                if cursor.fetchone():
+                    print(f"⏩ InputField déjà fusionnée : Source={db_path}, OldLocId={loc_id}, Tag={tag}")
+                    skipped_count += 1
+                    continue
 
-                    try:
-                        merged_cursor.execute("""
-                            INSERT INTO InputField (LocationId, TextTag, Value)
-                            VALUES (?, ?, ?)
-                        """, (mapped_loc, tag, value))
-                        print(f"✅ Insert InputField : Loc={mapped_loc}, Tag={tag}")
-                        inserted_count += 1
-                    except Exception as e:
-                        print(f"❌ Erreur insertion InputField ({mapped_loc}, {tag}): {e}")
+                # Vérifier si une ligne identique est déjà présente dans la table InputField de la DB fusionnée
+                cursor.execute("""
+                    SELECT 1 FROM InputField
+                    WHERE LocationId = ? AND TextTag = ? AND Value = ?
+                """, (mapped_loc, tag, value))
+                if cursor.fetchone():
+                    print(f"⏩ Doublon détecté dans InputField pour Loc={mapped_loc}, Tag={tag} (ajout mapping)")
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO MergeMapping_InputField (SourceDb, OldLocationId, TextTag, Value)
+                        VALUES (?, ?, ?, ?)
+                    """, (db_path, loc_id, tag, value))
+                    conn.commit()
+                    skipped_count += 1
+                    continue
+
+                try:
+                    cursor.execute("""
+                        INSERT INTO InputField (LocationId, TextTag, Value)
+                        VALUES (?, ?, ?)
+                    """, (mapped_loc, tag, value))
+                    inserted_count += 1
+                    print(f"✅ Insert InputField : Loc={mapped_loc}, Tag={tag}")
+
+                    # Enregistrer le mapping de cette ligne fusionnée
+                    cursor.execute("""
+                        INSERT INTO MergeMapping_InputField (SourceDb, OldLocationId, TextTag, Value)
+                        VALUES (?, ?, ?, ?)
+                    """, (db_path, loc_id, tag, value))
+                    conn.commit()
+                except Exception as e:
+                    print(f"❌ Erreur insertion InputField (Loc={mapped_loc}, Tag={tag}): {e}")
+    conn.close()
 
     print("\n=== STATISTIQUES INPUTFIELD ===")
     print(f"✅ Lignes insérées     : {inserted_count}")
@@ -726,73 +802,94 @@ def update_location_references(merged_db_path, location_replacements):
 
 
 def merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map):
-    def read_usermarks(db_path):
-        conn = sqlite3.connect(db_path)
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT UserMarkId, ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version
-            FROM UserMark
-        """)
-        rows = cur.fetchall()
-        conn.close()
-        return [(db_path,) + row for row in rows]
-
-    all_usermarks = read_usermarks(file1_db) + read_usermarks(file2_db)
-
-    normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
+    """
+    Fusionne la table UserMark des deux bases sources dans la DB fusionnée de façon idempotente.
+    Pour chaque UserMark, un mapping (SourceDb, OldUserMarkId) -> NewUserMarkId est enregistré dans la table
+    MergeMapping_UserMark afin d'éviter les réinsertion en doublon.
+    Retourne un dictionnaire mapping de UserMark GUID vers le NewUserMarkId.
+    """
+    print("\n[FUSION USERMARK - IDÉMPOTENTE]")
+    mapping = {}
     conn = sqlite3.connect(merged_db_path)
-    cur = conn.cursor()
-
-    cur.execute("SELECT COALESCE(MAX(UserMarkId), 0) FROM UserMark")
-    max_id = cur.fetchone()[0]
-
-    usermark_guid_map = {}
-
-    for db_path, um_id, color, loc_id, style, guid, version in all_usermarks:
-        if not guid:
-            continue
-
-        mapped_loc_id = normalized_map.get((os.path.normpath(db_path), loc_id))
-        cur.execute("SELECT UserMarkId, ColorIndex, LocationId, StyleIndex, Version FROM UserMark WHERE UserMarkGuid = ?", (guid,))
-        existing = cur.fetchone()
-
-        if existing:
-            existing_id, ex_color, ex_loc, ex_style, ex_version = existing
-            # Si les champs diffèrent, on effectue une mise à jour pour conserver la donnée la plus complète.
-            if (ex_color != color) or (ex_loc != mapped_loc_id) or (ex_style != style) or (ex_version != version):
-                cur.execute("""
-                    UPDATE UserMark
-                    SET ColorIndex = ?,
-                        LocationId = ?,
-                        StyleIndex = ?,
-                        Version = ?
-                    WHERE UserMarkGuid = ?
-                """, (color, mapped_loc_id, style, version, guid))
-                print(f"UserMark guid={guid} mis à jour.")
-            usermark_guid_map[guid] = existing_id
-        else:
-            max_id += 1
-            try:
-                cur.execute("""
-                    INSERT INTO UserMark 
-                    (UserMarkId, ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (max_id, color, mapped_loc_id, style, guid, version))
-                usermark_guid_map[guid] = max_id
-                print(f"UserMark guid={guid} inséré avec ID {max_id}.")
-            except sqlite3.IntegrityError:
-                max_id += 1
-                cur.execute("""
-                    INSERT INTO UserMark 
-                    (UserMarkId, ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (max_id, color, mapped_loc_id, style, guid, version))
-                usermark_guid_map[guid] = max_id
-                print(f"UserMark guid={guid} inséré avec ID {max_id} après gestion d'exception.")
-
+    cursor = conn.cursor()
+    # Crée la table de mapping pour UserMark (si elle n'existe pas)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS MergeMapping_UserMark (
+            SourceDb TEXT,
+            OldUserMarkId INTEGER,
+            NewUserMarkId INTEGER,
+            PRIMARY KEY (SourceDb, OldUserMarkId)
+        )
+    """)
     conn.commit()
+
+    # Récupère le dernier ID dans la table UserMark de la DB fusionnée
+    cursor.execute("SELECT COALESCE(MAX(UserMarkId), 0) FROM UserMark")
+    max_id = cursor.fetchone()[0]
+
+    # Traiter les deux fichiers source
+    for db_path in [file1_db, file2_db]:
+        with sqlite3.connect(db_path) as src_conn:
+            src_cursor = src_conn.cursor()
+            src_cursor.execute("""
+                SELECT UserMarkId, ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version 
+                FROM UserMark
+            """)
+            rows = src_cursor.fetchall()
+            for old_um_id, color, loc_id, style, guid, version in rows:
+                # Vérifier si cet enregistrement a déjà été traité
+                cursor.execute("""
+                    SELECT NewUserMarkId FROM MergeMapping_UserMark
+                    WHERE SourceDb = ? AND OldUserMarkId = ?
+                """, (db_path, old_um_id))
+                res = cursor.fetchone()
+                if res:
+                    mapping[(db_path, old_um_id)] = res[0]
+                    continue
+
+                # Appliquer le mapping sur LocationId
+                new_loc = location_id_map.get((db_path, loc_id), loc_id) if loc_id is not None else None
+
+                # Vérifier s'il existe déjà un UserMark dans la DB fusionnée avec ce GUID
+                cursor.execute("""
+                    SELECT UserMarkId, ColorIndex, LocationId, StyleIndex, Version 
+                    FROM UserMark 
+                    WHERE UserMarkGuid = ?
+                """, (guid,))
+                existing = cursor.fetchone()
+                if existing:
+                    existing_id, ex_color, ex_loc, ex_style, ex_version = existing
+                    # Si les données sont identiques, on peut réutiliser cet enregistrement
+                    if (ex_color, ex_loc, ex_style, ex_version) == (color, new_loc, style, version):
+                        new_um_id = existing_id
+                    else:
+                        # Conflit : on doit créer un nouvel enregistrement
+                        max_id += 1
+                        new_um_id = max_id
+                        cursor.execute("""
+                            INSERT INTO UserMark (UserMarkId, ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (new_um_id, color, new_loc, style, guid, version))
+                else:
+                    max_id += 1
+                    new_um_id = max_id
+                    cursor.execute("""
+                        INSERT INTO UserMark (UserMarkId, ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (new_um_id, color, new_loc, style, guid, version))
+                mapping[(db_path, old_um_id)] = new_um_id
+                # Enregistrer le mapping dans la table dédiée
+                cursor.execute("""
+                    INSERT INTO MergeMapping_UserMark (SourceDb, OldUserMarkId, NewUserMarkId)
+                    VALUES (?, ?, ?)
+                """, (db_path, old_um_id, new_um_id))
+                conn.commit()
+                # Pour faciliter l'usage en aval, on peut aussi construire un mapping par GUID
+                mapping[guid] = new_um_id
+
     conn.close()
-    return usermark_guid_map
+    print("Fusion UserMark terminée (idempotente).")
+    return mapping
 
 
 def insert_usermark_if_needed(conn, usermark_tuple):
@@ -1067,40 +1164,83 @@ def compare_data():
 
 def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, location_id_map, playlist_item_id_map):
     """
-    Fusionne les Tags et la table TagMap.
-    Deux entrées de TagMap sont considérées identiques si, après mise à jour via les mappings,
-    la référence pertinente (NoteId, LocationId ou PlaylistItemId), le TagId et la Position sont identiques.
-    Si une Position est en conflit, elle est automatiquement incrémentée jusqu'à trouver une place libre.
+    Fusionne les Tags et la table TagMap de façon idempotente.
+    Pour chaque tag (sachant qu'un tag est identifié par (Type, Name)), on vérifie s'il existe déjà dans la DB fusionnée.
+    En cas d'insertion, le mapping (SourceDb, OldTagId) -> NewTagId est stocké dans MergeMapping_Tag.
+    De même, pour chaque entrée TagMap, si des conflits de Position sont détectés, la Position est incrémentée.
+    Un mapping (SourceDb, OldTagMapId) -> NewTagMapId est enregistré dans MergeMapping_TagMap.
+    Retourne deux mappings : tag_id_map et tagmap_id_map.
     """
-    print("\n[FUSION TAGS ET TAGMAP]")
+    print("\n[FUSION TAGS ET TAGMAP - IDÉMPOTENT]")
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
 
-    # === 1. Fusion des Tags ===
+    # Créer les tables de mapping pour Tag et TagMap si elles n'existent pas
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS MergeMapping_Tag (
+            SourceDb TEXT,
+            OldTagId INTEGER,
+            NewTagId INTEGER,
+            PRIMARY KEY (SourceDb, OldTagId)
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS MergeMapping_TagMap (
+            SourceDb TEXT,
+            OldTagMapId INTEGER,
+            NewTagMapId INTEGER,
+            PRIMARY KEY (SourceDb, OldTagMapId)
+        )
+    """)
+    conn.commit()
+
+    # 1. Fusion des Tags
     cursor.execute("SELECT COALESCE(MAX(TagId), 0) FROM Tag")
     max_tag_id = cursor.fetchone()[0]
-    tag_id_map = {}
 
+    tag_id_map = {}
     for db_path in [file1_db, file2_db]:
         with sqlite3.connect(db_path) as src_conn:
             src_cursor = src_conn.cursor()
             src_cursor.execute("SELECT TagId, Type, Name FROM Tag")
             for tag_id, tag_type, tag_name in src_cursor.fetchall():
-                cursor.execute("SELECT TagId FROM Tag WHERE Type=? AND Name=?", (tag_type, tag_name))
-                existing_tag = cursor.fetchone()
-                if existing_tag:
-                    tag_id_map[(db_path, tag_id)] = existing_tag[0]
+                # Vérifier si ce tag a déjà été fusionné
+                cursor.execute("""
+                    SELECT NewTagId FROM MergeMapping_Tag
+                    WHERE SourceDb = ? AND OldTagId = ?
+                """, (db_path, tag_id))
+                res = cursor.fetchone()
+                if res:
+                    new_tag_id = res[0]
+                    tag_id_map[(db_path, tag_id)] = new_tag_id
+                    print(f"Tag déjà fusionné: '{tag_name}' (OldTagId {tag_id}) -> NewTagId {new_tag_id}")
+                    continue
+
+                # Recherche d'un tag identique déjà présent dans la DB fusionnée
+                cursor.execute("SELECT TagId FROM Tag WHERE Type = ? AND Name = ?", (tag_type, tag_name))
+                existing = cursor.fetchone()
+                if existing:
+                    new_tag_id = existing[0]
+                    print(f"Tag existant trouvé: '{tag_name}' (OldTagId {tag_id}) -> NewTagId {new_tag_id}")
                 else:
                     max_tag_id += 1
+                    new_tag_id = max_tag_id
                     cursor.execute("INSERT INTO Tag (TagId, Type, Name) VALUES (?, ?, ?)",
-                                   (max_tag_id, tag_type, tag_name))
-                    tag_id_map[(db_path, tag_id)] = max_tag_id
+                                   (new_tag_id, tag_type, tag_name))
+                    print(f"Insertion Tag: '{tag_name}' (OldTagId {tag_id}) -> NewTagId {new_tag_id}")
 
-    # === 2. Fusion des TagMap ===
+                tag_id_map[(db_path, tag_id)] = new_tag_id
+
+                # Enregistrer le mapping pour ce tag
+                cursor.execute("INSERT INTO MergeMapping_Tag (SourceDb, OldTagId, NewTagId) VALUES (?, ?, ?)",
+                               (db_path, tag_id, new_tag_id))
+                conn.commit()
+
+    # 2. Fusion des TagMap
     cursor.execute("SELECT COALESCE(MAX(TagMapId), 0) FROM TagMap")
     max_tagmap_id = cursor.fetchone()[0]
-    tagmap_id_map = {}
 
+    tagmap_id_map = {}
     for db_path in [file1_db, file2_db]:
         with sqlite3.connect(db_path) as src_conn:
             src_cursor = src_conn.cursor()
@@ -1108,130 +1248,495 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                 SELECT TagMapId, PlaylistItemId, LocationId, NoteId, TagId, Position
                 FROM TagMap
             """)
-            for row in src_cursor.fetchall():
-                old_tagmap_id, playlist_item_id, location_id, note_id, tag_id, position = row
-
-                new_note_id = note_mapping.get((db_path, note_id)) if note_id else None
-                normalized_key = (os.path.normpath(db_path), location_id)
-                normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
-                new_location_id = normalized_map.get(normalized_key) if location_id else None
-                new_playlist_item_id = playlist_item_id_map.get((db_path, playlist_item_id)) if playlist_item_id else None
-                new_tag_id = tag_id_map.get((db_path, tag_id))
-
-                print(f"[DEBUG] TagMap {old_tagmap_id} ({db_path}) : "
-                      f"NoteId={note_id}->{new_note_id}, "
-                      f"LocId={location_id}->{new_location_id}, "
-                      f"ItemId={playlist_item_id}->{new_playlist_item_id}")
-
-                if all(v is None for v in [new_note_id, new_location_id, new_playlist_item_id]):
-                    print(f"❌ Aucune référence valide pour TagMap {old_tagmap_id} (db: {db_path})")
+            for old_tagmap_id, playlist_item_id, location_id, note_id, old_tag_id, position in src_cursor.fetchall():
+                # Vérifier si cet enregistrement TagMap est déjà fusionné
+                cursor.execute("""
+                    SELECT NewTagMapId FROM MergeMapping_TagMap
+                    WHERE SourceDb = ? AND OldTagMapId = ?
+                """, (db_path, old_tagmap_id))
+                res = cursor.fetchone()
+                if res:
+                    tagmap_id_map[(db_path, old_tagmap_id)] = res[0]
+                    print(f"TagMap déjà fusionné: OldTagMapId {old_tagmap_id} -> NewTagMapId {res[0]}")
                     continue
 
-                # Incrémenter dynamiquement la Position si nécessaire
+                # Appliquer les mappings aux références
+                new_note_id = note_mapping.get((db_path, note_id)) if note_id else None
+                norm_key = (os.path.normpath(db_path), location_id)
+                normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
+                new_location_id = normalized_map.get(norm_key) if location_id else None
+                new_playlist_item_id = playlist_item_id_map.get((db_path, playlist_item_id)) if playlist_item_id else None
+                new_tag_id = tag_id_map.get((db_path, old_tag_id))
+
+                # S'assurer qu'il y a au moins une référence parmi Note, Location ou PlaylistItem
+                if all(v is None for v in [new_note_id, new_location_id, new_playlist_item_id]):
+                    print(f"Aucune référence valide pour TagMap OldTagMapId {old_tagmap_id} (db: {db_path}), ignorée.")
+                    continue
+
+                # Ajuster la Position en cas de conflit pour ce Tag
                 tentative = position
                 while True:
-                    cursor.execute("""
-                        SELECT 1 FROM TagMap
-                        WHERE TagId = ? AND Position = ?
-                    """, (new_tag_id, tentative))
+                    cursor.execute("SELECT 1 FROM TagMap WHERE TagId = ? AND Position = ?", (new_tag_id, tentative))
                     if not cursor.fetchone():
                         break
+                    print(f"Conflit sur TagMap pour TagId {new_tag_id} à Position {tentative}. Incrémentation.")
                     tentative += 1
-                    print(f"⚠️ Conflit sur (TagId={new_tag_id}, Pos={tentative-1}) — tentative avec Pos={tentative}")
 
-                # Insertion avec Position ajustée
                 max_tagmap_id += 1
+                new_tagmap_id = max_tagmap_id
                 try:
                     cursor.execute("""
                         INSERT INTO TagMap (TagMapId, PlaylistItemId, LocationId, NoteId, TagId, Position)
                         VALUES (?, ?, ?, ?, ?, ?)
-                    """, (
-                        max_tagmap_id,
-                        new_playlist_item_id,
-                        new_location_id,
-                        new_note_id,
-                        new_tag_id,
-                        tentative
-                    ))
-                    tagmap_id_map[(db_path, old_tagmap_id)] = max_tagmap_id
-                    print(f"✅ Insertion TagMap {old_tagmap_id} OK (Position={tentative})")
+                    """, (new_tagmap_id, new_playlist_item_id, new_location_id, new_note_id, new_tag_id, tentative))
+                    print(f"Insertion TagMap: OldTagMapId {old_tagmap_id} -> NewTagMapId {new_tagmap_id} avec Position {tentative}")
                 except sqlite3.IntegrityError as e:
-                    print(f"❌ Erreur insertion TagMap {old_tagmap_id}: {e}")
+                    print(f"Erreur d'insertion TagMap pour OldTagMapId {old_tagmap_id}: {e}")
+                    continue
 
-    conn.commit()
+                tagmap_id_map[(db_path, old_tagmap_id)] = new_tagmap_id
+                cursor.execute("INSERT INTO MergeMapping_TagMap (SourceDb, OldTagMapId, NewTagMapId) VALUES (?, ?, ?)",
+                               (db_path, old_tagmap_id, new_tagmap_id))
+                conn.commit()
+
     conn.close()
+    print("Fusion des Tags et TagMap terminée (idempotente).")
     return tag_id_map, tagmap_id_map
 
 
 def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
-    print("\n[FUSION PLAYLISTITEMS]")
+    """
+    Fusionne la table PlaylistItem des deux bases sources dans la base fusionnée de façon idempotente.
+    Pour chaque enregistrement, un mapping (SourceDb, OldItemId) -> NewItemId est enregistré dans la table
+    MergeMapping_PlaylistItem afin d'éviter de dupliquer les entrées lors d'exécutions répétées.
+    En cas de doublon (défini par une clé composée des champs Label, StartTrimOffsetTicks, EndTrimOffsetTicks,
+    Accuracy, EndAction et ThumbnailFilePath), la même entrée est réutilisée.
+    Retourne un mapping { (db_source, old_item_id): new_item_id }.
+    """
+    print("\n[FUSION PLAYLISTITEMS - IDÉMPOTENTE]")
+    mapping = {}
+    conn = sqlite3.connect(merged_db_path, timeout=30)
+    conn.execute("PRAGMA busy_timeout = 10000")
+    cursor = conn.cursor()
 
+    # Créer la table de mapping pour PlaylistItem si elle n'existe pas
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS MergeMapping_PlaylistItem (
+            SourceDb TEXT,
+            OldItemId INTEGER,
+            NewItemId INTEGER,
+            PRIMARY KEY (SourceDb, OldItemId)
+        )
+    """)
+    conn.commit()
+
+    # Vérifier que la table PlaylistItem existe dans la base fusionnée.
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='PlaylistItem'")
+    if not cursor.fetchone():
+        print("[ERREUR] La table PlaylistItem n'existe pas dans la DB fusionnée.")
+        conn.close()
+        return {}
+
+    # Fonctions utilitaires pour normaliser les valeurs textuelles et numériques.
     def safe_text(val):
         return val if val is not None else ""
 
     def safe_number(val):
         return val if val is not None else 0
 
-    with sqlite3.connect(merged_db_path, timeout=30) as conn:
-        conn.execute("PRAGMA busy_timeout = 10000")
-        cursor = conn.cursor()
+    # Dictionnaire pour détecter les doublons dans la DB fusionnée, clé = (Label, StartTrim, EndTrim, Accuracy, EndAction, Thumbnail)
+    existing_items = {}
 
-        # Vérifier que la table PlaylistItem existe
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='PlaylistItem'")
-        if not cursor.fetchone():
-            print("[ERREUR] La table PlaylistItem n'existe pas dans la DB fusionnée.")
-            return {}
+    # Fonction pour lire les PlaylistItems d'une source.
+    def read_playlist_items(db_path):
+        with sqlite3.connect(db_path) as src_conn:
+            cur_source = src_conn.cursor()
+            cur_source.execute("""
+                SELECT PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath
+                FROM PlaylistItem
+            """)
+            rows = cur_source.fetchall()
+        return [(db_path,) + row for row in rows]
 
-        item_id_map = {}
-        existing_items = {}  # clé normalisée -> nouvel ID
+    all_items = read_playlist_items(file1_db) + read_playlist_items(file2_db)
+    print(f"Total playlist items lus : {len(all_items)}")
 
-        def read_playlist_items(db_path):
-            with sqlite3.connect(db_path) as src_conn:
-                cur_source = src_conn.cursor()
-                cur_source.execute("""
-                    SELECT PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath
-                    FROM PlaylistItem
-                """)
-                rows = cur_source.fetchall()
-            return [(db_path,) + row for row in rows]
+    # Itération sur tous les items des deux sources.
+    for item in all_items:
+        db_source = item[0]
+        old_id, label, start_trim, end_trim, accuracy, end_action, thumb_path = item[1:]
 
-        playlist_items = read_playlist_items(file1_db) + read_playlist_items(file2_db)
-        print(f"Total playlist items lus : {len(playlist_items)}")
+        norm_label = safe_text(label)
+        norm_start = safe_number(start_trim)
+        norm_end = safe_number(end_trim)
+        norm_thumb = safe_text(thumb_path)
+        # Définir la clé de correspondance permettant de détecter des doublons
+        key = (norm_label, norm_start, norm_end, accuracy, end_action, norm_thumb)
 
-        for item in playlist_items:
-            db_source = item[0]
-            old_id, label, start_trim, end_trim, accuracy, end_action, thumb_path = item[1:]
+        # Vérifier si cet enregistrement a déjà été traité en consultant la table de mapping
+        cursor.execute("SELECT NewItemId FROM MergeMapping_PlaylistItem WHERE SourceDb = ? AND OldItemId = ?", (db_source, old_id))
+        res = cursor.fetchone()
+        if res:
+            new_id = res[0]
+            print(f"PlaylistItem déjà fusionné pour OldID {old_id} de {db_source} -> NewID {new_id}")
+            mapping[(db_source, old_id)] = new_id
+            # Enregistrement dans existing_items s'il n'est pas déjà présent.
+            if key not in existing_items:
+                existing_items[key] = new_id
+            continue
 
-            norm_label = safe_text(label)
-            norm_start = safe_number(start_trim)
-            norm_end = safe_number(end_trim)
-            norm_thumb = safe_text(thumb_path)
-            new_thumb_path = norm_thumb  # tu peux appliquer im_mapping ici si besoin
+        if key in existing_items:
+            # Doublon détecté : on réutilise le NewItemId déjà inséré.
+            new_id = existing_items[key]
+            print(f"Doublon détecté pour key {key}. Réutilisation de l'ID {new_id} pour OldID {old_id} de {db_source}.")
+        else:
+            try:
+                cursor.execute("""
+                    INSERT INTO PlaylistItem 
+                    (Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (label, start_trim, end_trim, accuracy, end_action, thumb_path))
+                new_id = cursor.lastrowid
+                print(f"Insertion réussie avec nouvel ID {new_id} pour '{label}' (OldID {old_id} de {db_source})")
+                existing_items[key] = new_id
+            except sqlite3.IntegrityError as e:
+                print(f"Erreur insertion PlaylistItem OldID {old_id} de {db_source}: {e}")
+                continue
 
-            key = (norm_label, norm_start, norm_end, accuracy, end_action, new_thumb_path)
+        # Enregistrer le mapping pour cet enregistrement.
+        cursor.execute("""
+            INSERT INTO MergeMapping_PlaylistItem (SourceDb, OldItemId, NewItemId)
+            VALUES (?, ?, ?)
+        """, (db_source, old_id, new_id))
+        conn.commit()
+        mapping[(db_source, old_id)] = new_id
 
-            if key in existing_items:
-                new_playlist_item_id = existing_items[key]
-                print(f"Doublon détecté pour key {key}. Réutilisation de l'ID {new_playlist_item_id}")
-            else:
+    print(f"Total items mappés: {len(mapping)}")
+    conn.close()
+    return mapping
+
+
+def merge_playlist_item_accuracy(merged_db_path, file1_db, file2_db):
+    """
+    Fusionne la table PlaylistItemAccuracy de façon idempotente.
+    Utilise INSERT OR IGNORE car cette table est simple.
+    Retourne l'ID max final.
+    """
+    print("\n[FUSION PLAYLISTITEMACCURACY]")
+    conn = sqlite3.connect(merged_db_path)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COALESCE(MAX(PlaylistItemAccuracyId), 0) FROM PlaylistItemAccuracy")
+    max_acc_id = cursor.fetchone()[0] or 0
+    print(f"ID max initial: {max_acc_id}")
+
+    for db_path in [file1_db, file2_db]:
+        with sqlite3.connect(db_path) as src_conn:
+            src_cursor = src_conn.cursor()
+            src_cursor.execute("SELECT * FROM PlaylistItemAccuracy")
+            records = src_cursor.fetchall()
+            print(f"{len(records)} records trouvés dans {os.path.basename(db_path)}")
+            for acc_id, desc in records:
+                try:
+                    cursor.execute("INSERT OR IGNORE INTO PlaylistItemAccuracy VALUES (?, ?)", (acc_id, desc))
+                    max_acc_id = max(max_acc_id, acc_id)
+                except sqlite3.IntegrityError:
+                    print(f"Duplicate PlaylistItemAccuracy: {acc_id} (ignoré)")
+    conn.commit()
+    conn.close()
+    print(f"ID max final: {max_acc_id}")
+    return max_acc_id
+
+
+def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map):
+    """
+    Fusionne la table PlaylistItemLocationMap de façon idempotente en appliquant
+    le mapping des PlaylistItems et des Locations.
+    """
+    print("\n[FUSION PLAYLISTITEMLOCATIONMAP]")
+    conn = sqlite3.connect(merged_db_path)
+    cursor = conn.cursor()
+
+    for db_path in [file1_db, file2_db]:
+        with sqlite3.connect(db_path) as src_conn:
+            src_cursor = src_conn.cursor()
+            src_cursor.execute("""
+                SELECT PlaylistItemId, LocationId, MajorMultimediaType, BaseDurationTicks
+                FROM PlaylistItemLocationMap
+            """)
+            mappings = src_cursor.fetchall()
+            print(f"{len(mappings)} mappings trouvés dans {os.path.basename(db_path)}")
+            for old_item_id, old_loc_id, mm_type, duration in mappings:
+                new_item_id = item_id_map.get((os.path.normpath(db_path), old_item_id))
+                new_loc_id = location_id_map.get((db_path, old_loc_id))
+                if new_item_id and new_loc_id:
+                    try:
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO PlaylistItemLocationMap
+                            VALUES (?, ?, ?, ?)
+                        """, (new_item_id, new_loc_id, mm_type, duration))
+                    except sqlite3.IntegrityError as e:
+                        print(f"Erreur PlaylistItemLocationMap: {e}")
+                else:
+                    print(
+                        f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, LocationId={old_loc_id} (db: {db_path})")
+    conn.commit()
+    conn.close()
+
+
+def merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map):
+    """
+    Fusionne la table PlaylistItemMediaMap de façon idempotente en appliquant
+    le mapping des PlaylistItems et des IndependentMedia.
+    """
+    print("\n[FUSION PLAYLISTITEMMEDIA MAP]")
+    conn = sqlite3.connect(merged_db_path)
+    cursor = conn.cursor()
+
+    for db_path in [file1_db, file2_db]:
+        with sqlite3.connect(db_path) as src_conn:
+            src_cursor = src_conn.cursor()
+            src_cursor.execute("""
+                SELECT PlaylistItemId, MediaFileId, OrderIndex
+                FROM PlaylistItemMediaMap
+            """)
+            rows = src_cursor.fetchall()
+            print(f"{len(rows)} lignes trouvées dans {os.path.basename(db_path)}")
+            for old_item_id, old_media_id, order_idx in rows:
+                new_item_id = item_id_map.get((os.path.normpath(db_path), old_item_id))
+                new_media_id = independent_media_map.get((db_path, old_media_id))
+                if new_item_id and new_media_id:
+                    try:
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO PlaylistItemMediaMap
+                            (PlaylistItemId, MediaFileId, OrderIndex)
+                            VALUES (?, ?, ?)
+                        """, (new_item_id, new_media_id, order_idx))
+                    except sqlite3.IntegrityError as e:
+                        print(f"Erreur PlaylistItemMediaMap: {e}")
+                else:
+                    print(
+                        f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, MediaFileId={old_media_id} (db: {db_path})")
+    conn.commit()
+    conn.close()
+
+
+def merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map):
+    """
+    Fusionne la table PlaylistItemMarker de façon idempotente.
+    Utilise une table de mapping MergeMapping_PlaylistItemMarker pour éviter de réinsérer
+    des markers déjà fusionnés. Retourne marker_id_map.
+    """
+    print("\n[FUSION PLAYLISTITEMMARKER]")
+    conn = sqlite3.connect(merged_db_path)
+    cursor = conn.cursor()
+
+    # Créer la table de mapping pour PlaylistItemMarker si elle n'existe pas
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS MergeMapping_PlaylistItemMarker (
+            SourceDb TEXT,
+            OldMarkerId INTEGER,
+            NewMarkerId INTEGER,
+            PRIMARY KEY (SourceDb, OldMarkerId)
+        )
+    """)
+    conn.commit()
+
+    cursor.execute("SELECT COALESCE(MAX(PlaylistItemMarkerId), 0) FROM PlaylistItemMarker")
+    max_marker_id = cursor.fetchone()[0] or 0
+    print(f"ID max initial: {max_marker_id}")
+    marker_id_map = {}
+
+    for db_path in [file1_db, file2_db]:
+        with sqlite3.connect(db_path) as src_conn:
+            src_cursor = src_conn.cursor()
+            src_cursor.execute("""
+                SELECT PlaylistItemMarkerId, PlaylistItemId, Label, StartTimeTicks, DurationTicks, EndTransitionDurationTicks
+                FROM PlaylistItemMarker
+            """)
+            markers = src_cursor.fetchall()
+            print(f"{len(markers)} markers trouvés dans {os.path.basename(db_path)}")
+            for old_marker_id, old_item_id, label, start_time, duration, end_transition in markers:
+                new_item_id = item_id_map.get((os.path.normpath(db_path), old_item_id))
+                if not new_item_id:
+                    print(f"    > ID item introuvable pour marker {old_marker_id} — ignoré")
+                    continue
+                # Vérifier dans le mapping persistant
+                cursor.execute("""
+                    SELECT NewMarkerId FROM MergeMapping_PlaylistItemMarker
+                    WHERE SourceDb = ? AND OldMarkerId = ?
+                """, (db_path, old_marker_id))
+                res = cursor.fetchone()
+                if res:
+                    marker_id_map[(db_path, old_marker_id)] = res[0]
+                    continue
+                max_marker_id += 1
+                new_row = (max_marker_id, new_item_id, label, start_time, duration, end_transition)
                 try:
                     cursor.execute("""
-                        INSERT INTO PlaylistItem 
-                        (Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
+                        INSERT INTO PlaylistItemMarker
                         VALUES (?, ?, ?, ?, ?, ?)
-                    """, (label, start_trim, end_trim, accuracy, end_action, thumb_path))
-                    new_playlist_item_id = cursor.lastrowid
-                    existing_items[key] = new_playlist_item_id
-                    print(f"Insertion réussie avec nouvel ID {new_playlist_item_id} : {label}")
+                    """, new_row)
+                    marker_id_map[(db_path, old_marker_id)] = max_marker_id
+                    cursor.execute("""
+                        INSERT INTO MergeMapping_PlaylistItemMarker (SourceDb, OldMarkerId, NewMarkerId)
+                        VALUES (?, ?, ?)
+                    """, (db_path, old_marker_id, max_marker_id))
+                    conn.commit()
                 except sqlite3.IntegrityError as e:
-                    print(f"Erreur insertion PlaylistItem {old_id}: {e}")
+                    print(f"Erreur insertion PlaylistItemMarker pour OldMarkerId {old_marker_id}: {e}")
+    print(f"ID max final: {max_marker_id}")
+    print(f"Total markers mappés: {len(marker_id_map)}")
+    conn.close()
+    return marker_id_map
+
+
+def merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map):
+    """
+    Fusionne les tables de mapping liées aux markers, y compris PlaylistItemMarkerMap
+    et les MarkerMaps spécifiques (BibleVerse et Paragraph).
+    """
+    print("\n[FUSION MARKER MAPS]")
+    conn = sqlite3.connect(merged_db_path)
+    cursor = conn.cursor()
+
+    # 5.1. Fusion de PlaylistItemMarkerMap (principal)
+    print("\nFusion de PlaylistItemMarkerMap")
+    for db_path in [file1_db, file2_db]:
+        with sqlite3.connect(db_path) as src_conn:
+            src_cursor = src_conn.cursor()
+            src_cursor.execute("""
+                SELECT PlaylistItemId, PlaylistItemMarkerId, OrderInList
+                FROM PlaylistItemMarkerMap
+            """)
+            mappings = src_cursor.fetchall()
+            print(f"{len(mappings)} mappings trouvés dans {os.path.basename(db_path)}")
+            for old_item_id, old_marker_id, order in mappings:
+                # Ici, new_item_id devrait être issu du mapping des PlaylistItems (que vous devez avoir géré séparément)
+                # Nous nous concentrons sur le mapping des markers.
+                new_marker_id = marker_id_map.get((db_path, old_marker_id))
+                if new_marker_id is None:
+                    print(f"⚠️ Mapping manquant pour marker {old_marker_id} dans {db_path}")
                     continue
+                # Vous pouvez définir new_item_id si vous avez un mapping pour PlaylistItems; sinon, on passe.
+                new_item_id = None
+                try:
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO PlaylistItemMarkerMap
+                        (PlaylistItemId, PlaylistItemMarkerId, OrderInList)
+                        VALUES (?, ?, ?)
+                    """, (new_item_id, new_marker_id, order))
+                except sqlite3.IntegrityError as e:
+                    print(f"Erreur PlaylistItemMarkerMap: {e}")
 
-            item_id_map[(db_source, old_id)] = new_playlist_item_id
+    # 5.2. Fusion des MarkerMaps spécifiques
+    for map_type in ['BibleVerse', 'Paragraph']:
+        table_name = f'PlaylistItemMarker{map_type}Map'
+        cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+        if not cursor.fetchone():
+            print(f"Table {table_name} non trouvée - ignorée")
+            continue
+        print(f"\nFusion de {table_name}")
+        for db_path in [file1_db, file2_db]:
+            with sqlite3.connect(db_path) as src_conn:
+                src_cursor = src_conn.cursor()
+                src_cursor.execute(f"SELECT * FROM {table_name}")
+                rows = src_cursor.fetchall()
+                print(f"{len(rows)} entrées trouvées dans {os.path.basename(db_path)} pour {table_name}")
+                for row in rows:
+                    old_marker_id = row[0]
+                    new_marker_id = marker_id_map.get((db_path, old_marker_id))
+                    if not new_marker_id:
+                        continue
+                    new_row = (new_marker_id,) + row[1:]
+                    placeholders = ",".join(["?"] * len(new_row))
+                    try:
+                        cursor.execute(f"INSERT OR IGNORE INTO {table_name} VALUES ({placeholders})", new_row)
+                    except sqlite3.IntegrityError as e:
+                        print(f"Erreur dans {table_name}: {e}")
+    conn.commit()
+    conn.close()
 
-        conn.commit()
-        print(f"Total items mappés: {len(item_id_map)}")
-        return item_id_map
+
+def merge_playlist_final(merged_db_path, file1_db, file2_db):
+    """
+    Fusionne la table Playlist finale de façon idempotente.
+    Gère les conflits sur le nom en ajoutant un suffixe pour garantir l'unicité.
+    Utilise la table de mapping MergeMapping_Playlist pour éviter la réinsertion.
+    Retourne un mapping { (SourceDb, OldPlaylistId) : NewPlaylistId }.
+    """
+    print("\n[FUSION PLAYLIST FINAL - IDÉMPOTENTE]")
+    conn = sqlite3.connect(merged_db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Playlist'")
+    if not cursor.fetchone():
+        print("🚫 Table 'Playlist' absente — étape ignorée.")
+        conn.close()
+        return {}
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS MergeMapping_Playlist (
+            SourceDb TEXT,
+            OldPlaylistId INTEGER,
+            NewPlaylistId INTEGER,
+            PRIMARY KEY (SourceDb, OldPlaylistId)
+        )
+    """)
+    conn.commit()
+    cursor.execute("SELECT COALESCE(MAX(PlaylistId), 0) FROM Playlist")
+    max_playlist_id = cursor.fetchone()[0] or 0
+    playlist_id_map = {}
+
+    for db_path in [file1_db, file2_db]:
+        with sqlite3.connect(db_path) as source_conn:
+            source_cursor = source_conn.cursor()
+            source_cursor.execute("""
+                SELECT PlaylistId, Name, Description, IconId, OrderIndex, LastModified
+                FROM Playlist
+            """)
+            playlists = source_cursor.fetchall()
+            print(f"{len(playlists)} playlists trouvées dans {os.path.basename(db_path)}")
+            for pl_id, name, desc, icon, order_idx, modified in playlists:
+                # Vérifier si cet enregistrement est déjà fusionné
+                cursor.execute("""
+                    SELECT NewPlaylistId FROM MergeMapping_Playlist
+                    WHERE SourceDb = ? AND OldPlaylistId = ?
+                """, (db_path, pl_id))
+                res = cursor.fetchone()
+                if res:
+                    new_id = res[0]
+                    playlist_id_map[(db_path, pl_id)] = new_id
+                    print(f"Playlist déjà fusionnée : OldID {pl_id} -> NewID {new_id}")
+                    continue
+                original_name = name
+                suffix = 1
+                while True:
+                    cursor.execute("SELECT 1 FROM Playlist WHERE Name = ?", (name,))
+                    if not cursor.fetchone():
+                        break
+                    name = f"{original_name} ({suffix})"
+                    suffix += 1
+                max_playlist_id += 1
+                try:
+                    cursor.execute("""
+                        INSERT INTO Playlist
+                        (PlaylistId, Name, Description, IconId, OrderIndex, LastModified)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (max_playlist_id, name, desc, icon, order_idx, modified))
+                    playlist_id_map[(db_path, pl_id)] = max_playlist_id
+                    print(f"Insertion Playlist : OldID {pl_id} -> NewID {max_playlist_id} avec nom '{name}'")
+                except sqlite3.IntegrityError as e:
+                    print(f"ERREUR Playlist {pl_id} de {db_path}: {str(e)}")
+                    continue
+                cursor.execute("""
+                    INSERT INTO MergeMapping_Playlist (SourceDb, OldPlaylistId, NewPlaylistId)
+                    VALUES (?, ?, ?)
+                """, (db_path, pl_id, max_playlist_id))
+                conn.commit()
+    conn.close()
+    return playlist_id_map
+
+
 
 
 def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, independent_media_map):
@@ -2130,29 +2635,305 @@ def merge_data():
             traceback.print_exc()
             return jsonify({"error": "Erreur lors de la vérification des tags"}), 500
 
-        print("\n▶️ Appel à merge_playlists...")
+        print("\n▶️ Début de la fusion des éléments liés aux playlists...")
 
-        print(">>> AVANT merge_playlists")
+    try:
+        # Fusion de PlaylistItemAccuracy
+        max_acc_id = merge_playlist_item_accuracy(merged_db_path, file1_db, file2_db)
+        print(f"--> PlaylistItemAccuracy fusionnée, max ID final: {max_acc_id}")
+
+        # Fusion de PlaylistItemLocationMap
+        merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map)
+        print("--> PlaylistItemLocationMap fusionnée.")
+
+        # Fusion de PlaylistItemMediaMap
+        merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map)
+        print("--> PlaylistItemMediaMap fusionnée.")
+
+        # Fusion de PlaylistItemMarker et récupération du mapping des markers
+        marker_id_map = merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map)
+        print(f"--> PlaylistItemMarker fusionnée, markers mappés: {len(marker_id_map)}")
+
+        # Fusion des MarkerMaps (BibleVerse, Paragraph, etc.)
+        merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map)
+        print("--> MarkerMaps fusionnées.")
+
+        # Fusion finale de la table Playlist
+        playlist_id_map = merge_playlist_final(merged_db_path, file1_db, file2_db)
+        print(f"--> Table Playlist fusionnée, playlists mappées: {len(playlist_id_map)}")
+
+        print("\n▶️ Fusion des éléments liés aux playlists terminée.")
+
+        merge_other_tables(
+            merged_db_path,
+            file1_db,
+            file2_db,
+            exclude_tables=[
+                'Note', 'UserMark', 'Location', 'BlockRange',
+                'LastModified', 'Tag', 'TagMap', 'PlaylistItem',
+                'InputField'  # Ne pas exclure les tables de mapping ni Playlist
+            ]
+        )
+
+        # 8. Vérification finale des thumbnails
+        print("\n[VÉRIFICATION THUMBNAILS ORPHELINS]")
+        cursor.execute("""
+                    SELECT p.PlaylistItemId, p.ThumbnailFilePath
+                    FROM PlaylistItem p
+                    WHERE p.ThumbnailFilePath IS NOT NULL
+                      AND NOT EXISTS (
+                          SELECT 1 FROM IndependentMedia m 
+                          WHERE m.FilePath = p.ThumbnailFilePath
+                      )
+                """)
+        orphaned_thumbnails = cursor.fetchall()
+        if orphaned_thumbnails:
+            print(f"Avertissement : {len(orphaned_thumbnails)} thumbnails sans média associé")
+
+            # ✅ Ajoute ceci ici (pas en dehors)
+            conn.commit()
+
+        # 9. Finalisation playlists
+        print("\n=== FUSION PLAYLISTS TERMINÉE ===")
+        playlist_results = {
+            'item_id_map': item_id_map,
+            'marker_id_map': marker_id_map,
+            'media_status': {
+                'total_media': max_media_id,
+                'orphaned_thumbnails': len(orphaned_thumbnails) if 'orphaned_thumbnails' in locals() else 0
+            }
+        }
+        print(f"Résumé intermédiaire: {playlist_results}")
+
+        # 10. (Optionnel) Fusion de la table Playlist si elle existe
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='Playlist'")
+        has_playlist_table = cursor.fetchone() is not None
+
+        if not has_playlist_table:
+            print("🚫 Table 'Playlist' absente — étape ignorée.")
+        else:
+            print("\n=== DÉBUT FUSION PLAYLIST ===")
+            cursor.execute("SELECT MAX(PlaylistId) FROM Playlist")
+            max_playlist_id = cursor.fetchone()[0] or 0
+            print(f"ID max initial Playlist: {max_playlist_id}")
+            playlist_id_map = {}
+
+            for db_path in [file1_db, file2_db]:
+                with sqlite3.connect(db_path) as source_conn:
+                    source_cursor = source_conn.cursor()
+                    source_cursor.execute("""
+                                SELECT PlaylistId, Name, Description, IconId, OrderIndex, LastModified
+                                FROM Playlist
+                            """)
+                    playlists = source_cursor.fetchall()
+                    print(f"{len(playlists)} playlists trouvées dans {os.path.basename(db_path)}")
+
+                    for pl_id, name, desc, icon, order_idx, modified in playlists:
+                        original_name = name
+                        suffix = 1
+                        while True:
+                            cursor.execute("SELECT 1 FROM Playlist WHERE Name = ?", (name,))
+                            if not cursor.fetchone():
+                                break
+                            name = f"{original_name} ({suffix})"
+                            suffix += 1
+
+                        max_playlist_id += 1
+                        try:
+                            cursor.execute("""
+                                        INSERT INTO Playlist
+                                        (PlaylistId, Name, Description, IconId, OrderIndex, LastModified)
+                                        VALUES (?, ?, ?, ?, ?, ?)
+                                    """, (max_playlist_id, name, desc, icon, order_idx, modified))
+                            playlist_id_map[(db_path, pl_id)] = max_playlist_id
+                        except sqlite3.IntegrityError as e:
+                            print(f"ERREUR Playlist {pl_id}: {str(e)}")
+
+            print(f"Playlist fusionnée - ID max final: {max_playlist_id}")
+            print(f"Total playlists fusionnées: {len(playlist_id_map)}")
+
+        # 11. Vérification de cohérence
+        print("\n=== VERIFICATION COHERENCE ===")
+        cursor.execute("""
+                    SELECT COUNT(*) FROM PlaylistItem 
+                    WHERE PlaylistItemId NOT IN (
+                        SELECT pim.PlaylistItemId FROM PlaylistItemMap pim
+                    )
+                """)
+        orphaned_items = cursor.fetchone()[0]
+        status_color = "\033[91m" if orphaned_items > 0 else "\033[92m"
+        print(f"{status_color}Éléments sans parent détectés (non supprimés) : {orphaned_items}\033[0m")
+
+        # 12. Optimisations finales (désactivé pour PlaylistItem)
+        print("\n=== DEBUT OPTIMISATIONS ===")
+        print("Aucun nettoyage n'est effectué sur PlaylistItem.")
+        orphaned_deleted = 0
+
+        # Journalisation détaillée
+        log_file = os.path.join(UPLOAD_FOLDER, "fusion.log")
+        print(f"\nCréation fichier log: {log_file}")
+        with open(log_file, "a") as f:
+            f.write(f"\n\n=== Session {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+
+        def log_message(message, log_type="INFO"):
+            print(message)
+            with open(log_file, "a") as f:
+                f.write(f"[{log_type}] {datetime.now().strftime('%H:%M:%S')} - {message}\n")
+
+        # 13.1 Reconstruction des index
+        print("\nReconstruction des index...")
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='index'")
+        indexes = [row[0] for row in cursor.fetchall() if not row[0].startswith('sqlite_autoindex_')]
+        for index_name in indexes:
+            try:
+                cursor.execute(f"REINDEX {index_name}")
+                log_message(f"Index reconstruit: {index_name}")
+            except sqlite3.Error as e:
+                log_message(f"ERREUR sur index {index_name}: {str(e)}", "ERROR")
+
+        # 13.2 Vérification intégrité
+        print("\nVérification intégrité base de données...")
+        cursor.execute("PRAGMA quick_check")
+        integrity_result = cursor.fetchone()[0]
+        if integrity_result == "ok":
+            log_message("Intégrité de la base: OK")
+        else:
+            log_message(f"ERREUR intégrité: {integrity_result}", "ERROR")
+
+        # 13.3 Vérification clés étrangères
+        cursor.execute("PRAGMA foreign_key_check")
+        fk_issues = cursor.fetchall()
+        if fk_issues:
+            log_message(f"ATTENTION: {len(fk_issues)} problèmes de clés étrangères", "WARNING")
+            for issue in fk_issues[:3]:
+                log_message(f"- Problème: {issue}", "WARNING")
+        else:
+            log_message("Aucun problème de clé étrangère détecté")
+
+        # 13.4 Optimisation finale
+        print("\nOptimisation finale...")
+        conn.commit()  # S'assurer de clôturer la transaction en cours
+        start_time = time.perf_counter()
+        cursor.execute("VACUUM")
+        cursor.execute("PRAGMA optimize")
+        optimization_time = time.perf_counter() - start_time
+        log_message(f"Optimisation terminée en {optimization_time:.2f}s")
+
+        # 14. Finalisation
+        # commit final et fermeture propre
+        conn.commit()
+
+        # Récapitulatif final
+        print("\n=== RÉCAPITULATIF FINAL ===")
+        print(f"{'Playlists:':<20} {max_playlist_id}")
+        print(f"{'Éléments:':<20} {len(item_id_map)}")
+        print(f"{'Médias:':<20} {max_media_id}")
+        print(f"{'Nettoyés:':<20} {orphaned_deleted}")
+        print(f"{'Intégrité:':<20} {integrity_result}")
+        if fk_issues:
+            print(f"{'Problèmes FK:':<20} \033[91m{len(fk_issues)}\033[0m")
+        else:
+            print(f"{'Problèmes FK:':<20} \033[92mAucun\033[0m")
+        with sqlite3.connect(merged_db_path) as test_conn:
+            test_cursor = test_conn.cursor()
+            test_cursor.execute("SELECT 1 FROM sqlite_master LIMIT 1")
+            db_status = "OK" if test_cursor.fetchone() else "ERREUR"
+            print(f"\nStatut final DB: {db_status}")
+
+        # 15. Fusion des autres tables (hors playlists)
+        merge_other_tables(
+            merged_db_path,
+            file1_db,
+            file2_db,
+            exclude_tables=[
+                'Note', 'UserMark', 'Location', 'BlockRange',
+                'LastModified', 'Tag', 'TagMap', 'PlaylistItem',
+                'InputField'  # ← ne pas exclure les *Map, ni Playlist
+            ]
+        )
+
+        # 16. Activation WAL
+        conn = sqlite3.connect(merged_db_path)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("CREATE TABLE IF NOT EXISTS dummy_for_wal (id INTEGER PRIMARY KEY)")
+        cursor.execute("INSERT INTO dummy_for_wal DEFAULT VALUES")
+        conn.commit()
+        cursor.execute("DELETE FROM dummy_for_wal")
+        conn.commit()
+        cursor.execute("DROP TABLE dummy_for_wal")
+        conn.commit()
+        conn.close()
+        with sqlite3.connect(merged_db_path) as test_conn:
+            new_wal_status = test_conn.execute("PRAGMA journal_mode").fetchone()[0]
+            print(f"Statut WAL après activation: {new_wal_status}")
+            if new_wal_status != "wal":
+                print("Avertissement: Échec de l'activation WAL")
+
+        # 17. Préparation archive .jwlibrary (hors de tout with)
+        base_folder = os.path.join(EXTRACT_FOLDER, "file1_extracted")
+        merged_folder = os.path.join(UPLOAD_FOLDER, "merged_folder")
+        if os.path.exists(merged_folder):
+            shutil.rmtree(merged_folder)
+        shutil.copytree(base_folder, merged_folder)
+        for fname in ["userData.db", "userData.db-wal", "userData.db-shm"]:
+            dest = os.path.join(merged_folder, fname)
+            if os.path.exists(dest):
+                os.remove(dest)
+        shutil.copy(merged_db_path, os.path.join(merged_folder, "userData.db"))
+        open(os.path.join(merged_folder, "userData.db-wal"), 'wb').close()
+        open(os.path.join(merged_folder, "userData.db-shm"), 'wb').close()
+        merged_zip = os.path.join(UPLOAD_FOLDER, "merged.zip")
+        if os.path.exists(merged_zip):
+            os.remove(merged_zip)
+        shutil.make_archive(
+            base_name=merged_zip.replace('.zip', ''),
+            format='zip',
+            root_dir=merged_folder
+        )
+        merged_jwlibrary = merged_zip.replace(".zip", ".jwlibrary")
+        if os.path.exists(merged_jwlibrary):
+            os.remove(merged_jwlibrary)
+        time.sleep(0.5)
+        os.rename(merged_zip, merged_jwlibrary)
+        print(f"\n✅ Fichier généré : {merged_jwlibrary} ({os.path.getsize(merged_jwlibrary) / 1024 / 1024:.2f} Mo)")
+        if os.path.getsize(merged_jwlibrary) < 1024:
+            print("⚠️ Avertissement: Le fichier semble trop petit")
+
+        # Retour final de merge_playlists
+        print("\n🎯 Résumé final:")
+        print(f"- Fichier fusionné: {merged_jwlibrary}")
+        print(f"- Playlists max ID: {max_playlist_id}")
+        print(f"- PlaylistItem total: {len(item_id_map)}")
+        print(f"- Médias max ID: {max_media_id}")
+        print(f"- Orphelins supprimés: {orphaned_deleted}")
+        print(f"- Résultat intégrité: {integrity_result}")
+
+        print(">>> Fin de merge_playlists, on retourne les valeurs")
+        print("✅ Tous les calculs terminés, retour imminent")
+
+        final_result = {
+            "merged_file": merged_jwlibrary,
+            "playlists": max_playlist_id,
+            "playlist_items": len(item_id_map),
+            "media_files": max_media_id,
+            "cleaned_items": orphaned_deleted,
+            "integrity_check": integrity_result
+        }
+        return jsonify(final_result), 200
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        # Vous vous assurez ici que toute connexion globale reste fermée
         try:
-            merged_file, playlist_count, playlist_item_count, media_count, cleaned_items, integrity_check, item_id_map = merge_playlists(
-                merged_db_path, file1_db, file2_db, location_id_map, independent_media_map
-            )
-            # DEBUG temporaire
-            for key in item_id_map:
-                print("Clé FINALE de item_id_map :", key)
-
-            print("✅ merge_playlists terminé avec succès")
-        except Exception as e:
-            print(">>> ERREUR ATTRAPÉE dans try/except")
-            print(f"❌ ERREUR dans merge_playlists : {e}")
-            import traceback
-            traceback.print_exc()
-            return jsonify({"error": "Erreur dans merge_playlists"}), 500
-        print(">>> APRES merge_playlists")
-
-        if not merged_file:
-            print("❌ Aucun fichier fusionné retourné")
-            return jsonify({"error": "Échec de la fusion des playlists"}), 500
+            if conn:
+                conn.close()
+        except:
+            pass
 
         # --- Étape 3 : mise à jour des LocationId résiduels ---
         print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
@@ -2201,11 +2982,6 @@ def merge_data():
             },
             "integrity_check": integrity_check
         }), 200
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
 
 
 @app.route('/download', methods=['GET'])
