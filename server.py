@@ -300,6 +300,7 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
     """
     Fusionne les bookmarks tout en respectant les doublons sur (PublicationLocationId, Slot).
     Retourne un mapping { (db_path, old_id) : new_id }.
+    Pour éviter de perdre une ligne en cas de conflit, la valeur du Slot sera incrémentée jusqu'à trouver une place libre.
     """
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
@@ -335,19 +336,20 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
                     print(f"⚠️  Location {new_loc_id} ou {new_pub_loc_id} manquante - Bookmark ignoré")
                     continue
 
-                # Vérifie si le couple (PublicationLocationId, Slot) existe déjà
-                cursor.execute("""
-                    SELECT BookmarkId FROM Bookmark
-                    WHERE PublicationLocationId = ? AND Slot = ?
-                """, (new_pub_loc_id, slot))
-                existing = cursor.fetchone()
-                if existing:
-                    print(f"Bookmark ignoré : doublon PublicationLocationId={new_pub_loc_id}, Slot={slot}")
-                    continue
+                # Au lieu d'ignorer immédiatement le doublon, on incrémente slot
+                original_slot = slot
+                while True:
+                    cursor.execute("""
+                        SELECT BookmarkId FROM Bookmark
+                        WHERE PublicationLocationId = ? AND Slot = ?
+                    """, (new_pub_loc_id, slot))
+                    existing = cursor.fetchone()
+                    if not existing:
+                        break
+                    print(f"Conflit détecté sur PublicationLocationId={new_pub_loc_id}, Slot={slot}. Incrémentation du slot.")
+                    slot += 1
 
-                print(f"Insertion Bookmark: old_id={old_id}, Slot={slot}, PubLocId={new_pub_loc_id}, Title='{title}'")
-
-                # Insère la nouvelle ligne (sans imposer BookmarkId)
+                print(f"Insertion Bookmark: old_id={old_id}, Slot={slot} (initialement {original_slot}), PubLocId={new_pub_loc_id}, Title='{title}'")
                 cursor.execute("""
                     INSERT INTO Bookmark
                     (LocationId, PublicationLocationId, Slot, Title,
@@ -363,13 +365,18 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
 
 
 def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_guid_map):
-    print("\n=== FUSION DES NOTES ===")
+    """
+    Fusionne la table Note de façon à ne pas écraser les données existantes.
+    Si une note avec le même GUID existe déjà mais que le contenu diffère,
+    on insère une nouvelle note avec un nouveau GUID et on laisse en place la note existante.
+    """
+    print("\n=== FUSION DES NOTES (résolution de conflit par insertion) ===")
     inserted = 0
-    updated = 0
 
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
 
+    # On itère d'abord sur file1, puis sur file2
     for db_path in [file1_db, file2_db]:
         with sqlite3.connect(db_path) as src_conn:
             src_cursor = src_conn.cursor()
@@ -382,65 +389,58 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
             for (guid, usermark_guid, location_id, title, content,
                  last_modified, created, block_type, block_identifier) in src_cursor.fetchall():
 
-                # Mapper le LocationId
+                # Appliquer les mappings sur LocationId et UserMarkId
                 normalized_key = (os.path.normpath(db_path), location_id)
                 normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
                 new_location_id = normalized_map.get(normalized_key) if location_id else None
 
-                # Mapper le UserMarkId
                 new_usermark_id = usermark_guid_map.get(usermark_guid) if usermark_guid else None
 
                 if new_location_id is None:
-                    print(f"⚠️ LocationId introuvable pour Note guid={guid} (source: {db_path})")
+                    print(f"⚠️ LocationId introuvable pour Note guid={guid} (source: {db_path}), ignorée.")
                     continue
 
-                try:
-                    cursor.execute("""
-                        INSERT INTO Note
-                        (Guid, UserMarkId, LocationId, Title, Content,
-                         LastModified, Created, BlockType, BlockIdentifier)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        guid,
-                        new_usermark_id,
-                        new_location_id,
-                        title,
-                        content,
-                        last_modified,
-                        created,
-                        block_type,
-                        block_identifier
-                    ))
-                    inserted += 1
-                except sqlite3.IntegrityError as e:
-                    if "UNIQUE constraint failed: Note.Guid" in str(e):
-                        cursor.execute("""
-                            UPDATE Note SET
-                                UserMarkId=?,
-                                LocationId=?,
-                                Title=?,
-                                Content=?,
-                                LastModified=?,
-                                BlockType=?,
-                                BlockIdentifier=?
-                            WHERE Guid=?
-                        """, (
-                            new_usermark_id,
-                            new_location_id,
-                            title,
-                            content,
-                            last_modified,
-                            block_type,
-                            block_identifier,
-                            guid
-                        ))
-                        updated += 1
+                # Vérifier l'existence d'une note avec ce GUID dans la DB fusionnée
+                cursor.execute("SELECT Title, Content FROM Note WHERE Guid = ?", (guid,))
+                existing = cursor.fetchone()
+
+                if existing:
+                    # Si le contenu est identique, on ne fait rien
+                    if existing[0] == title and existing[1] == content:
+                        print(f"Note guid={guid} déjà présente et identique (source: {db_path}), aucune action.")
+                        continue
                     else:
-                        print(f"❌ Erreur insertion Note guid={guid}: {e}")
+                        # Conflit détecté : le GUID existe mais le contenu est différent.
+                        # On génère alors un nouveau GUID pour insérer la note sans écraser l'existante.
+                        new_guid = str(uuid.uuid4())
+                        print(f"Conflit pour Note guid={guid} (source: {db_path}). "
+                              f"Insertion d'une nouvelle note avec nouveau GUID {new_guid}.")
+                        guid_to_insert = new_guid
+                else:
+                    guid_to_insert = guid
+
+                # Insertion de la note (soit en conservant le GUID, soit avec un nouveau)
+                cursor.execute("""
+                    INSERT INTO Note
+                    (Guid, UserMarkId, LocationId, Title, Content,
+                     LastModified, Created, BlockType, BlockIdentifier)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    guid_to_insert,
+                    new_usermark_id,
+                    new_location_id,
+                    title,
+                    content,
+                    last_modified,
+                    created,
+                    block_type,
+                    block_identifier
+                ))
+                inserted += 1
 
     conn.commit()
     conn.close()
-    print(f"✅ Notes insérées: {inserted}, mises à jour: {updated}")
+    print(f"✅ Total notes insérées: {inserted}")
 
 
 def merge_usermark_with_id_relabeling(merged_db_path, source_db_path, location_id_map):
@@ -753,12 +753,23 @@ def merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_
             continue
 
         mapped_loc_id = normalized_map.get((os.path.normpath(db_path), loc_id))
-
-        cur.execute("SELECT UserMarkId FROM UserMark WHERE UserMarkGuid=?", (guid,))
+        cur.execute("SELECT UserMarkId, ColorIndex, LocationId, StyleIndex, Version FROM UserMark WHERE UserMarkGuid = ?", (guid,))
         existing = cur.fetchone()
 
         if existing:
-            usermark_guid_map[guid] = existing[0]
+            existing_id, ex_color, ex_loc, ex_style, ex_version = existing
+            # Si les champs diffèrent, on effectue une mise à jour pour conserver la donnée la plus complète.
+            if (ex_color != color) or (ex_loc != mapped_loc_id) or (ex_style != style) or (ex_version != version):
+                cur.execute("""
+                    UPDATE UserMark
+                    SET ColorIndex = ?,
+                        LocationId = ?,
+                        StyleIndex = ?,
+                        Version = ?
+                    WHERE UserMarkGuid = ?
+                """, (color, mapped_loc_id, style, version, guid))
+                print(f"UserMark guid={guid} mis à jour.")
+            usermark_guid_map[guid] = existing_id
         else:
             max_id += 1
             try:
@@ -768,6 +779,7 @@ def merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (max_id, color, mapped_loc_id, style, guid, version))
                 usermark_guid_map[guid] = max_id
+                print(f"UserMark guid={guid} inséré avec ID {max_id}.")
             except sqlite3.IntegrityError:
                 max_id += 1
                 cur.execute("""
@@ -776,6 +788,7 @@ def merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, (max_id, color, mapped_loc_id, style, guid, version))
                 usermark_guid_map[guid] = max_id
+                print(f"UserMark guid={guid} inséré avec ID {max_id} après gestion d'exception.")
 
     conn.commit()
     conn.close()
@@ -818,10 +831,16 @@ def insert_usermark_if_needed(conn, usermark_tuple):
 
 
 def merge_location_from_sources(merged_db_path, file1_db, file2_db):
+    """
+    Fusionne les enregistrements de la table Location depuis file1 et file2
+    dans la base fusionnée de façon idempotente.
+    Un mapping (SourceDb, OldID) -> NewID est persisté dans une table dédiée pour éviter
+    de réinsérer des entrées déjà fusionnées.
+    Retourne un dictionnaire de mapping.
+    """
     def read_locations(db_path):
         conn = sqlite3.connect(db_path)
         cur = conn.cursor()
-
         cur.execute("""
             SELECT LocationId, BookNumber, ChapterNumber, DocumentId, Track,
                    IssueTagNumber, KeySymbol, MepsLanguage, Type, Title
@@ -836,7 +855,18 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
     conn = sqlite3.connect(merged_db_path)
     cur = conn.cursor()
 
-    # ✅ Fix pour démarrer avec le bon ID
+    # Créer la table de mapping pour Location si elle n'existe pas
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS MergeMapping_Location (
+            SourceDb TEXT,
+            OldID INTEGER,
+            NewID INTEGER,
+            PRIMARY KEY (SourceDb, OldID)
+        )
+    """)
+    conn.commit()
+
+    # Récupérer le dernier ID de Location déjà présent dans la DB fusionnée
     cur.execute("SELECT MAX(LocationId) FROM Location")
     max_existing_id = cur.fetchone()[0]
     current_max_id = max_existing_id if max_existing_id is not None else 0
@@ -847,10 +877,23 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
         db_source = entry[0]
         old_loc_id, book_num, chap_num, doc_id, track, issue, key_sym, meps_lang, loc_type, title = entry[1:]
 
+        # Vérifier si ce Location a déjà été fusionné depuis ce fichier source
+        cur.execute("""
+            SELECT NewID FROM MergeMapping_Location
+            WHERE SourceDb = ? AND OldID = ?
+        """, (db_source, old_loc_id))
+        res = cur.fetchone()
+        if res:
+            new_id = res[0]
+            print(f"⏩ Location déjà fusionnée pour OldID {old_loc_id} depuis {db_source} -> NewID {new_id}")
+            location_id_map[(db_source, old_loc_id)] = new_id
+            continue
+
+        # Chercher une correspondance déjà existante dans la DB fusionnée
         found = False
         new_loc_id = None
 
-        # Vérifie première contrainte UNIQUE (pour publications classiques)
+        # Première contrainte UNIQUE pour publications classiques
         if None not in (book_num, chap_num, key_sym, meps_lang, loc_type):
             cur.execute("""
                 SELECT LocationId FROM Location
@@ -861,7 +904,7 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
                 found = True
                 new_loc_id = result[0]
 
-        # Sinon vérifie deuxième contrainte UNIQUE (pour périodiques)
+        # Sinon, vérification pour périodiques
         if not found and None not in (key_sym, issue, meps_lang, doc_id, track, loc_type):
             cur.execute("""
                 SELECT LocationId FROM Location
@@ -872,8 +915,8 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
                 found = True
                 new_loc_id = result[0]
 
-        # Si aucune correspondance, on insère une nouvelle ligne
         if not found:
+            # Aucune correspondance : on insère une nouvelle ligne
             current_max_id += 1
             new_loc_id = current_max_id
             new_row = (
@@ -892,11 +935,17 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
                 print(f"⚠️ Erreur insertion Location pour {new_row}: {e}")
                 continue
         else:
-            print(f"⏩ Location ignorée (déjà existante): {old_loc_id} depuis {db_source}")
+            print(f"⏩ Location existante pour OldID {old_loc_id} depuis {db_source} -> NewID {new_loc_id}")
 
         location_id_map[(db_source, old_loc_id)] = new_loc_id
 
-    conn.commit()
+        # Enregistrer le mapping dans la table de mapping pour Location
+        cur.execute("""
+            INSERT INTO MergeMapping_Location (SourceDb, OldID, NewID)
+            VALUES (?, ?, ?)
+        """, (db_source, old_loc_id, new_loc_id))
+        conn.commit()
+
     conn.close()
     return location_id_map
 
