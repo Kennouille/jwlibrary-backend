@@ -304,11 +304,30 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
                                         f"INSERT INTO {table} ({columns_joined}) VALUES ({placeholders})", new_row
                                     )
                         else:
-                            print(f"📥 Tentative insertion dans {table} depuis {source_path} : {row}")
-                            merged_cursor.execute(
-                                f"INSERT OR IGNORE INTO {table} ({columns_joined}) VALUES ({placeholders})", row
-                            )
-                            print(f"✅ Insertion dans {table} depuis {source_path}: {row}")
+                            # Vérifie si une ligne identique (hors PK) existe déjà
+                            where_clause = " AND ".join([f"{col}=?" for col in columns[1:]])  # sauf ID
+                            check_query = f"SELECT 1 FROM {table} WHERE {where_clause} LIMIT 1"
+                            try:
+                                merged_cursor.execute(check_query, row[1:])
+                                exists = merged_cursor.fetchone()
+                            except Exception as e:
+                                print(f"Erreur vérification existence ligne dans {table} : {e}")
+                                exists = True  # Par sécurité, éviter d’insérer
+
+                            if not exists:
+                                try:
+                                    cur_max = \
+                                    merged_cursor.execute(f"SELECT MAX({columns[0]}) FROM {table}").fetchone()[0] or 0
+                                    new_id = cur_max + 1
+                                    new_row = (new_id,) + row[1:]
+                                    print(f"✅ Insertion dans {table} depuis {source_path}: {new_row}")
+                                    merged_cursor.execute(
+                                        f"INSERT INTO {table} ({columns_joined}) VALUES ({placeholders})", new_row
+                                    )
+                                except Exception as e:
+                                    print(f"❌ Échec insertion dans {table} : {e}")
+                            else:
+                                print(f"⏩ Ignoré (déjà présent) dans {table} depuis {source_path}: {row[1:]}")
 
                     except Exception as e:
                         print(f"Erreur lors de l'insertion dans la table {table}: {e}")
