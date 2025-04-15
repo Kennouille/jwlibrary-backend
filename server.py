@@ -270,44 +270,45 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
         columns = [col[1] for col in columns_info]
         columns_joined = ", ".join(columns)
         placeholders = ", ".join(["?"] * len(columns))
-        conn_db1 = sqlite3.connect(db1_path)
-        cursor_db1 = conn_db1.cursor()
-        try:
-            cursor_db1.execute(f"SELECT * FROM {table}")
-            rows1 = cursor_db1.fetchall()
-        except Exception as e:
-            rows1 = []
-            print(f"Erreur lors de la lecture de {table} dans db1: {e}")
-        conn_db1.close()
-        conn_db2 = sqlite3.connect(db2_path)
-        cursor_db2 = conn_db2.cursor()
-        try:
-            cursor_db2.execute(f"SELECT * FROM {table}")
-            rows2 = cursor_db2.fetchall()
-        except Exception as e:
-            rows2 = []
-            print(f"Erreur lors de la lecture de {table} dans db2: {e}")
-        conn_db2.close()
-        merged_rows = list(rows1)
-        for row in rows2:
-            if row not in merged_rows:
-                merged_rows.append(row)
-        for row in merged_rows:
-            try:
-                if table == "BlockRange":
-                    existing = merged_cursor.execute("SELECT * FROM BlockRange WHERE BlockRangeId = ?", (row[0],)).fetchone()
-                    if not existing:
-                        merged_cursor.execute(f"INSERT INTO {table} ({columns_joined}) VALUES ({placeholders})", row)
-                    else:
-                        if (existing[2] != row[2] or existing[3] != row[3] or existing[4] != row[4] or existing[5] != row[5]):
-                            cur_max = merged_cursor.execute("SELECT MAX(BlockRangeId) FROM BlockRange").fetchone()[0] or 0
-                            new_id = cur_max + 1
-                            new_row = (new_id,) + row[1:]
-                            merged_cursor.execute(f"INSERT INTO {table} ({columns_joined}) VALUES ({placeholders})", new_row)
-                else:
-                    merged_cursor.execute(f"INSERT INTO {table} ({columns_joined}) VALUES ({placeholders})", row)
-            except Exception as e:
-                print(f"Erreur lors de l'insertion dans la table {table}: {e}")
+
+        for source_path in [db1_path, db2_path]:
+            with sqlite3.connect(source_path) as source_conn:
+                source_cursor = source_conn.cursor()
+                try:
+                    source_cursor.execute(f"SELECT * FROM {table}")
+                    rows = source_cursor.fetchall()
+                except Exception as e:
+                    print(f"Erreur lors de la lecture de {table} dans {source_path}: {e}")
+                    rows = []
+
+                for row in rows:
+                    try:
+                        if table == "BlockRange":
+                            existing = merged_cursor.execute(
+                                "SELECT * FROM BlockRange WHERE BlockRangeId = ?", (row[0],)
+                            ).fetchone()
+                            if not existing:
+                                merged_cursor.execute(
+                                    f"INSERT INTO {table} ({columns_joined}) VALUES ({placeholders})", row
+                                )
+                            else:
+                                if (existing[2] != row[2] or existing[3] != row[3]
+                                        or existing[4] != row[4] or existing[5] != row[5]):
+                                    cur_max = merged_cursor.execute(
+                                        "SELECT MAX(BlockRangeId) FROM BlockRange"
+                                    ).fetchone()[0] or 0
+                                    new_id = cur_max + 1
+                                    new_row = (new_id,) + row[1:]
+                                    merged_cursor.execute(
+                                        f"INSERT INTO {table} ({columns_joined}) VALUES ({placeholders})", new_row
+                                    )
+                        else:
+                            merged_cursor.execute(
+                                f"INSERT OR IGNORE INTO {table} ({columns_joined}) VALUES ({placeholders})", row
+                            )
+                    except Exception as e:
+                        print(f"Erreur lors de l'insertion dans la table {table}: {e}")
+
     merged_conn.commit()
     merged_conn.close()
 
