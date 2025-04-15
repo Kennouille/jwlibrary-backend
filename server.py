@@ -1829,6 +1829,10 @@ def merge_data():
         print("Mapping IndependentMedia:", independent_media_map)
 
         item_id_map = merge_playlist_items(merged_db_path, file1_db, file2_db, independent_media_map)
+        # ✅ DEBUG TEMPORAIRE pour afficher toutes les clés du mapping
+        for key in item_id_map:
+            print(f"Clé dans item_id_map : {key}")
+
         print("Mapping PlaylistItems:", item_id_map)
 
         usermark_guid_map = merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map)
