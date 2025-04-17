@@ -2904,12 +2904,6 @@ def merge_data():
         shutil.copy(merged_db_path, final_db_dest)
         print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
 
-        # Remplacer les fichiers userData.db, wal et shm
-        for fname in ["userData.db", "userData.db-wal", "userData.db-shm"]:
-            dest = os.path.join(merged_folder, fname)
-            if os.path.exists(dest):
-                os.remove(dest)
-
         # ─── Retour **à l’intérieur** du try ───────────────────────────────────────────────
         final_result = {
             "merged_file": "merged.jwlibrary",
