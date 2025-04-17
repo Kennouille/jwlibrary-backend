@@ -2984,10 +2984,10 @@ def merge_data():
 
 @app.route('/download', methods=['GET'])
 def download_file():
-    merged_jwlibrary = os.path.join(UPLOAD_FOLDER, "merged.jwlibrary")
-    if not os.path.exists(merged_jwlibrary):
+    merged_db_path = os.path.join(UPLOAD_FOLDER, "userData.db")
+    if not os.path.exists(merged_db_path):
         return jsonify({"error": "Fichier fusionné non trouvé."}), 404
-    response = send_file(merged_jwlibrary, as_attachment=True)
+    response = send_file(merged_db_path, as_attachment=True)
     response.headers.add("Access-Control-Allow-Origin", "*")
     return response
 
