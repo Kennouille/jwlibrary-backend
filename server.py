@@ -2899,9 +2899,16 @@ def merge_data():
         print(f"- Résultat intégrité: {integrity_result}")
         print("✅ Tous les calculs terminés, retour imminent")
 
+        # 🔥 Forcer la fermeture explicite des connexions AVANT d’ouvrir pour suppression
+        try:
+            if conn:
+                conn.close()
+        except:
+            pass
+
         # 🔥 Suppression des tables MergeMapping_*
-        with sqlite3.connect(merged_db_path) as conn:
-            cur = conn.cursor()
+        with sqlite3.connect(merged_db_path) as cleanup_conn:
+            cur = cleanup_conn.cursor()
             cur.execute("""
                 SELECT name FROM sqlite_master 
                 WHERE type='table' AND name LIKE 'MergeMapping_%'
@@ -2916,9 +2923,9 @@ def merge_data():
                 except Exception as e:
                     print(f"⚠️ Erreur lors de la suppression de {table_name} : {e}")
 
-            conn.commit()
+            cleanup_conn.commit()
 
-        # Copier la DB fusionnée brute dans UPLOAD_FOLDER
+        # ✅ Ensuite seulement : copier la DB propre vers UPLOAD_FOLDER
         final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
         shutil.copy(merged_db_path, final_db_dest)
         print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
