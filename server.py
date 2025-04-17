@@ -2736,8 +2736,8 @@ def merge_data():
         print(f"{status_color}Éléments sans parent détectés (non supprimés) : {orphaned_items}\033[0m")
 
         # 12. Suppression des PlaylistItem orphelins
-        with sqlite3.connect(merged_db_path) as conn:
-            cur = conn.cursor()
+        with sqlite3.connect(merged_db_path) as conn_del:
+            cur = conn_del.cursor()
             cur.execute("""
                 DELETE FROM PlaylistItem
                  WHERE PlaylistItemId NOT IN (
@@ -2746,8 +2746,19 @@ def merge_data():
                     SELECT PlaylistItemId FROM PlaylistItemIndependentMediaMap
                  )
             """)
-            conn.commit()
+            conn_del.commit()
         print("→ PlaylistItem orphelins supprimés")
+
+        # 13. Optimisations finales
+        print("\n=== DEBUT OPTIMISATIONS ===")
+
+        # Définition de log_message **avant** son premier appel
+        log_file = os.path.join(UPLOAD_FOLDER, "fusion.log")
+
+        def log_message(message, log_type="INFO"):
+            print(message)
+            with open(log_file, "a") as f:
+                f.write(f"[{log_type}] {datetime.now().strftime('%H:%M:%S')} - {message}\n")
 
         # 13.1 Reconstruction des index
         print("\nReconstruction des index...")
