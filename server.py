@@ -2951,44 +2951,26 @@ def merge_data():
         print("✔ Mise à jour des références LocationId terminée")
 
         # 🔥 Suppression des tables MergeMapping_*
-
-        with sqlite3.connect(merged_db_path) as cleanup_conn:
-
-            cur = cleanup_conn.cursor()
-
-            cur.execute("""
-
-                SELECT name FROM sqlite_master 
-
-                WHERE type='table' AND name LIKE 'MergeMapping_%'
-
-            """)
-
+        with sqlite3.connect(merged_db_path) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
             tables_to_drop = [row[0] for row in cur.fetchall()]
-
-            print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
-
-            for table_name in tables_to_drop:
-
-                try:
-
-                    cur.execute(f"DROP TABLE IF EXISTS {table_name}")
-
-                    print(f"✔ Table supprimée : {table_name}")
-
-                except Exception as e:
-
-                    print(f"⚠️ Erreur lors de la suppression de {table_name} : {e}")
-
-            cleanup_conn.commit()
+            print("🧹 Tables MergeMapping_ trouvées dans merged_db_path :", tables_to_drop)
+            for t in tables_to_drop:
+                cur.execute(f"DROP TABLE IF EXISTS {t}")
+            conn.commit()
 
         # ✅ Ensuite seulement : copier la DB propre vers UPLOAD_FOLDER
-
         final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-
         shutil.copy(merged_db_path, final_db_dest)
-
         print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
+
+        # 🕵️ Vérification que les tables ont bien disparu dans la copie finale
+        with sqlite3.connect(final_db_dest) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
+            restes = [row[0] for row in cur.fetchall()]
+            print("❗ Vérification finale dans userData.db :", restes)
 
         # --- Étape finale : vérification ---
 
@@ -3025,15 +3007,8 @@ def merge_data():
 def download_file():
     db_path = os.path.join(UPLOAD_FOLDER, "userData.db")
     if not os.path.exists(db_path):
-        return jsonify({"error": "Fichier fusionné non trouvé."}), 404
-
-    print("📥 Envoi du fichier :", db_path)
-    return send_file(
-        db_path,
-        as_attachment=True,
-        download_name="userData.db",  # ← nom réel du fichier téléchargé
-        mimetype="application/vnd.sqlite3"
-    )
+        return jsonify({"error": "Fichier non trouvé."}), 404
+    return send_file(db_path, as_attachment=True)
 
 
 @app.errorhandler(Exception)
