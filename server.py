@@ -2871,80 +2871,79 @@ def merge_data():
         else:
             print(f"{'Problèmes FK:':<20} \033[92mAucun\033[0m")
 
-        # 16. Activation du WAL
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("CREATE TABLE IF NOT EXISTS dummy_for_wal (id INTEGER PRIMARY KEY)")
-        cursor.execute("INSERT INTO dummy_for_wal DEFAULT VALUES")
-        conn.commit()
-        cursor.execute("DELETE FROM dummy_for_wal")
-        conn.commit()
-        cursor.execute("DROP TABLE dummy_for_wal")
-        conn.commit()
-        conn.close()
+            # 16. Activation du WAL
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("CREATE TABLE IF NOT EXISTS dummy_for_wal (id INTEGER PRIMARY KEY)")
+            cursor.execute("INSERT INTO dummy_for_wal DEFAULT VALUES")
+            conn.commit()
+            cursor.execute("DELETE FROM dummy_for_wal")
+            conn.commit()
+            cursor.execute("DROP TABLE dummy_for_wal")
+            conn.commit()
 
-        # Vérification du mode WAL
-        with sqlite3.connect(merged_db_path) as test_conn:
-            new_wal_status = test_conn.execute("PRAGMA journal_mode").fetchone()[0]
-            print(f"Statut WAL après activation: {new_wal_status}")
-            if new_wal_status != "wal":
-                print("Avertissement: Échec de l'activation WAL")
+            # Vérification du mode WAL
+            with sqlite3.connect(merged_db_path) as test_conn:
+                new_wal_status = test_conn.execute("PRAGMA journal_mode").fetchone()[0]
+                print(f"Statut WAL après activation: {new_wal_status}")
+                if new_wal_status != "wal":
+                    print("Avertissement: Échec de l'activation WAL")
 
-        # 🎯 Résumé intermédiaire
-        print("\n🎯 Résumé final:")
-        print(f"- Playlists max ID: {max_playlist_id}")
-        print(f"- PlaylistItem total: {len(item_id_map)}")
-        print(f"- Médias max ID: {max_media_id}")
-        print(f"- Orphelins supprimés: {orphaned_deleted}")
-        print(f"- Résultat intégrité: {integrity_result}")
-        print("✅ Tous les calculs terminés, nettoyage...")
+            # 🎯 Résumé final
+            print("\n🎯 Résumé final:")
+            print(f"- Playlists max ID: {max_playlist_id}")
+            print(f"- PlaylistItem total: {len(item_id_map)}")
+            print(f"- Médias max ID: {max_media_id}")
+            print(f"- Orphelins supprimés: {orphaned_deleted}")
+            print(f"- Résultat intégrité: {integrity_result}")
+            print("✅ Tous les calculs terminés, nettoyage...")
 
-        # ✅ Copier la DB brute vers UPLOAD_FOLDER
-        final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-        shutil.copy(merged_db_path, final_db_dest)
-        print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
+            # 🔥 Suppression des tables MergeMapping_* avant copie
+            print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
+            with sqlite3.connect(merged_db_path) as cleanup_conn:
+                cur = cleanup_conn.cursor()
+                cur.execute("""
+                        SELECT name
+                          FROM sqlite_master
+                         WHERE type='table'
+                           AND name LIKE 'MergeMapping_%'
+                    """)
+                tables_to_drop = [row[0] for row in cur.fetchall()]
+                print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
+                for tbl in tables_to_drop:
+                    try:
+                        cur.execute(f"DROP TABLE IF EXISTS {tbl}")
+                        print(f"✔ Table supprimée : {tbl}")
+                    except Exception as e:
+                        print(f"⚠️ Erreur lors de la suppression de {tbl} : {e}")
+                cleanup_conn.commit()
 
-        # 🔥 Suppression des tables MergeMapping_* sur le fichier FINAL
-        print("\n=== SUPPRESSION DES TABLES MergeMapping_* DANS final_db_dest ===")
-        with sqlite3.connect(final_db_dest) as cleanup_conn:
-            cur = cleanup_conn.cursor()
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
-            tables_to_drop = [row[0] for row in cur.fetchall()]
-            print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
-            for table in tables_to_drop:
-                try:
-                    cur.execute(f"DROP TABLE IF EXISTS {table}")
-                    print(f"✔ Table supprimée : {table}")
-                except Exception as e:
-                    print(f"⚠️ Erreur lors de la suppression de {table} : {e}")
-            cleanup_conn.commit()
+            # ✅ Copie de la DB propre vers UPLOAD_FOLDER
+            final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
+            shutil.copy(merged_db_path, final_db_dest)
+            print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
 
-        # ✅ Vérification immédiate
-        with sqlite3.connect(final_db_dest) as verify_conn:
-            cur = verify_conn.cursor()
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
-            remaining = [row[0] for row in cur.fetchall()]
-            print(f"📋 Tables MergeMapping_ restantes juste avant export : {remaining}")
+            # 📋 (Optionnel) Vérification post‐nettoyage
+            with sqlite3.connect(final_db_dest) as verify_conn:
+                cur = verify_conn.cursor()
+                cur.execute("""
+                        SELECT name
+                          FROM sqlite_master
+                         WHERE type='table'
+                           AND name LIKE 'MergeMapping_%'
+                    """)
+                remaining = [row[0] for row in cur.fetchall()]
+                print(f"📋 Tables MergeMapping_ restantes : {remaining}")
 
-        # ✅ Résumé de fin
-        print("\n=== FUSION TERMINÉE AVEC SUCCÈS ===")
-        print(f"Fichier fusionné : {final_db_dest}")
-        print(f"Playlists fusionnées : {max_playlist_id}")
-        print(f"Items fusionnés : {len(item_id_map)}")
-        print(f"Médias traités : {max_media_id}")
-        print(f"Éléments nettoyés : {orphaned_deleted}")
-        print(f"Intégrité : {'✅ OK' if integrity_result == 'ok' else '⚠️ ÉCHEC'}")
-        print("✅ Tous les résultats sont prêts, retour JSON imminent")
-
-        # --- Retour API
-        final_result = {
-            "merged_file": "userData.db",
-            "playlists": max_playlist_id,
-            "playlist_items": len(item_id_map),
-            "media_files": max_media_id,
-            "cleaned_items": orphaned_deleted,
-            "integrity_check": integrity_result
-        }
-        return jsonify(final_result), 200
+            # 🔚 Retour API
+            final_result = {
+                "merged_file": "userData.db",
+                "playlists": max_playlist_id,
+                "playlist_items": len(item_id_map),
+                "media_files": max_media_id,
+                "cleaned_items": orphaned_deleted,
+                "integrity_check": integrity_result
+            }
+            return jsonify(final_result), 200
 
     except Exception as e:
         import traceback
@@ -2971,8 +2970,8 @@ def merge_data():
         print("✔ Mise à jour des références LocationId terminée")
 
         print("\n=== VERIFICATION POST-FUSION ===")
-        with sqlite3.connect(merged_db_path) as conn:
-            cur = conn.cursor()
+        with sqlite3.connect(merged_db_path) as conn_final:
+            cur = conn_final.cursor()
             cur.execute("SELECT COUNT(*) FROM PlaylistItem")
             count = cur.fetchone()[0]
             print(f"Nombre d'enregistrements dans PlaylistItem après fusion : {count}")
@@ -2980,10 +2979,13 @@ def merge_data():
 
 @app.route('/download', methods=['GET'])
 def download_file():
-    db_path = os.path.join(UPLOAD_FOLDER, "userData.db")
-    if not os.path.exists(db_path):
-        return jsonify({"error": "Fichier non trouvé."}), 404
-    return send_file(db_path, as_attachment=True)
+    merged_db_path = os.path.join(UPLOAD_FOLDER, "userData.db")
+    if not os.path.exists(merged_db_path):
+        return jsonify({"error": "Fichier fusionné non trouvé."}), 404
+    print("📥 Envoi du fichier :", merged_db_path)
+    response = send_file(merged_db_path, as_attachment=True)
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    return response
 
 
 @app.errorhandler(Exception)
