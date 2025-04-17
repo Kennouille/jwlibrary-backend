@@ -2714,11 +2714,14 @@ def merge_data():
         # 11. Vérification de cohérence
         print("\n=== VERIFICATION COHERENCE ===")
         cursor.execute("""
-                    SELECT COUNT(*) FROM PlaylistItem 
-                    WHERE PlaylistItemId NOT IN (
-                        SELECT pim.PlaylistItemId FROM PlaylistItemMap pim
-                    )
-                """)
+            SELECT COUNT(*) 
+              FROM PlaylistItem pi
+             WHERE pi.PlaylistItemId NOT IN (
+                    SELECT PlaylistItemId FROM PlaylistItemLocationMap
+                    UNION
+                    SELECT PlaylistItemId FROM PlaylistItemIndependentMediaMap
+                )
+        """)
         orphaned_items = cursor.fetchone()[0]
         status_color = "\033[91m" if orphaned_items > 0 else "\033[92m"
         print(f"{status_color}Éléments sans parent détectés (non supprimés) : {orphaned_items}\033[0m")
