@@ -2447,23 +2447,27 @@ def merge_data():
         conn = sqlite3.connect(merged_db_path)
         cursor = conn.cursor()
 
-        print("🔹 Avant merge_playlist_items :",
-              cursor.execute("SELECT COUNT(*) FROM PlaylistItem").fetchone()[0])
+        # … juste après avoir construit note_mapping …
 
-        # Fusion des PlaylistItem
+        print("🔹 Avant merge_playlist_items :",
+              conn.execute("SELECT COUNT(*) FROM PlaylistItem").fetchone()[0])
+
+        # ─── 3. Fusion de la table PlaylistItem ───────────────────────────────────────
         item_id_map = merge_playlist_items(
             merged_db_path,
             file1_db,
             file2_db
         )
 
-        # Lister les items présents
-        for row in cursor.execute("SELECT PlaylistItemId, Name FROM PlaylistItem ORDER BY PlaylistItemId"):
-            print("  ", row)
+        # Affichage du contenu de PlaylistItem avec la bonne colonne
+        for row in conn.execute("SELECT PlaylistItemId, Label FROM PlaylistItem ORDER BY PlaylistItemId"):
+            print(row)
 
         print("🔹 Après merge_playlist_items :",
-              cursor.execute("SELECT COUNT(*) FROM PlaylistItem").fetchone()[0])
+              conn.execute("SELECT COUNT(*) FROM PlaylistItem").fetchone()[0])
+
         print(f"--> PlaylistItem fusionnés : {len(item_id_map)} items")
+
         conn.close()
 
         print("\n=== USERMARK VERIFICATION ===")
