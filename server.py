@@ -2899,64 +2899,61 @@ def merge_data():
         print(f"- Résultat intégrité: {integrity_result}")
         print("✅ Tous les calculs terminés, retour imminent")
 
-        # 🔥 Suppression des tables MergeMapping_*
+        # ─── fin de la fusion, avant tout copy/zip ────────────────────────
+
+        # 1️⃣ Supprimer les tables temporaires MergeMapping_* de la DB fusionnée
         with sqlite3.connect(merged_db_path) as conn:
             cur = conn.cursor()
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
+            cur.execute("""
+                SELECT name
+                  FROM sqlite_master
+                 WHERE type='table'
+                   AND name LIKE 'MergeMapping_%'
+            """)
             mapping_tables = [row[0] for row in cur.fetchall()]
-            for table in mapping_tables:
-                try:
-                    print(f"🧹 Suppression de la table temporaire : {table}")
-                    cur.execute(f"DROP TABLE IF EXISTS {table}")
-                except Exception as e:
-                    print(f"⚠️ Erreur lors de la suppression de {table} : {e}")
+            for tbl in mapping_tables:
+                print(f"🧹 Suppression de la table {tbl}")
+                cur.execute(f"DROP TABLE IF EXISTS {tbl}")
             conn.commit()
-        print("✔ Tables MergeMapping_* supprimées")
+        print("✔ Toutes les MergeMapping_* ont été supprimées")
 
-        # 🔁 Ensuite seulement : copier vers UPLOAD_FOLDER
-        final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-        shutil.copy(merged_db_path, final_db_dest)
-        print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
-
-        # 📦 Reconstruction de l'archive .jwlibrary finale
-        base_folder = os.path.join(EXTRACT_FOLDER, "file1_extracted")
+        # 2️⃣ Copier cette DB clean dans le folder qu’on va zipper
         merged_folder = os.path.join(UPLOAD_FOLDER, "merged_folder")
-
-        # Nettoyage dossier destination
+        # recréer merged_folder à partir du template
         if os.path.exists(merged_folder):
             shutil.rmtree(merged_folder)
-        shutil.copytree(base_folder, merged_folder)
+        shutil.copytree(
+            os.path.join(EXTRACT_FOLDER, "file1_extracted"),
+            merged_folder
+        )
 
-        # Remplacer les fichiers userData.db, wal et shm
-        for fname in ["userData.db", "userData.db-wal", "userData.db-shm"]:
-            dest = os.path.join(merged_folder, fname)
-            if os.path.exists(dest):
-                os.remove(dest)
+        # remplacer userData.db par notre DB nettoyée
+        dest_db = os.path.join(merged_folder, "userData.db")
+        if os.path.exists(dest_db):
+            os.remove(dest_db)
+        shutil.copy(merged_db_path, dest_db)
 
-        shutil.copy(merged_db_path, os.path.join(merged_folder, "userData.db"))
+        # créer les fichiers WAL et SHM vides
         open(os.path.join(merged_folder, "userData.db-wal"), 'wb').close()
         open(os.path.join(merged_folder, "userData.db-shm"), 'wb').close()
 
-        # Création du fichier zip
+        # 3️⃣ Générer l’archive .jwlibrary
         merged_zip = os.path.join(UPLOAD_FOLDER, "merged.zip")
         if os.path.exists(merged_zip):
             os.remove(merged_zip)
 
         shutil.make_archive(
-            base_name=merged_zip.replace('.zip', ''),
-            format='zip',
+            base_name=merged_zip.replace(".zip", ""),
+            format="zip",
             root_dir=merged_folder
         )
 
-        # Renommer l'archive en .jwlibrary
         merged_jwlibrary = merged_zip.replace(".zip", ".jwlibrary")
         if os.path.exists(merged_jwlibrary):
             os.remove(merged_jwlibrary)
-        time.sleep(0.5)
         os.rename(merged_zip, merged_jwlibrary)
 
-        print(
-            f"\n✅ Fichier final généré : {merged_jwlibrary} ({os.path.getsize(merged_jwlibrary) / 1024 / 1024:.2f} Mo)")
+        print(f"✅ Archive finale créée : {merged_jwlibrary}")
 
         # ─── Retour **à l’intérieur** du try ───────────────────────────────────────────────
         final_result = {
