@@ -2439,27 +2439,32 @@ def merge_data():
         conn.commit()
         conn.close()
 
-        # Maintenant, créer le mapping des Notes à partir de la DB fusionnée
+        # Après create_note_mapping…
         note_mapping = create_note_mapping(merged_db_path, file1_db, file2_db)
         print("Note Mapping:", note_mapping)
 
-        # ─── 3. Fusion de la table PlaylistItem ───────────────────────────────────────
+        # (Ré)ouvrir la connexion pour PlaylistItem
+        conn = sqlite3.connect(merged_db_path)
+        cursor = conn.cursor()
+
+        print("🔹 Avant merge_playlist_items :",
+              cursor.execute("SELECT COUNT(*) FROM PlaylistItem").fetchone()[0])
+
+        # Fusion des PlaylistItem
         item_id_map = merge_playlist_items(
             merged_db_path,
             file1_db,
             file2_db
         )
+
+        # Lister les items présents
+        for row in cursor.execute("SELECT PlaylistItemId, Name FROM PlaylistItem ORDER BY PlaylistItemId"):
+            print("  ", row)
+
+        print("🔹 Après merge_playlist_items :",
+              cursor.execute("SELECT COUNT(*) FROM PlaylistItem").fetchone()[0])
         print(f"--> PlaylistItem fusionnés : {len(item_id_map)} items")
-
-
-        # ===== Vérification du mapping déjà construit =====
-        print("\n=== LOCATION VERIFICATION ===")
-        print(f"Total Locations: {len(location_id_map)}")
-        with sqlite3.connect(merged_db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT KeySymbol, COUNT(*) FROM Location GROUP BY KeySymbol")
-            for key, count in cursor.fetchall():
-                print(f"- {key}: {count} locations")
+        conn.close()
 
         print("\n=== USERMARK VERIFICATION ===")
         print(f"Total UserMarks mappés (GUIDs) : {len(usermark_guid_map)}")
