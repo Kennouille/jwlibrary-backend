@@ -591,34 +591,23 @@
   }
 
   async function rebuildFinalZip() {
-    const zip = new JSZip();
+      // 1. Télécharger le fichier userData.db directement depuis le backend
+      const response = await fetch(`${BASE_URL}/download?ngrok-skip-browser-warning=true`);
+      const blob = await response.blob();
 
-    // 1. Télécharger le userData.db fusionné
-    const response = await fetch(`${BASE_URL}/download?ngrok-skip-browser-warning=true`);
-    const mergedBlob = await response.blob();
-    zip.file("userData.db", mergedBlob);
+      // 2. Créer un lien temporaire pour le téléchargement
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "userData.db"; // nom du fichier à sauvegarder
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
 
-    // 2. Ajouter les médias conservés
-    for (const media of window.mediaToInclude || []) {
-      const content = await media.file.async("arraybuffer");
-      zip.file(media.name, content);
+      // 3. Nettoyer l’URL temporaire
+      URL.revokeObjectURL(url);
     }
 
-    // 3. Générer le ZIP final
-    const blob = await zip.generateAsync({ type: "blob" });
-    const url = URL.createObjectURL(blob);
-
-    // 4. Déclencher le téléchargement
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "fusionne.jwlibrary";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-    // 5. Nettoyer le lien temporaire
-    URL.revokeObjectURL(url);
-  }
 
 </script>
 </body>

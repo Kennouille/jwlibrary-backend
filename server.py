@@ -2899,6 +2899,11 @@ def merge_data():
         print(f"- Résultat intégrité: {integrity_result}")
         print("✅ Tous les calculs terminés, retour imminent")
 
+        # 🔁 Copier le fichier fusionné vers UPLOAD_FOLDER pour pouvoir le télécharger
+        final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
+        shutil.copy(merged_db_path, final_db_dest)
+        print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
+
         # ─── Retour **à l’intérieur** du try ───────────────────────────────────────────────
         final_result = {
             "merged_file": "userData.db",
@@ -2958,6 +2963,7 @@ def download_file():
     merged_db_path = os.path.join(UPLOAD_FOLDER, "userData.db")
     if not os.path.exists(merged_db_path):
         return jsonify({"error": "Fichier fusionné non trouvé."}), 404
+    print("📥 Fichier envoyé depuis :", merged_db_path)
     response = send_file(merged_db_path, as_attachment=True)
     response.headers.add("Access-Control-Allow-Origin", "*")
     return response
