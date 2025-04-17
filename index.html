@@ -603,7 +603,7 @@
 
       const link = document.createElement("a");
       link.href = url;
-      link.download = "fusionne.jwlibrary";  // ou "merged.jwlibrary" si tu veux que le nom soit exact
+      link.download = "userData.db"; // ✅ correspond exactement à ce que le backend envoie
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -615,6 +615,7 @@
       alert("Une erreur est survenue lors du téléchargement.");
     }
   }
+
 
 
 

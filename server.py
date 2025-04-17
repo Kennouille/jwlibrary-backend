@@ -2964,11 +2964,12 @@ def download_file():
     db_path = os.path.join(UPLOAD_FOLDER, "userData.db")
     if not os.path.exists(db_path):
         return jsonify({"error": "Fichier fusionné non trouvé."}), 404
+
     print("📥 Envoi du fichier :", db_path)
     return send_file(
         db_path,
         as_attachment=True,
-        download_name="userData.db",
+        download_name="userData.db",  # ← nom réel du fichier téléchargé
         mimetype="application/vnd.sqlite3"
     )
 
