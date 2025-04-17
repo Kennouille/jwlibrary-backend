@@ -2350,6 +2350,14 @@ def merge_data():
         base_db_path = os.path.join(EXTRACT_FOLDER, "file1_extracted", "userData.db")
         create_merged_schema(merged_db_path, base_db_path)
 
+        # juste après create_merged_schema(merged_db_path, base_db_path)
+        print("\n→ Debug: listing des tables juste après create_merged_schema")
+        with sqlite3.connect(merged_db_path) as dbg_conn:
+            dbg_cur = dbg_conn.cursor()
+            dbg_cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = [t[0] for t in dbg_cur.fetchall()]
+            print("Tables présentes dans merged_userData.db :", tables)
+
         # ... Après la création de merged_db_path et avant la fusion des autres mappings
         # Fusion de la table IndependentMedia et PlaylistItems, etc.
         location_id_map = merge_location_from_sources(merged_db_path, *required_dbs)
