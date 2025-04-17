@@ -1486,8 +1486,9 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
 
 def merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map):
     """
-    Fusionne la table PlaylistItemMediaMap de façon idempotente en appliquant
-    le mapping des PlaylistItems et des IndependentMedia.
+    Fusionne la table PlaylistItemIndependentMediaMap des deux sources dans
+    PlaylistItemMediaMap de la DB fusionnée de façon idempotente.
+    Utilise DurationTicks de la source pour remplir OrderIndex dans la cible.
     """
     print("\n[FUSION PLAYLISTITEMMEDIA MAP]")
     conn = sqlite3.connect(merged_db_path)
@@ -1496,19 +1497,18 @@ def merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_ma
     for db_path in [file1_db, file2_db]:
         with sqlite3.connect(db_path) as src_conn:
             src_cursor = src_conn.cursor()
-            # On lit depuis la table source qui s'appelle PlaylistItemIndependentMediaMap
-            # et dont la colonne média est IndependentMediaId
             src_cursor.execute("""
-                SELECT PlaylistItemId, IndependentMediaId, OrderIndex
+                SELECT PlaylistItemId, IndependentMediaId, DurationTicks
                 FROM PlaylistItemIndependentMediaMap
             """)
             rows = src_cursor.fetchall()
             print(f"{len(rows)} lignes trouvées dans {os.path.basename(db_path)}")
-            for old_item_id, old_media_id, order_idx in rows:
-                # On normalise le chemin pour le mapping des items
+
+            for old_item_id, old_media_id, duration_ticks in rows:
                 new_item_id = item_id_map.get((os.path.normpath(db_path), old_item_id))
-                # Et on récupère le nouveau media via le mapping IndependentMedia
                 new_media_id = independent_media_map.get((db_path, old_media_id))
+                order_idx = duration_ticks  # on réutilise DurationTicks comme OrderIndex
+
                 if new_item_id and new_media_id:
                     try:
                         cursor.execute("""
