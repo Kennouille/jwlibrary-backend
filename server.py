@@ -2899,7 +2899,25 @@ def merge_data():
         print(f"- Résultat intégrité: {integrity_result}")
         print("✅ Tous les calculs terminés, retour imminent")
 
-        # ─── Après avoir fusionné ta DB (juste avant le `return`) ─────────────────────
+        # 🔥 Suppression des tables MergeMapping_*
+        with sqlite3.connect(merged_db_path) as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name LIKE 'MergeMapping_%'
+            """)
+            tables_to_drop = [row[0] for row in cur.fetchall()]
+            print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
+
+            for table_name in tables_to_drop:
+                try:
+                    cur.execute(f"DROP TABLE IF EXISTS {table_name}")
+                    print(f"✔ Table supprimée : {table_name}")
+                except Exception as e:
+                    print(f"⚠️ Erreur lors de la suppression de {table_name} : {e}")
+
+            conn.commit()
+
         # Copier la DB fusionnée brute dans UPLOAD_FOLDER
         final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
         shutil.copy(merged_db_path, final_db_dest)
