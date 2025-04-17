@@ -2933,7 +2933,7 @@ def merge_data():
             if os.path.exists(dest):
                 os.remove(dest)
 
-        shutil.copy(final_db_dest, os.path.join(merged_folder, "userData.db"))
+        shutil.copy(merged_db_path, os.path.join(merged_folder, "userData.db"))
         open(os.path.join(merged_folder, "userData.db-wal"), 'wb').close()
         open(os.path.join(merged_folder, "userData.db-shm"), 'wb').close()
 
