@@ -1498,7 +1498,7 @@ def merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_ma
             src_cursor = src_conn.cursor()
             src_cursor.execute("""
                 SELECT PlaylistItemId, MediaFileId, OrderIndex
-                FROM PlaylistItemMediaMap
+                FROM PlaylistItemIndependentMediaMap
             """)
             rows = src_cursor.fetchall()
             print(f"{len(rows)} lignes trouvées dans {os.path.basename(db_path)}")
