@@ -2245,6 +2245,18 @@ def create_note_mapping(merged_db_path, file1_db, file2_db):
 
 @app.route('/merge', methods=['POST'])
 def merge_data():
+    # ─── 0. Initialisation des variables utilisées plus bas ─────────────────────────────
+    merged_jwlibrary = None
+    max_playlist_id = 0
+    max_media_id = 0
+    orphaned_deleted = 0
+    integrity_result = "ok"
+    item_id_map = {}
+    marker_id_map = {}
+    playlist_id_map = {}
+
+    conn = None  # pour le finally
+
     try:
         global note_mapping  # Si vous souhaitez utiliser le scope global (optionnel)
         payload = request.get_json()
@@ -2852,6 +2864,7 @@ def merge_data():
         print(f"- Résultat intégrité: {integrity_result}")
         print("✅ Tous les calculs terminés, retour imminent")
 
+        # ─── Retour **à l’intérieur** du try ───────────────────────────────────────────────
         final_result = {
             "merged_file": merged_jwlibrary,
             "playlists": max_playlist_id,
@@ -2863,21 +2876,18 @@ def merge_data():
         return jsonify(final_result), 200
 
     except Exception as e:
-        # En cas d'erreur n'importe où dans le try principal
-        print(f"ERREUR GLOBALE: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
     finally:
-        # Fermeture propre de la connexion globale si besoin
+        # ─── cleanup / mapping résiduel ────────────────────────────────────────────────
         try:
             if conn:
                 conn.close()
         except:
             pass
 
-        # --- Étape 3 : mise à jour des LocationId résiduels ---
         print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
         merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
         print("✔ Fusion InputFields terminée")
