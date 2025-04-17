@@ -2889,7 +2889,6 @@ def merge_data():
             if new_wal_status != "wal":
                 print("Avertissement: Échec de l'activation WAL")
 
-
         # Retour final de merge_data
         print("\n🎯 Résumé final:")
         print(f"- Fichier fusionné: {merged_jwlibrary}")
@@ -2902,7 +2901,7 @@ def merge_data():
 
         # ─── Retour **à l’intérieur** du try ───────────────────────────────────────────────
         final_result = {
-            "merged_file": merged_jwlibrary,
+            "merged_file": "userData.db",
             "playlists": max_playlist_id,
             "playlist_items": len(item_id_map),
             "media_files": max_media_id,
