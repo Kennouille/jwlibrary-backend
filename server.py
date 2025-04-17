@@ -2629,7 +2629,8 @@ def merge_data():
             exclude_tables=[
                 'Note', 'UserMark', 'Location', 'BlockRange',
                 'LastModified', 'Tag', 'TagMap', 'PlaylistItem',
-                'InputField'  # Ne pas exclure les tables de mapping ni Playlist
+                'InputField',
+                'Bookmark'
             ]
         )
 
