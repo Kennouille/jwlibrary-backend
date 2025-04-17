@@ -1737,8 +1737,6 @@ def merge_playlist_final(merged_db_path, file1_db, file2_db):
     return playlist_id_map
 
 
-
-
 def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, independent_media_map):
     """Fusionne toutes les tables liées aux playlists en respectant les contraintes."""
     print("\n=== DÉBUT FUSION PLAYLISTS ===")
@@ -2142,18 +2140,6 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
             db_status = "OK" if test_cursor.fetchone() else "ERREUR"
             print(f"\nStatut final DB: {db_status}")
 
-        # 15. Fusion des autres tables (hors playlists)
-        merge_other_tables(
-            merged_db_path,
-            file1_db,
-            file2_db,
-            exclude_tables=[
-                'Note', 'UserMark', 'Location', 'BlockRange',
-                'LastModified', 'Tag', 'TagMap', 'PlaylistItem',
-                'InputField'  # ← ne pas exclure les *Map, ni Playlist
-            ]
-        )
-
         # 16. Activation WAL
         conn = sqlite3.connect(merged_db_path)
         cursor = conn.cursor()
@@ -2551,36 +2537,11 @@ def merge_data():
         # --- FUSION BOOKMARKS ---
         merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map)
 
-        # === INSÉRER LES USERMARKS AVANT DE FUSIONNER LES BLOCKRANGE ===
-        conn = sqlite3.connect(merged_db_path)
-        cursor = conn.cursor()
-
-        for guid, (color, loc, style, version) in merged_highlights_dict.items():
-            try:
-                cursor.execute("""
-                    INSERT OR IGNORE INTO UserMark (ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (color, loc, style, guid, version))
-            except Exception as e:
-                print(f"Erreur lors de l'insertion de UserMarkGuid={guid}: {e}")
-
-        conn.commit()
-        conn.close()
-
         # --- FUSION BLOCKRANGE ---
         print("\n=== DEBUT FUSION BLOCKRANGE ===")
         if not merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
             print("ÉCHEC Fusion BlockRange")
             return jsonify({"error": "BlockRange merge failed"}), 500
-
-        print("=== SUCCES FUSION COMPLETE ===")
-        return jsonify({"success": True})
-
-    except Exception as e:
-        print(f"ERREUR GLOBALE: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
 
         # Mapping inverse UserMarkId original → nouveau
         usermark_guid_map = {}
@@ -2637,7 +2598,6 @@ def merge_data():
 
         print("\n▶️ Début de la fusion des éléments liés aux playlists...")
 
-    try:
         # Fusion de PlaylistItemAccuracy
         max_acc_id = merge_playlist_item_accuracy(merged_db_path, file1_db, file2_db)
         print(f"--> PlaylistItemAccuracy fusionnée, max ID final: {max_acc_id}")
@@ -2840,18 +2800,6 @@ def merge_data():
             db_status = "OK" if test_cursor.fetchone() else "ERREUR"
             print(f"\nStatut final DB: {db_status}")
 
-        # 15. Fusion des autres tables (hors playlists)
-        merge_other_tables(
-            merged_db_path,
-            file1_db,
-            file2_db,
-            exclude_tables=[
-                'Note', 'UserMark', 'Location', 'BlockRange',
-                'LastModified', 'Tag', 'TagMap', 'PlaylistItem',
-                'InputField'  # ← ne pas exclure les *Map, ni Playlist
-            ]
-        )
-
         # 16. Activation WAL
         conn = sqlite3.connect(merged_db_path)
         cursor = conn.cursor()
@@ -2881,14 +2829,14 @@ def merge_data():
             if os.path.exists(dest):
                 os.remove(dest)
         shutil.copy(merged_db_path, os.path.join(merged_folder, "userData.db"))
-        open(os.path.join(merged_folder, "userData.db-wal"), 'wb').close()
-        open(os.path.join(merged_folder, "userData.db-shm"), 'wb').close()
+        open(os.path.join(merged_folder, "userData.db-wal"), "wb").close()
+        open(os.path.join(merged_folder, "userData.db-shm"), "wb").close()
         merged_zip = os.path.join(UPLOAD_FOLDER, "merged.zip")
         if os.path.exists(merged_zip):
             os.remove(merged_zip)
         shutil.make_archive(
-            base_name=merged_zip.replace('.zip', ''),
-            format='zip',
+            base_name=merged_zip.replace(".zip", ""),
+            format="zip",
             root_dir=merged_folder
         )
         merged_jwlibrary = merged_zip.replace(".zip", ".jwlibrary")
@@ -2900,7 +2848,7 @@ def merge_data():
         if os.path.getsize(merged_jwlibrary) < 1024:
             print("⚠️ Avertissement: Le fichier semble trop petit")
 
-        # Retour final de merge_playlists
+        # Retour final de merge_data
         print("\n🎯 Résumé final:")
         print(f"- Fichier fusionné: {merged_jwlibrary}")
         print(f"- Playlists max ID: {max_playlist_id}")
@@ -2908,8 +2856,6 @@ def merge_data():
         print(f"- Médias max ID: {max_media_id}")
         print(f"- Orphelins supprimés: {orphaned_deleted}")
         print(f"- Résultat intégrité: {integrity_result}")
-
-        print(">>> Fin de merge_playlists, on retourne les valeurs")
         print("✅ Tous les calculs terminés, retour imminent")
 
         final_result = {
@@ -2923,35 +2869,31 @@ def merge_data():
         return jsonify(final_result), 200
 
     except Exception as e:
+        print(f"ERREUR GLOBALE: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
     finally:
-        # Vous vous assurez ici que toute connexion globale reste fermée
+        # On ferme proprement la connexion globale et on applique le mapping résiduel
         try:
             if conn:
                 conn.close()
         except:
             pass
 
-        # --- Étape 3 : mise à jour des LocationId résiduels ---
         print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
-
-        # A. Applique le mapping dans la table InputField (fusion)
         merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
         print("✔ Fusion InputFields terminée")
 
-        # B. Transforme le mapping en version plate pour les updates globaux
+        # Aplatir puis appliquer le mapping dans toutes les autres tables
         location_replacements_flat = {
             old_id: new_id for (_, old_id), new_id in sorted(location_id_map.items())
         }
-
-        # C. Applique ce mapping à toutes les autres tables
         update_location_references(merged_db_path, location_replacements_flat)
         print("✔ Mise à jour des références LocationId terminée")
 
-        # --- Étape 4 : vérification post-fusion ---
+        # --- Vérification post-fusion ---
         print("\n=== VERIFICATION POST-FUSION ===")
         with sqlite3.connect(merged_db_path) as conn:
             cur = conn.cursor()
@@ -2959,29 +2901,15 @@ def merge_data():
             count = cur.fetchone()[0]
             print(f"Nombre d'enregistrements dans PlaylistItem après fusion : {count}")
 
-        # --- Résultat final ---
         print("\n=== FUSION TERMINÉE AVEC SUCCÈS ===")
-        print(f"Fichier fusionné : {merged_file}")
-        print(f"Playlists fusionnées : {playlist_count}")
-        print(f"Items fusionnés : {playlist_item_count}")
-        print(f"Médias traités : {media_count}")
-        print(f"Éléments nettoyés : {cleaned_items}")
-        print(f"Intégrité : {'✅ OK' if integrity_check else '⚠️ ÉCHEC'}")
-
+        print(f"Fichier fusionné : {merged_jwlibrary}")
+        print(f"Playlists fusionnées : {max_playlist_id}")
+        print(f"Items fusionnés : {len(item_id_map)}")
+        print(f"Médias traités : {max_media_id}")
+        print(f"Éléments nettoyés : {orphaned_deleted}")
+        result_status = "✅ OK" if integrity_result == "ok" else "⚠️ ÉCHEC"
+        print(f"Intégrité : {result_status}")
         print("✅ Tous les résultats sont prêts, retour JSON imminent")
-        print("merged_file =", merged_file)
-
-        return jsonify({
-            "status": "success",
-            "merged_file": merged_file,
-            "stats": {
-                "playlists": playlist_count,
-                "playlist_items": playlist_item_count,
-                "media_files": media_count,
-                "cleaned_items": cleaned_items
-            },
-            "integrity_check": integrity_check
-        }), 200
 
 
 @app.route('/download', methods=['GET'])
