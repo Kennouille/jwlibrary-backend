@@ -2735,21 +2735,19 @@ def merge_data():
         status_color = "\033[91m" if orphaned_items > 0 else "\033[92m"
         print(f"{status_color}Éléments sans parent détectés (non supprimés) : {orphaned_items}\033[0m")
 
-        # 12. Optimisations finales (désactivé pour PlaylistItem)
-        print("\n=== DEBUT OPTIMISATIONS ===")
-        print("Aucun nettoyage n'est effectué sur PlaylistItem.")
-        orphaned_deleted = 0
-
-        # Journalisation détaillée
-        log_file = os.path.join(UPLOAD_FOLDER, "fusion.log")
-        print(f"\nCréation fichier log: {log_file}")
-        with open(log_file, "a") as f:
-            f.write(f"\n\n=== Session {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n")
-
-        def log_message(message, log_type="INFO"):
-            print(message)
-            with open(log_file, "a") as f:
-                f.write(f"[{log_type}] {datetime.now().strftime('%H:%M:%S')} - {message}\n")
+        # 12. Suppression des PlaylistItem orphelins
+        with sqlite3.connect(merged_db_path) as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                DELETE FROM PlaylistItem
+                 WHERE PlaylistItemId NOT IN (
+                    SELECT PlaylistItemId FROM PlaylistItemLocationMap
+                    UNION
+                    SELECT PlaylistItemId FROM PlaylistItemIndependentMediaMap
+                 )
+            """)
+            conn.commit()
+        print("→ PlaylistItem orphelins supprimés")
 
         # 13.1 Reconstruction des index
         print("\nReconstruction des index...")
