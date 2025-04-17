@@ -2904,6 +2904,20 @@ def merge_data():
         shutil.copy(merged_db_path, final_db_dest)
         print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
 
+        # 🔥 Suppression des tables MergeMapping_*
+        with sqlite3.connect(merged_db_path) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
+            mapping_tables = [row[0] for row in cur.fetchall()]
+            for table in mapping_tables:
+                try:
+                    print(f"🧹 Suppression de la table temporaire : {table}")
+                    cur.execute(f"DROP TABLE IF EXISTS {table}")
+                except Exception as e:
+                    print(f"⚠️ Erreur lors de la suppression de {table} : {e}")
+            conn.commit()
+        print("✔ Tables MergeMapping_* supprimées")
+
         # 📦 Reconstruction de l'archive .jwlibrary finale
         base_folder = os.path.join(EXTRACT_FOLDER, "file1_extracted")
         merged_folder = os.path.join(UPLOAD_FOLDER, "merged_folder")
@@ -2979,20 +2993,6 @@ def merge_data():
         }
         update_location_references(merged_db_path, location_replacements_flat)
         print("✔ Mise à jour des références LocationId terminée")
-
-        # 🔥 Suppression des tables MergeMapping_*
-        with sqlite3.connect(merged_db_path) as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
-            mapping_tables = [row[0] for row in cur.fetchall()]
-            for table in mapping_tables:
-                try:
-                    print(f"🧹 Suppression de la table temporaire : {table}")
-                    cur.execute(f"DROP TABLE IF EXISTS {table}")
-                except Exception as e:
-                    print(f"⚠️ Erreur lors de la suppression de {table} : {e}")
-            conn.commit()
-        print("✔ Tables MergeMapping_* supprimées")
 
         # --- Étape 4 : vérification post-fusion ---
         print("\n=== VERIFICATION POST-FUSION ===")
