@@ -184,22 +184,22 @@ def create_merged_schema(merged_db_path, base_db_path):
         print(f"Erreur lors de la création de la table LastModified: {e}")
     merged_conn.commit()
 
-    # Vérification et création de PlaylistItemMediaMap si elle n'existe pas
-    merged_cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='PlaylistItemMediaMap'")
+    # Création correcte de PlaylistItemMediaMap si elle n'existe pas
+    merged_cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='PlaylistItemMediaMap'"
+    )
     if not merged_cursor.fetchone():
-        try:
-            merged_cursor.execute("""
-                CREATE TABLE PlaylistItemMediaMap (
-                    PlaylistItemId INTEGER NOT NULL,
-                    IndependentMediaId INTEGER NOT NULL,
-                    PRIMARY KEY (PlaylistItemId, IndependentMediaId),
-                    FOREIGN KEY (PlaylistItemId) REFERENCES PlaylistItem(PlaylistItemId),
-                    FOREIGN KEY (IndependentMediaId) REFERENCES IndependentMedia(IndependentMediaId)
-                )
-            """)
-            print("PlaylistItemMediaMap créée dans la base fusionnée.")
-        except Exception as e:
-            print(f"Erreur lors de la création de PlaylistItemMediaMap: {e}")
+        merged_cursor.execute("""
+            CREATE TABLE PlaylistItemMediaMap (
+                PlaylistItemId   INTEGER NOT NULL,
+                MediaFileId      INTEGER NOT NULL,
+                OrderIndex       INTEGER NOT NULL,
+                PRIMARY KEY (PlaylistItemId, MediaFileId),
+                FOREIGN KEY (PlaylistItemId) REFERENCES PlaylistItem(PlaylistItemId),
+                FOREIGN KEY (MediaFileId)  REFERENCES IndependentMedia(IndependentMediaId)
+            )
+        """)
+        print("PlaylistItemMediaMap (avec MediaFileId, OrderIndex) créée dans la base fusionnée.")
 
     merged_conn.commit()
     merged_conn.close()
