@@ -2631,6 +2631,33 @@ def merge_data():
 
         print("\n▶️ Fusion des éléments liés aux playlists terminée.")
 
+        # ─── Avant merge_other_tables ────────────────────────────────────────────
+        tables_to_check = [
+            'PlaylistItem',
+            'IndependentMedia',
+            'PlaylistItemLocationMap',
+            'PlaylistItemIndependentMediaMap'
+        ]
+        print("\n--- COMPTES AVANT merge_other_tables ---")
+        with sqlite3.connect(merged_db_path) as dbg_conn:
+            dbg_cur = dbg_conn.cursor()
+            for tbl in tables_to_check:
+                # compte dans la base fusionnée
+                dbg_cur.execute(f"SELECT COUNT(*) FROM {tbl}")
+                cnt_merged = dbg_cur.fetchone()[0]
+                # compte dans file1
+                dbg_cur.execute(f"ATTACH DATABASE ? AS src1", (file1_db,))
+                dbg_cur.execute(f"SELECT COUNT(*) FROM src1.{tbl}")
+                cnt1 = dbg_cur.fetchone()[0]
+                dbg_cur.execute("DETACH DATABASE src1")
+                # compte dans file2
+                dbg_cur.execute(f"ATTACH DATABASE ? AS src2", (file2_db,))
+                dbg_cur.execute(f"SELECT COUNT(*) FROM src2.{tbl}")
+                cnt2 = dbg_cur.fetchone()[0]
+                dbg_cur.execute("DETACH DATABASE src2")
+                print(f"[AVANT ] {tbl}: merged={cnt_merged}, file1={cnt1}, file2={cnt2}")
+
+        # ─── Appel original ────────────────────────────────────────────────────
         merge_other_tables(
             merged_db_path,
             file1_db,
@@ -2638,10 +2665,26 @@ def merge_data():
             exclude_tables=[
                 'Note', 'UserMark', 'Location', 'BlockRange',
                 'LastModified', 'Tag', 'TagMap', 'PlaylistItem',
-                'InputField',
-                'Bookmark'
+                'InputField', 'Bookmark'
             ]
         )
+
+        # ─── Après merge_other_tables ───────────────────────────────────────────
+        print("\n--- COMPTES APRÈS merge_other_tables ---")
+        with sqlite3.connect(merged_db_path) as dbg_conn:
+            dbg_cur = dbg_conn.cursor()
+            for tbl in tables_to_check:
+                dbg_cur.execute(f"SELECT COUNT(*) FROM {tbl}")
+                cnt_merged = dbg_cur.fetchone()[0]
+                dbg_cur.execute(f"ATTACH DATABASE ? AS src1", (file1_db,))
+                dbg_cur.execute(f"SELECT COUNT(*) FROM src1.{tbl}")
+                cnt1 = dbg_cur.fetchone()[0]
+                dbg_cur.execute("DETACH DATABASE src1")
+                dbg_cur.execute(f"ATTACH DATABASE ? AS src2", (file2_db,))
+                dbg_cur.execute(f"SELECT COUNT(*) FROM src2.{tbl}")
+                cnt2 = dbg_cur.fetchone()[0]
+                dbg_cur.execute("DETACH DATABASE src2")
+                print(f"[APRÈS] {tbl}: merged={cnt_merged}, file1={cnt1}, file2={cnt2}")
 
         # 8. Vérification finale des thumbnails
         print("\n[VÉRIFICATION THUMBNAILS ORPHELINS]")
