@@ -2911,11 +2911,23 @@ def merge_data():
                    AND name LIKE 'MergeMapping_%'
             """)
             mapping_tables = [row[0] for row in cur.fetchall()]
-            for tbl in mapping_tables:
-                print(f"🧹 Suppression de la table {tbl}")
-                cur.execute(f"DROP TABLE IF EXISTS {tbl}")
-            conn.commit()
-        print("✔ Toutes les MergeMapping_* ont été supprimées")
+            print(f"🔎 Tables MergeMapping_* trouvées : {mapping_tables}")  # Debug
+
+            if not mapping_tables:
+                print("⚠ Aucune table MergeMapping_* trouvée")
+            else:
+                for tbl in mapping_tables:
+                    print(f"🧹 Suppression de la table {tbl}")
+                    try:
+                        cur.execute(f"DROP TABLE {tbl}")  # On enlève IF EXISTS pour voir si ça échoue
+                        print(f"  -> Table {tbl} supprimée avec succès")
+                    except sqlite3.Error as e:
+                        print(f"  ❌ Erreur lors de la suppression de {tbl}: {e}")
+
+                conn.commit()
+                print("✔ Commit effectué pour les suppressions")
+
+        print("✔ Toutes les MergeMapping_* ont été traitées")
 
         # 2️⃣ Copier cette DB clean dans le folder qu’on va zipper
         merged_folder = os.path.join(UPLOAD_FOLDER, "merged_folder")
