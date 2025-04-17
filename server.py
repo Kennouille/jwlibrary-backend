@@ -2889,18 +2889,54 @@ def merge_data():
             if new_wal_status != "wal":
                 print("Avertissement: Échec de l'activation WAL")
 
-        # Retour final de merge_data
+        # 🎯 Résumé
         print("\n🎯 Résumé final:")
-        print(f"- Fichier fusionné: {merged_jwlibrary}")
         print(f"- Playlists max ID: {max_playlist_id}")
         print(f"- PlaylistItem total: {len(item_id_map)}")
         print(f"- Médias max ID: {max_media_id}")
         print(f"- Orphelins supprimés: {orphaned_deleted}")
         print(f"- Résultat intégrité: {integrity_result}")
-        print("✅ Tous les calculs terminés, retour imminent")
+        print("✅ Tous les calculs terminés, nettoyage...")
 
+        # 🔥 Suppression des tables MergeMapping_*
+        print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
+        with sqlite3.connect(merged_db_path) as cleanup_conn:
+            cur = cleanup_conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
+            tables_to_drop = [row[0] for row in cur.fetchall()]
+            print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
 
-        # Retour de l’API : on indique juste le nom de cette DB
+            for table in tables_to_drop:
+                try:
+                    cur.execute(f"DROP TABLE IF EXISTS {table}")
+                    print(f"✔ Table supprimée : {table}")
+                except Exception as e:
+                    print(f"⚠️ Erreur lors de la suppression de {table} : {e}")
+            cleanup_conn.commit()
+
+        # ✅ Vérification immédiate
+        with sqlite3.connect(merged_db_path) as verify_conn:
+            cur = verify_conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
+            remaining = [row[0] for row in cur.fetchall()]
+            print(f"📋 Tables MergeMapping_ restantes juste avant export : {remaining}")
+
+        # ✅ Ensuite seulement : copier la DB propre vers UPLOAD_FOLDER
+        final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
+        shutil.copy(merged_db_path, final_db_dest)
+        print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
+
+        # ✅ Résumé de fin
+        print("\n=== FUSION TERMINÉE AVEC SUCCÈS ===")
+        print(f"Fichier fusionné : {final_db_dest}")
+        print(f"Playlists fusionnées : {max_playlist_id}")
+        print(f"Items fusionnés : {len(item_id_map)}")
+        print(f"Médias traités : {max_media_id}")
+        print(f"Éléments nettoyés : {orphaned_deleted}")
+        print(f"Intégrité : {'✅ OK' if integrity_result == 'ok' else '⚠️ ÉCHEC'}")
+        print("✅ Tous les résultats sont prêts, retour JSON imminent")
+
+        # Retour API
         final_result = {
             "merged_file": "userData.db",
             "playlists": max_playlist_id,
@@ -2918,17 +2954,14 @@ def merge_data():
 
 
 
+
     finally:
 
         # ─── cleanup / mapping résiduel ────────────────────────────────────────────────
-
         try:
-
             if conn:
                 conn.close()
-
         except:
-
             pass
 
         print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
@@ -2943,37 +2976,9 @@ def merge_data():
         update_location_references(merged_db_path, location_replacements_flat)
         print("✔ Mise à jour des références LocationId terminée")
 
-        # 🔥 Suppression des tables MergeMapping_*
-        print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
-        with sqlite3.connect(merged_db_path) as cleanup_conn:
-            cur = cleanup_conn.cursor()
-
-            # Avant suppression
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
-            tables_before = [row[0] for row in cur.fetchall()]
-            print(f"Tables détectées avant suppression : {tables_before}")
-
-            for table in tables_before:
-                try:
-                    cur.execute(f"DROP TABLE IF EXISTS {table}")
-                    print(f"✔ Table supprimée : {table}")
-                except Exception as e:
-                    print(f"⚠️ Erreur lors de la suppression de {table} : {e}")
-            cleanup_conn.commit()
-
-            # Après suppression
-            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
-            tables_after = [row[0] for row in cur.fetchall()]
-            print(f"✅ Tables restantes après suppression : {tables_after}")
-
-        # ✅ Ensuite seulement : copier la DB propre vers UPLOAD_FOLDER
-        final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-        shutil.copy(merged_db_path, final_db_dest)
-        print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
-
         # --- Étape finale : vérification ---
         print("\n=== VERIFICATION POST-FUSION ===")
-        with sqlite3.connect(final_db_dest) as conn:
+        with sqlite3.connect(merged_db_path) as conn:
             cur = conn.cursor()
             cur.execute("SELECT COUNT(*) FROM PlaylistItem")
             count = cur.fetchone()[0]
