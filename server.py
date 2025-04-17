@@ -2944,23 +2944,29 @@ def merge_data():
         print("✔ Mise à jour des références LocationId terminée")
 
         # 🔥 Suppression des tables MergeMapping_*
-        try:
-            with sqlite3.connect(merged_db_path) as cleanup_conn:
-                cur = cleanup_conn.cursor()
-                cur.execute("""
-                        SELECT name FROM sqlite_master 
-                        WHERE type='table' AND name LIKE 'MergeMapping_%'
-                    """)
-                tables_to_drop = [row[0] for row in cur.fetchall()]
-                print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
-                for table_name in tables_to_drop:
-                    cur.execute(f"DROP TABLE IF EXISTS {table_name}")
-                cleanup_conn.commit()
-                print("✔ Tables MergeMapping_* supprimées avec succès")
-        except Exception as e:
-            print(f"❌ Erreur pendant la suppression des tables MergeMapping_* : {e}")
+        print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
+        with sqlite3.connect(merged_db_path) as cleanup_conn:
+            cur = cleanup_conn.cursor()
 
-        # ✅ Copier la base nettoyée vers UPLOAD_FOLDER
+            # Avant suppression
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
+            tables_before = [row[0] for row in cur.fetchall()]
+            print(f"Tables détectées avant suppression : {tables_before}")
+
+            for table in tables_before:
+                try:
+                    cur.execute(f"DROP TABLE IF EXISTS {table}")
+                    print(f"✔ Table supprimée : {table}")
+                except Exception as e:
+                    print(f"⚠️ Erreur lors de la suppression de {table} : {e}")
+            cleanup_conn.commit()
+
+            # Après suppression
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
+            tables_after = [row[0] for row in cur.fetchall()]
+            print(f"✅ Tables restantes après suppression : {tables_after}")
+
+        # ✅ Ensuite seulement : copier la DB propre vers UPLOAD_FOLDER
         final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
         shutil.copy(merged_db_path, final_db_dest)
         print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
@@ -2973,6 +2979,11 @@ def merge_data():
             count = cur.fetchone()[0]
             print(f"Nombre d'enregistrements dans PlaylistItem après fusion : {count}")
 
+            # Vérifier que les tables MergeMapping_ ont bien disparu
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
+            tables_present = [row[0] for row in cur.fetchall()]
+            print(f"📋 Tables MergeMapping_ dans le fichier copié : {tables_present}")
+
         print("\n=== FUSION TERMINÉE AVEC SUCCÈS ===")
         print(f"Fichier fusionné : {final_db_dest}")
         print(f"Playlists fusionnées : {max_playlist_id}")
@@ -2981,6 +2992,7 @@ def merge_data():
         print(f"Éléments nettoyés : {orphaned_deleted}")
         print(f"Intégrité : {'✅ OK' if integrity_result == 'ok' else '⚠️ ÉCHEC'}")
         print("✅ Tous les résultats sont prêts, retour JSON imminent")
+
 
 @app.route('/download', methods=['GET'])
 def download_file():
