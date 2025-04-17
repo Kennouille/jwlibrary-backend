@@ -1734,6 +1734,10 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         print(f"Source 2: {file2_db}")
         print(f"Location IDs mappés: {len(location_id_map)}")
 
+        item_id_map = merge_playlist_items(
+            merged_db_path, file1_db, file2_db, location_id_map, independent_media_map
+        )
+
         # Appel immédiat à merge_playlist_items pour avoir item_id_map dispo dès le début
         print(f"Mapping PlaylistItems: {item_id_map}")
 
