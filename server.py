@@ -2900,6 +2900,7 @@ def merge_data():
 
         # 🔥 Suppression des tables MergeMapping_*
         print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
+        print(">>> ⚠️ Bloc de suppression des MergeMapping_* est bien atteint")
         with sqlite3.connect(merged_db_path) as cleanup_conn:
             cur = cleanup_conn.cursor()
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
@@ -2936,17 +2937,6 @@ def merge_data():
         print(f"Intégrité : {'✅ OK' if integrity_result == 'ok' else '⚠️ ÉCHEC'}")
         print("✅ Tous les résultats sont prêts, retour JSON imminent")
 
-        print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
-        merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
-        print("✔ Fusion InputFields terminée")
-
-        location_replacements_flat = {
-            old_id: new_id
-            for (_, old_id), new_id in sorted(location_id_map.items())
-        }
-        update_location_references(merged_db_path, location_replacements_flat)
-        print("✔ Mise à jour des références LocationId terminée")
-
         # --- Étape finale : vérification ---
         print("\n=== VERIFICATION POST-FUSION ===")
         with sqlite3.connect(merged_db_path) as conn:
@@ -2978,6 +2968,41 @@ def merge_data():
                 conn.close()
         except:
             pass
+
+        print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
+        merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
+        print("✔ Fusion InputFields terminée")
+
+        location_replacements_flat = {
+            old_id: new_id
+            for (_, old_id), new_id in sorted(location_id_map.items())
+        }
+        update_location_references(merged_db_path, location_replacements_flat)
+        print("✔ Mise à jour des références LocationId terminée")
+
+        print("\n=== SUPPRESSION DES TABLES MergeMapping_* (dans finally) ===")
+        print(">>> ⚠️ Bloc de suppression des MergeMapping_* est bien atteint")
+        print(">>> 📂 Base de données utilisée pour suppression :", merged_db_path)
+
+        with sqlite3.connect(merged_db_path) as cleanup_conn:
+            cur = cleanup_conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
+            tables_to_drop = [row[0] for row in cur.fetchall()]
+            print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
+
+            for table in tables_to_drop:
+                try:
+                    cur.execute(f"DROP TABLE IF EXISTS {table}")
+                    print(f"✔ Table supprimée : {table}")
+                except Exception as e:
+                    print(f"⚠️ Erreur lors de la suppression de {table} : {e}")
+            cleanup_conn.commit()
+
+        with sqlite3.connect(merged_db_path) as verify_conn:
+            cur = verify_conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'MergeMapping_%'")
+            remaining = [row[0] for row in cur.fetchall()]
+            print(f"📋 Tables MergeMapping_ restantes juste avant export : {remaining}")
 
 
 @app.route('/download', methods=['GET'])
