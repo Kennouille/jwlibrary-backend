@@ -1496,14 +1496,18 @@ def merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_ma
     for db_path in [file1_db, file2_db]:
         with sqlite3.connect(db_path) as src_conn:
             src_cursor = src_conn.cursor()
+            # On lit depuis la table source qui s'appelle PlaylistItemIndependentMediaMap
+            # et dont la colonne média est IndependentMediaId
             src_cursor.execute("""
-                SELECT PlaylistItemId, MediaFileId, OrderIndex
+                SELECT PlaylistItemId, IndependentMediaId, OrderIndex
                 FROM PlaylistItemIndependentMediaMap
             """)
             rows = src_cursor.fetchall()
             print(f"{len(rows)} lignes trouvées dans {os.path.basename(db_path)}")
             for old_item_id, old_media_id, order_idx in rows:
+                # On normalise le chemin pour le mapping des items
                 new_item_id = item_id_map.get((os.path.normpath(db_path), old_item_id))
+                # Et on récupère le nouveau media via le mapping IndependentMedia
                 new_media_id = independent_media_map.get((db_path, old_media_id))
                 if new_item_id and new_media_id:
                     try:
@@ -1516,7 +1520,10 @@ def merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_ma
                         print(f"Erreur PlaylistItemMediaMap: {e}")
                 else:
                     print(
-                        f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, MediaFileId={old_media_id} (db: {db_path})")
+                        f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, "
+                        f"IndependentMediaId={old_media_id} (db: {db_path})"
+                    )
+
     conn.commit()
     conn.close()
 
