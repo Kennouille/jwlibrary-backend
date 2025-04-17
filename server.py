@@ -2779,8 +2779,8 @@ def merge_data():
         optimization_time = time.perf_counter() - start_time
         log_message(f"Optimisation terminée en {optimization_time:.2f}s")
 
-        # 14. Finalisation
-        # commit final et fermeture propre
+        # --- 14. Finalisation ---
+        # commit final et fermeture propre de la transaction playlists
         conn.commit()
 
         # Récapitulatif final
@@ -2794,15 +2794,8 @@ def merge_data():
             print(f"{'Problèmes FK:':<20} \033[91m{len(fk_issues)}\033[0m")
         else:
             print(f"{'Problèmes FK:':<20} \033[92mAucun\033[0m")
-        with sqlite3.connect(merged_db_path) as test_conn:
-            test_cursor = test_conn.cursor()
-            test_cursor.execute("SELECT 1 FROM sqlite_master LIMIT 1")
-            db_status = "OK" if test_cursor.fetchone() else "ERREUR"
-            print(f"\nStatut final DB: {db_status}")
 
-        # 16. Activation WAL
-        conn = sqlite3.connect(merged_db_path)
-        cursor = conn.cursor()
+        # 16. Activation du WAL
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("CREATE TABLE IF NOT EXISTS dummy_for_wal (id INTEGER PRIMARY KEY)")
         cursor.execute("INSERT INTO dummy_for_wal DEFAULT VALUES")
@@ -2812,13 +2805,15 @@ def merge_data():
         cursor.execute("DROP TABLE dummy_for_wal")
         conn.commit()
         conn.close()
+
+        # Vérification du mode WAL
         with sqlite3.connect(merged_db_path) as test_conn:
             new_wal_status = test_conn.execute("PRAGMA journal_mode").fetchone()[0]
             print(f"Statut WAL après activation: {new_wal_status}")
             if new_wal_status != "wal":
                 print("Avertissement: Échec de l'activation WAL")
 
-        # 17. Préparation archive .jwlibrary (hors de tout with)
+        # 17. Préparation de l’archive .jwlibrary
         base_folder = os.path.join(EXTRACT_FOLDER, "file1_extracted")
         merged_folder = os.path.join(UPLOAD_FOLDER, "merged_folder")
         if os.path.exists(merged_folder):
@@ -2829,14 +2824,15 @@ def merge_data():
             if os.path.exists(dest):
                 os.remove(dest)
         shutil.copy(merged_db_path, os.path.join(merged_folder, "userData.db"))
-        open(os.path.join(merged_folder, "userData.db-wal"), "wb").close()
-        open(os.path.join(merged_folder, "userData.db-shm"), "wb").close()
+        open(os.path.join(merged_folder, "userData.db-wal"), 'wb').close()
+        open(os.path.join(merged_folder, "userData.db-shm"), 'wb').close()
+
         merged_zip = os.path.join(UPLOAD_FOLDER, "merged.zip")
         if os.path.exists(merged_zip):
             os.remove(merged_zip)
         shutil.make_archive(
-            base_name=merged_zip.replace(".zip", ""),
-            format="zip",
+            base_name=merged_zip.replace('.zip', ''),
+            format='zip',
             root_dir=merged_folder
         )
         merged_jwlibrary = merged_zip.replace(".zip", ".jwlibrary")
@@ -2844,9 +2840,7 @@ def merge_data():
             os.remove(merged_jwlibrary)
         time.sleep(0.5)
         os.rename(merged_zip, merged_jwlibrary)
-        print(f"\n✅ Fichier généré : {merged_jwlibrary} ({os.path.getsize(merged_jwlibrary) / 1024 / 1024:.2f} Mo)")
-        if os.path.getsize(merged_jwlibrary) < 1024:
-            print("⚠️ Avertissement: Le fichier semble trop petit")
+        print(f"\n✅ Fichier généré : {merged_jwlibrary} ({os.path.getsize(merged_jwlibrary) / 1024 / 1024:.2f} Mo)")
 
         # Retour final de merge_data
         print("\n🎯 Résumé final:")
@@ -2869,31 +2863,34 @@ def merge_data():
         return jsonify(final_result), 200
 
     except Exception as e:
+        # En cas d'erreur n'importe où dans le try principal
         print(f"ERREUR GLOBALE: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
     finally:
-        # On ferme proprement la connexion globale et on applique le mapping résiduel
+        # Fermeture propre de la connexion globale si besoin
         try:
             if conn:
                 conn.close()
         except:
             pass
 
+        # --- Étape 3 : mise à jour des LocationId résiduels ---
         print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
         merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
         print("✔ Fusion InputFields terminée")
 
         # Aplatir puis appliquer le mapping dans toutes les autres tables
         location_replacements_flat = {
-            old_id: new_id for (_, old_id), new_id in sorted(location_id_map.items())
+            old_id: new_id
+            for (_, old_id), new_id in sorted(location_id_map.items())
         }
         update_location_references(merged_db_path, location_replacements_flat)
         print("✔ Mise à jour des références LocationId terminée")
 
-        # --- Vérification post-fusion ---
+        # --- Étape 4 : vérification post-fusion ---
         print("\n=== VERIFICATION POST-FUSION ===")
         with sqlite3.connect(merged_db_path) as conn:
             cur = conn.cursor()
@@ -2907,8 +2904,7 @@ def merge_data():
         print(f"Items fusionnés : {len(item_id_map)}")
         print(f"Médias traités : {max_media_id}")
         print(f"Éléments nettoyés : {orphaned_deleted}")
-        result_status = "✅ OK" if integrity_result == "ok" else "⚠️ ÉCHEC"
-        print(f"Intégrité : {result_status}")
+        print(f"Intégrité : {'✅ OK' if integrity_result == 'ok' else '⚠️ ÉCHEC'}")
         print("✅ Tous les résultats sont prêts, retour JSON imminent")
 
 
