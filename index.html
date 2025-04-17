@@ -591,22 +591,31 @@
   }
 
   async function rebuildFinalZip() {
-      // 1. Télécharger le fichier userData.db directement depuis le backend
+    try {
       const response = await fetch(`${BASE_URL}/download?ngrok-skip-browser-warning=true`);
-      const blob = await response.blob();
+      if (!response.ok) {
+        alert("❌ Erreur lors du téléchargement du fichier fusionné.");
+        return;
+      }
 
-      // 2. Créer un lien temporaire pour le téléchargement
+      const blob = await response.blob();
       const url = URL.createObjectURL(blob);
+
       const link = document.createElement("a");
       link.href = url;
-      link.download = "userData.db"; // nom du fichier à sauvegarder
+      link.download = "fusionne.jwlibrary";  // ou "merged.jwlibrary" si tu veux que le nom soit exact
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-
-      // 3. Nettoyer l’URL temporaire
       URL.revokeObjectURL(url);
+
+      console.log("✅ Téléchargement du fichier fusionné terminé !");
+    } catch (error) {
+      console.error("Erreur dans rebuildFinalZip :", error);
+      alert("Une erreur est survenue lors du téléchargement.");
     }
+  }
+
 
 
 </script>

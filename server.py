@@ -2904,9 +2904,49 @@ def merge_data():
         shutil.copy(merged_db_path, final_db_dest)
         print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
 
+        # 📦 Reconstruction de l'archive .jwlibrary finale
+        base_folder = os.path.join(EXTRACT_FOLDER, "file1_extracted")
+        merged_folder = os.path.join(UPLOAD_FOLDER, "merged_folder")
+
+        # Nettoyage dossier destination
+        if os.path.exists(merged_folder):
+            shutil.rmtree(merged_folder)
+        shutil.copytree(base_folder, merged_folder)
+
+        # Remplacer les fichiers userData.db, wal et shm
+        for fname in ["userData.db", "userData.db-wal", "userData.db-shm"]:
+            dest = os.path.join(merged_folder, fname)
+            if os.path.exists(dest):
+                os.remove(dest)
+
+        shutil.copy(final_db_dest, os.path.join(merged_folder, "userData.db"))
+        open(os.path.join(merged_folder, "userData.db-wal"), 'wb').close()
+        open(os.path.join(merged_folder, "userData.db-shm"), 'wb').close()
+
+        # Création du fichier zip
+        merged_zip = os.path.join(UPLOAD_FOLDER, "merged.zip")
+        if os.path.exists(merged_zip):
+            os.remove(merged_zip)
+
+        shutil.make_archive(
+            base_name=merged_zip.replace('.zip', ''),
+            format='zip',
+            root_dir=merged_folder
+        )
+
+        # Renommer l'archive en .jwlibrary
+        merged_jwlibrary = merged_zip.replace(".zip", ".jwlibrary")
+        if os.path.exists(merged_jwlibrary):
+            os.remove(merged_jwlibrary)
+        time.sleep(0.5)
+        os.rename(merged_zip, merged_jwlibrary)
+
+        print(
+            f"\n✅ Fichier final généré : {merged_jwlibrary} ({os.path.getsize(merged_jwlibrary) / 1024 / 1024:.2f} Mo)")
+
         # ─── Retour **à l’intérieur** du try ───────────────────────────────────────────────
         final_result = {
-            "merged_file": "userData.db",
+            "merged_file": "merged.jwlibrary",
             "playlists": max_playlist_id,
             "playlist_items": len(item_id_map),
             "media_files": max_media_id,
@@ -2960,11 +3000,11 @@ def merge_data():
 
 @app.route('/download', methods=['GET'])
 def download_file():
-    merged_db_path = os.path.join(UPLOAD_FOLDER, "userData.db")
-    if not os.path.exists(merged_db_path):
+    merged_jwlibrary = os.path.join(UPLOAD_FOLDER, "merged.jwlibrary")
+    if not os.path.exists(merged_jwlibrary):
         return jsonify({"error": "Fichier fusionné non trouvé."}), 404
-    print("📥 Fichier envoyé depuis :", merged_db_path)
-    response = send_file(merged_db_path, as_attachment=True)
+    print("📥 Envoi du fichier :", merged_jwlibrary)
+    response = send_file(merged_jwlibrary, as_attachment=True)
     response.headers.add("Access-Control-Allow-Origin", "*")
     return response
 
