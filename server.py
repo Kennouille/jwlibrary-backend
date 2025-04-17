@@ -2899,11 +2899,6 @@ def merge_data():
         print(f"- Résultat intégrité: {integrity_result}")
         print("✅ Tous les calculs terminés, retour imminent")
 
-        # 🔁 Copier le fichier fusionné vers UPLOAD_FOLDER pour pouvoir le télécharger
-        final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-        shutil.copy(merged_db_path, final_db_dest)
-        print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
-
         # 🔥 Suppression des tables MergeMapping_*
         with sqlite3.connect(merged_db_path) as conn:
             cur = conn.cursor()
@@ -2917,6 +2912,11 @@ def merge_data():
                     print(f"⚠️ Erreur lors de la suppression de {table} : {e}")
             conn.commit()
         print("✔ Tables MergeMapping_* supprimées")
+
+        # 🔁 Ensuite seulement : copier vers UPLOAD_FOLDER
+        final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
+        shutil.copy(merged_db_path, final_db_dest)
+        print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
 
         # 📦 Reconstruction de l'archive .jwlibrary finale
         base_folder = os.path.join(EXTRACT_FOLDER, "file1_extracted")
