@@ -2899,77 +2899,15 @@ def merge_data():
         print(f"- Résultat intégrité: {integrity_result}")
         print("✅ Tous les calculs terminés, retour imminent")
 
-        # ─── fin de la fusion, avant tout copy/zip ────────────────────────
+        # ─── Après avoir fusionné ta DB (juste avant le `return`) ─────────────────────
+        # Copier la DB fusionnée brute dans UPLOAD_FOLDER
+        final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
+        shutil.copy(merged_db_path, final_db_dest)
+        print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
 
-        # 1️⃣ Supprimer les tables temporaires MergeMapping_* de la DB fusionnée
-        with sqlite3.connect(merged_db_path) as conn:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT name
-                  FROM sqlite_master
-                 WHERE type='table'
-                   AND name LIKE 'MergeMapping_%'
-            """)
-            mapping_tables = [row[0] for row in cur.fetchall()]
-            print(f"🔎 Tables MergeMapping_* trouvées : {mapping_tables}")  # Debug
-
-            if not mapping_tables:
-                print("⚠ Aucune table MergeMapping_* trouvée")
-            else:
-                for tbl in mapping_tables:
-                    print(f"🧹 Suppression de la table {tbl}")
-                    try:
-                        cur.execute(f"DROP TABLE {tbl}")  # On enlève IF EXISTS pour voir si ça échoue
-                        print(f"  -> Table {tbl} supprimée avec succès")
-                    except sqlite3.Error as e:
-                        print(f"  ❌ Erreur lors de la suppression de {tbl}: {e}")
-
-                conn.commit()
-                print("✔ Commit effectué pour les suppressions")
-
-        print("✔ Toutes les MergeMapping_* ont été traitées")
-
-        # 2️⃣ Copier cette DB clean dans le folder qu’on va zipper
-        merged_folder = os.path.join(UPLOAD_FOLDER, "merged_folder")
-        # recréer merged_folder à partir du template
-        if os.path.exists(merged_folder):
-            shutil.rmtree(merged_folder)
-        shutil.copytree(
-            os.path.join(EXTRACT_FOLDER, "file1_extracted"),
-            merged_folder
-        )
-
-        # remplacer userData.db par notre DB nettoyée
-        dest_db = os.path.join(merged_folder, "userData.db")
-        if os.path.exists(dest_db):
-            os.remove(dest_db)
-        shutil.copy(merged_db_path, dest_db)
-
-        # créer les fichiers WAL et SHM vides
-        open(os.path.join(merged_folder, "userData.db-wal"), 'wb').close()
-        open(os.path.join(merged_folder, "userData.db-shm"), 'wb').close()
-
-        # 3️⃣ Générer l’archive .jwlibrary
-        merged_zip = os.path.join(UPLOAD_FOLDER, "merged.zip")
-        if os.path.exists(merged_zip):
-            os.remove(merged_zip)
-
-        shutil.make_archive(
-            base_name=merged_zip.replace(".zip", ""),
-            format="zip",
-            root_dir=merged_folder
-        )
-
-        merged_jwlibrary = merged_zip.replace(".zip", ".jwlibrary")
-        if os.path.exists(merged_jwlibrary):
-            os.remove(merged_jwlibrary)
-        os.rename(merged_zip, merged_jwlibrary)
-
-        print(f"✅ Archive finale créée : {merged_jwlibrary}")
-
-        # ─── Retour **à l’intérieur** du try ───────────────────────────────────────────────
+        # Retour de l’API : on indique juste le nom de cette DB
         final_result = {
-            "merged_file": "merged.jwlibrary",
+            "merged_file": "userData.db",
             "playlists": max_playlist_id,
             "playlist_items": len(item_id_map),
             "media_files": max_media_id,
@@ -3023,13 +2961,16 @@ def merge_data():
 
 @app.route('/download', methods=['GET'])
 def download_file():
-    merged_jwlibrary = os.path.join(UPLOAD_FOLDER, "merged.jwlibrary")
-    if not os.path.exists(merged_jwlibrary):
+    db_path = os.path.join(UPLOAD_FOLDER, "userData.db")
+    if not os.path.exists(db_path):
         return jsonify({"error": "Fichier fusionné non trouvé."}), 404
-    print("📥 Envoi du fichier :", merged_jwlibrary)
-    response = send_file(merged_jwlibrary, as_attachment=True)
-    response.headers.add("Access-Control-Allow-Origin", "*")
-    return response
+    print("📥 Envoi du fichier :", db_path)
+    return send_file(
+        db_path,
+        as_attachment=True,
+        download_name="userData.db",
+        mimetype="application/vnd.sqlite3"
+    )
 
 
 @app.errorhandler(Exception)
