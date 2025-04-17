@@ -591,30 +591,23 @@
   }
 
   async function rebuildFinalZip() {
-    try {
-      const response = await fetch(`${BASE_URL}/download?ngrok-skip-browser-warning=true`);
-      if (!response.ok) {
-        alert("❌ Erreur lors du téléchargement du fichier fusionné.");
-        return;
-      }
+    // 1. Télécharger le fichier userData.db directement depuis le backend
+    const response = await fetch(`${BASE_URL}/download?ngrok-skip-browser-warning=true`);
+    const blob = await response.blob();
 
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
+    // 2. Créer un lien temporaire pour le téléchargement
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "userData.db"; // nom du fichier à sauvegarder
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
 
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "userData.db"; // ✅ correspond exactement à ce que le backend envoie
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      console.log("✅ Téléchargement du fichier fusionné terminé !");
-    } catch (error) {
-      console.error("Erreur dans rebuildFinalZip :", error);
-      alert("Une erreur est survenue lors du téléchargement.");
-    }
+    // 3. Nettoyer l’URL temporaire
+    URL.revokeObjectURL(url);
   }
+
 
 
 
