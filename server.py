@@ -2443,6 +2443,15 @@ def merge_data():
         note_mapping = create_note_mapping(merged_db_path, file1_db, file2_db)
         print("Note Mapping:", note_mapping)
 
+        # ─── 3. Fusion de la table PlaylistItem ───────────────────────────────────────
+        item_id_map = merge_playlist_items(
+            merged_db_path,
+            file1_db,
+            file2_db
+        )
+        print(f"--> PlaylistItem fusionnés : {len(item_id_map)} items")
+
+
         # ===== Vérification du mapping déjà construit =====
         print("\n=== LOCATION VERIFICATION ===")
         print(f"Total Locations: {len(location_id_map)}")
