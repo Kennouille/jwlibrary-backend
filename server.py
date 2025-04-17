@@ -1607,35 +1607,6 @@ def merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map):
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
 
-    # 5.1. Fusion de PlaylistItemMarkerMap (principal)
-    print("\nFusion de PlaylistItemMarkerMap")
-    for db_path in [file1_db, file2_db]:
-        with sqlite3.connect(db_path) as src_conn:
-            src_cursor = src_conn.cursor()
-            src_cursor.execute("""
-                SELECT PlaylistItemId, PlaylistItemMarkerId, OrderInList
-                FROM PlaylistItemMarkerMap
-            """)
-            mappings = src_cursor.fetchall()
-            print(f"{len(mappings)} mappings trouvés dans {os.path.basename(db_path)}")
-            for old_item_id, old_marker_id, order in mappings:
-                # Ici, new_item_id devrait être issu du mapping des PlaylistItems (que vous devez avoir géré séparément)
-                # Nous nous concentrons sur le mapping des markers.
-                new_marker_id = marker_id_map.get((db_path, old_marker_id))
-                if new_marker_id is None:
-                    print(f"⚠️ Mapping manquant pour marker {old_marker_id} dans {db_path}")
-                    continue
-                # Vous pouvez définir new_item_id si vous avez un mapping pour PlaylistItems; sinon, on passe.
-                new_item_id = None
-                try:
-                    cursor.execute("""
-                        INSERT OR IGNORE INTO PlaylistItemMarkerMap
-                        (PlaylistItemId, PlaylistItemMarkerId, OrderInList)
-                        VALUES (?, ?, ?)
-                    """, (new_item_id, new_marker_id, order))
-                except sqlite3.IntegrityError as e:
-                    print(f"Erreur PlaylistItemMarkerMap: {e}")
-
     # 5.2. Fusion des MarkerMaps spécifiques
     for map_type in ['BibleVerse', 'Paragraph']:
         table_name = f'PlaylistItemMarker{map_type}Map'
