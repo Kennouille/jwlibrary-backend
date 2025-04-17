@@ -2889,34 +2889,6 @@ def merge_data():
             if new_wal_status != "wal":
                 print("Avertissement: Échec de l'activation WAL")
 
-        # 17. Préparation de l’archive .jwlibrary
-        base_folder = os.path.join(EXTRACT_FOLDER, "file1_extracted")
-        merged_folder = os.path.join(UPLOAD_FOLDER, "merged_folder")
-        if os.path.exists(merged_folder):
-            shutil.rmtree(merged_folder)
-        shutil.copytree(base_folder, merged_folder)
-        for fname in ["userData.db", "userData.db-wal", "userData.db-shm"]:
-            dest = os.path.join(merged_folder, fname)
-            if os.path.exists(dest):
-                os.remove(dest)
-        shutil.copy(merged_db_path, os.path.join(merged_folder, "userData.db"))
-        open(os.path.join(merged_folder, "userData.db-wal"), 'wb').close()
-        open(os.path.join(merged_folder, "userData.db-shm"), 'wb').close()
-
-        merged_zip = os.path.join(UPLOAD_FOLDER, "merged.zip")
-        if os.path.exists(merged_zip):
-            os.remove(merged_zip)
-        shutil.make_archive(
-            base_name=merged_zip.replace('.zip', ''),
-            format='zip',
-            root_dir=merged_folder
-        )
-        merged_jwlibrary = merged_zip.replace(".zip", ".jwlibrary")
-        if os.path.exists(merged_jwlibrary):
-            os.remove(merged_jwlibrary)
-        time.sleep(0.5)
-        os.rename(merged_zip, merged_jwlibrary)
-        print(f"\n✅ Fichier généré : {merged_jwlibrary} ({os.path.getsize(merged_jwlibrary) / 1024 / 1024:.2f} Mo)")
 
         # Retour final de merge_data
         print("\n🎯 Résumé final:")
