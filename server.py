@@ -2958,10 +2958,23 @@ def merge_data():
                 remaining = [row[0] for row in cur.fetchall()]
                 print(f"📋 Tables MergeMapping_ restantes : {remaining}")
 
+            print(f"🔍 Check direct via sqlite3: {merged_db_path}")
+            with sqlite3.connect(merged_db_path) as check_conn:
+                check_cursor = check_conn.cursor()
+                check_cursor.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
+                leftover = [row[0] for row in check_cursor.fetchall()]
+                print(f"🎯 Tables restantes juste avant la copie: {leftover}")
+
+            print("📄 Vérification taille et date de userData.db juste avant la copie")
+            print("📍 Fichier:", merged_db_path)
+            print("🕒 Modifié le:", os.path.getmtime(merged_db_path))
+            print("📦 Taille:", os.path.getsize(merged_db_path), "octets")
+
             # 3️⃣ Copier la DB propre dans UPLOAD_FOLDER
             final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-            shutil.copy(merged_db_path, final_db_dest)
+            shutil.copy(merged_db_path, os.path.join(UPLOAD_FOLDER, "userData.db"))
             print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
+            print(f"📁 merged_db_path utilisé pour la copie : {merged_db_path}")
 
             # 4️⃣ Retour JSON
             final_result = {
