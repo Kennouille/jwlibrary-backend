@@ -7,6 +7,7 @@ import sqlite3
 import shutil
 import uuid
 import time
+import sys
 
 
 app = Flask(__name__)
@@ -2942,6 +2943,9 @@ def merge_data():
             try:
                 update_location_references(merged_db_path, location_replacements_flat)
                 print("✔ Mise à jour des références LocationId terminée")
+                sys.stdout.flush()
+                time.sleep(0.5)
+                print("⚠️ Juste avant ouverture de cleanup_conn")
             except Exception as e:
                 print(f"❌ ERREUR dans update_location_references : {e}")
 
