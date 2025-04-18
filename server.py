@@ -2905,9 +2905,8 @@ def merge_data():
             merged_db_path,
             file1_db,
             file2_db,
-            item_id_map,
-            usermark_guid_map,
             location_id_map,
+            independent_media_map
         )
 
         # 🧪 Résumé post merge_playlists
