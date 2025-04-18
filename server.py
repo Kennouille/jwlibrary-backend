@@ -2034,18 +2034,6 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
             print(f"Playlist fusionnée - ID max final: {max_playlist_id}")
             print(f"Total playlists fusionnées: {len(playlist_id_map)}")
 
-        # 11. Vérification de cohérence
-        print("\n=== VERIFICATION COHERENCE ===")
-        cursor.execute("""
-            SELECT COUNT(*) FROM PlaylistItem 
-            WHERE PlaylistItemId NOT IN (
-                SELECT pim.PlaylistItemId FROM PlaylistItemMap pim
-            )
-        """)
-        orphaned_items = cursor.fetchone()[0]
-        status_color = "\033[91m" if orphaned_items > 0 else "\033[92m"
-        print(f"{status_color}Éléments sans parent détectés (non supprimés) : {orphaned_items}\033[0m")
-
         # 12. Optimisations finales (désactivé pour PlaylistItem)
         print("\n=== DEBUT OPTIMISATIONS ===")
         print("Aucun nettoyage n'est effectué sur PlaylistItem.")
