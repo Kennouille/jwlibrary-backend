@@ -2941,6 +2941,8 @@ def merge_data():
             update_location_references(merged_db_path, location_replacements_flat)
             print("✔ Mise à jour des références LocationId terminée")
 
+            print("⚠️ Juste avant ouverture de cleanup_conn")
+
             # 2️⃣ Suppression des tables MergeMapping_*
             print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
             with sqlite3.connect(merged_db_path) as cleanup_conn:
@@ -2949,9 +2951,13 @@ def merge_data():
                     SELECT name
                     FROM sqlite_master
                     WHERE type='table'
-                    AND name LIKE 'MergeMapping_%'
+                      AND LOWER(name) LIKE 'mergemapping_%'
                 """)
+
                 tables_to_drop = [row[0] for row in cur.fetchall()]
+                rows = cur.fetchall()
+                print(f"🧪 Résultat brut de la requête sqlite_master : {rows}")
+
                 print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
                 for tbl in tables_to_drop:
                     cur.execute(f"DROP TABLE IF EXISTS {tbl}")
