@@ -2975,7 +2975,7 @@ def merge_data():
 
             # 3️⃣ Copier la DB propre dans UPLOAD_FOLDER
             final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-            shutil.copy("uploads/merged_userData.db", final_db_dest)
+            shutil.copy(merged_db_path, final_db_dest)
             print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
 
             # 6️⃣ Vérification finale sur le fichier copié
