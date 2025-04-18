@@ -2157,7 +2157,6 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
 
         # Retour final de merge_playlists
         print("\n🎯 Résumé final:")
-        print(f"- Fichier fusionné: {merged_jwlibrary}")
         print(f"- Playlists max ID: {max_playlist_id}")
         print(f"- PlaylistItem total: {len(item_id_map)}")
         print(f"- Médias max ID: {max_media_id}")
