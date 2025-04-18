@@ -1715,7 +1715,7 @@ def merge_playlist_final(merged_db_path, file1_db, file2_db):
     return playlist_id_map
 
 
-def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, independent_media_map):
+def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, independent_media_map, item_id_map):
     """Fusionne toutes les tables liées aux playlists en respectant les contraintes."""
     print("\n=== DÉBUT FUSION PLAYLISTS ===")
 
@@ -2879,21 +2879,21 @@ def merge_data():
 
         print("📍 Avant le résumé final")
 
-        # 📼 Fusion des playlists et récupération des résultats
-        print("▶️ Appel de merge_playlists...")
         (
             merged_jwlibrary,
             max_playlist_id,
             playlist_item_total,
             max_media_id,
             orphaned_deleted,
-            integrity_result
+            integrity_result,
+            item_id_map
         ) = merge_playlists(
             merged_db_path,
             file1_db,
             file2_db,
             location_id_map,
-            independent_media_map
+            independent_media_map,
+            item_id_map  # ✅ ajouté ici
         )
 
         # 🧪 Résumé post merge_playlists
