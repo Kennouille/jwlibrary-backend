@@ -2900,93 +2900,97 @@ def merge_data():
 
         print("📍 Avant le résumé final")
 
-        (
-            merged_jwlibrary,
-            max_playlist_id,
-            playlist_item_total,
-            max_media_id,
-            orphaned_deleted,
-            integrity_result,
-            item_id_map
-        ) = merge_playlists(
-            merged_db_path,
-            file1_db,
-            file2_db,
-            location_id_map,
-            independent_media_map,
-            item_id_map  # ✅ ajouté ici
-        )
+        print("▶️ Appel de merge_playlists...")
 
-        # 🧪 Résumé post merge_playlists
-        print("\n🎯 Résumé final après merge_playlists:")
-        print(f"- Fichier fusionné: {merged_jwlibrary}")
-        print(f"- Playlists max ID: {max_playlist_id}")
-        print(f"- PlaylistItem total: {playlist_item_total}")
-        print(f"- Médias max ID: {max_media_id}")
-        print(f"- Orphelins supprimés: {orphaned_deleted}")
-        print(f"- Résultat intégrité: {integrity_result}")
-        print("✅ Tous les calculs terminés, nettoyage…")
+        try:
+            (
+                merged_jwlibrary,
+                max_playlist_id,
+                playlist_item_total,
+                max_media_id,
+                orphaned_deleted,
+                integrity_result,
+                item_id_map
+            ) = merge_playlists(
+                merged_db_path,
+                file1_db,
+                file2_db,
+                location_id_map,
+                independent_media_map,
+                item_id_map  # ✅ ajouté ici
+            )
 
-        # 1️⃣ Mise à jour des LocationId résiduels
-        print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
-        merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
-        print("✔ Fusion InputFields terminée")
-        location_replacements_flat = {
-            old_id: new_id
-            for (_, old_id), new_id in sorted(location_id_map.items())
-        }
-        update_location_references(merged_db_path, location_replacements_flat)
-        print("✔ Mise à jour des références LocationId terminée")
+            # 🧪 Résumé post merge_playlists
+            print("\n🎯 Résumé final après merge_playlists:")
+            print(f"- Fichier fusionné: {merged_jwlibrary}")
+            print(f"- Playlists max ID: {max_playlist_id}")
+            print(f"- PlaylistItem total: {playlist_item_total}")
+            print(f"- Médias max ID: {max_media_id}")
+            print(f"- Orphelins supprimés: {orphaned_deleted}")
+            print(f"- Résultat intégrité: {integrity_result}")
+            print("✅ Tous les calculs terminés, nettoyage…")
 
-        # 2️⃣ Suppression des tables MergeMapping_*
-        print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
-        with sqlite3.connect(merged_db_path) as cleanup_conn:
-            cur = cleanup_conn.cursor()
-            cur.execute("""
-                SELECT name
-                FROM sqlite_master
-                WHERE type='table'
-                AND name LIKE 'MergeMapping_%'
-            """)
-            tables_to_drop = [row[0] for row in cur.fetchall()]
-            print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
-            for tbl in tables_to_drop:
-                cur.execute(f"DROP TABLE IF EXISTS {tbl}")
-                print(f"✔ Table supprimée : {tbl}")
-            cleanup_conn.commit()
+            # 1️⃣ Mise à jour des LocationId résiduels
+            print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
+            merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
+            print("✔ Fusion InputFields terminée")
+            location_replacements_flat = {
+                old_id: new_id
+                for (_, old_id), new_id in sorted(location_id_map.items())
+            }
+            update_location_references(merged_db_path, location_replacements_flat)
+            print("✔ Mise à jour des références LocationId terminée")
 
-        # 5️⃣ Vérification immédiate post-suppression
-        with sqlite3.connect(merged_db_path) as verify_conn:
-            cur = verify_conn.cursor()
-            cur.execute("""
-                SELECT name
-                FROM sqlite_master
-                WHERE type='table'
-                AND name LIKE 'MergeMapping_%'
-            """)
-            remaining = [row[0] for row in cur.fetchall()]
-            print(f"📋 Tables MergeMapping_ restantes : {remaining}")
+            # 2️⃣ Suppression des tables MergeMapping_*
+            print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
+            with sqlite3.connect(merged_db_path) as cleanup_conn:
+                cur = cleanup_conn.cursor()
+                cur.execute("""
+                    SELECT name
+                    FROM sqlite_master
+                    WHERE type='table'
+                    AND name LIKE 'MergeMapping_%'
+                """)
+                tables_to_drop = [row[0] for row in cur.fetchall()]
+                print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
+                for tbl in tables_to_drop:
+                    cur.execute(f"DROP TABLE IF EXISTS {tbl}")
+                    print(f"✔ Table supprimée : {tbl}")
+                cleanup_conn.commit()
 
-        # 3️⃣ Copier la DB propre dans UPLOAD_FOLDER
-        final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-        shutil.copy(merged_db_path, final_db_dest)
-        print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
+            # 5️⃣ Vérification immédiate post-suppression
+            with sqlite3.connect(merged_db_path) as verify_conn:
+                cur = verify_conn.cursor()
+                cur.execute("""
+                    SELECT name
+                    FROM sqlite_master
+                    WHERE type='table'
+                    AND name LIKE 'MergeMapping_%'
+                """)
+                remaining = [row[0] for row in cur.fetchall()]
+                print(f"📋 Tables MergeMapping_ restantes : {remaining}")
 
-        # 4️⃣ Retour JSON
-        final_result = {
-            "merged_file": "userData.db",
-            "playlists": max_playlist_id,
-            "playlist_items": playlist_item_total,
-            "media_files": max_media_id,
-            "cleaned_items": orphaned_deleted,
-            "integrity_check": integrity_result
-        }
-        return jsonify(final_result), 200
+            # 3️⃣ Copier la DB propre dans UPLOAD_FOLDER
+            final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
+            shutil.copy(merged_db_path, final_db_dest)
+            print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+            # 4️⃣ Retour JSON
+            final_result = {
+                "merged_file": "userData.db",
+                "playlists": max_playlist_id,
+                "playlist_items": playlist_item_total,
+                "media_files": max_media_id,
+                "cleaned_items": orphaned_deleted,
+                "integrity_check": integrity_result
+            }
+            return jsonify(final_result), 200
+
+        except Exception as e:
+            import traceback
+            print("❌ Exception levée pendant merge_playlists !")
+            traceback.print_exc()
+            return jsonify({"error": f"Erreur dans merge_playlists: {str(e)}"}), 500
 
     finally:
         # -- NE garder ICI QUE la fermeture de la connexion --
