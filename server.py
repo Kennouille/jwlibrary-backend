@@ -2889,7 +2889,7 @@ def merge_data():
             if new_wal_status != "wal":
                 print("Avertissement: Échec de l'activation WAL")
 
-        # Retour final de merge_data
+        # 🎯 Résumé final
         print("\n🎯 Résumé final:")
         print(f"- Fichier fusionné: {merged_jwlibrary}")
         print(f"- Playlists max ID: {max_playlist_id}")
@@ -2897,16 +2897,44 @@ def merge_data():
         print(f"- Médias max ID: {max_media_id}")
         print(f"- Orphelins supprimés: {orphaned_deleted}")
         print(f"- Résultat intégrité: {integrity_result}")
-        print("✅ Tous les calculs terminés, retour imminent")
+        print("✅ Tous les calculs terminés, nettoyage…")
 
-        # 🔁 Copier le fichier fusionné vers UPLOAD_FOLDER pour pouvoir le télécharger
+        # 1️⃣ Mise à jour des LocationId résiduels
+        print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
+        merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
+        print("✔ Fusion InputFields terminée")
+        location_replacements_flat = {
+            old_id: new_id
+            for (_, old_id), new_id in sorted(location_id_map.items())
+        }
+        update_location_references(merged_db_path, location_replacements_flat)
+        print("✔ Mise à jour des références LocationId terminée")
+
+        # 2️⃣ Suppression des tables MergeMapping_*
+        print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
+        with sqlite3.connect(merged_db_path) as cleanup_conn:
+            cur = cleanup_conn.cursor()
+            cur.execute("""
+                    SELECT name
+                      FROM sqlite_master
+                     WHERE type='table'
+                       AND name LIKE 'MergeMapping_%'
+                """)
+            tables_to_drop = [row[0] for row in cur.fetchall()]
+            print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
+            for tbl in tables_to_drop:
+                cur.execute(f"DROP TABLE IF EXISTS {tbl}")
+                print(f"✔ Table supprimée : {tbl}")
+            cleanup_conn.commit()
+
+        # 3️⃣ Copier la DB propre dans UPLOAD_FOLDER
         final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
         shutil.copy(merged_db_path, final_db_dest)
         print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
 
-        # ─── Retour **à l’intérieur** du try ───────────────────────────────────────────────
+        # 4️⃣ Retour JSON
         final_result = {
-            "merged_file": "merged.jwlibrary",
+            "merged_file": "userData.db",
             "playlists": max_playlist_id,
             "playlist_items": len(item_id_map),
             "media_files": max_media_id,
@@ -2921,41 +2949,12 @@ def merge_data():
         return jsonify({"error": str(e)}), 500
 
     finally:
-        # ─── cleanup / mapping résiduel ────────────────────────────────────────────────
-        try:
-            if conn:
+        # -- NE garder ICI QUE la fermeture de la connexion --
+        if conn:
+            try:
                 conn.close()
-        except:
-            pass
-
-        print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
-        merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
-        print("✔ Fusion InputFields terminée")
-
-        # Aplatir puis appliquer le mapping dans toutes les autres tables
-        location_replacements_flat = {
-            old_id: new_id
-            for (_, old_id), new_id in sorted(location_id_map.items())
-        }
-        update_location_references(merged_db_path, location_replacements_flat)
-        print("✔ Mise à jour des références LocationId terminée")
-
-        # --- Étape 4 : vérification post-fusion ---
-        print("\n=== VERIFICATION POST-FUSION ===")
-        with sqlite3.connect(merged_db_path) as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT COUNT(*) FROM PlaylistItem")
-            count = cur.fetchone()[0]
-            print(f"Nombre d'enregistrements dans PlaylistItem après fusion : {count}")
-
-        print("\n=== FUSION TERMINÉE AVEC SUCCÈS ===")
-        print(f"Fichier fusionné : {merged_jwlibrary}")
-        print(f"Playlists fusionnées : {max_playlist_id}")
-        print(f"Items fusionnés : {len(item_id_map)}")
-        print(f"Médias traités : {max_media_id}")
-        print(f"Éléments nettoyés : {orphaned_deleted}")
-        print(f"Intégrité : {'✅ OK' if integrity_result == 'ok' else '⚠️ ÉCHEC'}")
-        print("✅ Tous les résultats sont prêts, retour JSON imminent")
+            except:
+                pass
 
 
 @app.route('/download', methods=['GET'])
