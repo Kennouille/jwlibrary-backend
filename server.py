@@ -1875,31 +1875,43 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         # 5. Fusion des PlaylistItemMarkerMap et Marker*Map (BibleVerse/Paragraph)
         print("\n[FUSION MARKER MAPS]")
 
-        # 5.1. Fusion de PlaylistItemMarkerMap (principale)
-        print("\nFusion PlaylistItemMarkerMap")
+        # 5.1 Fusion PlaylistItemMarkerMap (si elle existe)
+        print("\n[FUSION PlaylistItemMarkerMap]")
         for db_path in [file1_db, file2_db]:
             with sqlite3.connect(db_path) as src_conn:
                 src_cur = src_conn.cursor()
+
+                # Vérifie l'existence de la table
                 src_cur.execute("""
-                    SELECT PlaylistItemId, PlaylistItemMarkerId, OrderInList
+                    SELECT name FROM sqlite_master
+                    WHERE type='table' AND name='PlaylistItemMarkerMap'
+                """)
+                if not src_cur.fetchone():
+                    print(f"⏭️ Table PlaylistItemMarkerMap absente dans {os.path.basename(db_path)}, étape ignorée.")
+                    continue
+
+                src_cur.execute("""
+                    SELECT PlaylistItemId, MarkerId
                     FROM PlaylistItemMarkerMap
                 """)
-                mappings = src_cur.fetchall()
-                print(f"{len(mappings)} mappings trouvés dans {os.path.basename(db_path)}")
-                for old_item_id, old_marker_id, order in mappings:
+                rows = src_cur.fetchall()
+                print(f"{len(rows)} lignes trouvées dans {os.path.basename(db_path)}")
+
+                for old_item_id, old_marker_id in rows:
                     new_item_id = item_id_map.get((os.path.normpath(db_path), old_item_id))
                     new_marker_id = marker_id_map.get((db_path, old_marker_id))
+
                     if new_item_id and new_marker_id:
                         try:
                             cursor.execute("""
                                 INSERT OR IGNORE INTO PlaylistItemMarkerMap
-                                (PlaylistItemId, PlaylistItemMarkerId, OrderInList)
-                                VALUES (?, ?, ?)
-                            """, (new_item_id, new_marker_id, order))
+                                (PlaylistItemId, MarkerId)
+                                VALUES (?, ?)
+                            """, (new_item_id, new_marker_id))
                         except sqlite3.IntegrityError as e:
                             print(f"Erreur PlaylistItemMarkerMap: {e}")
                     else:
-                        print(f"⚠️ Mapping manquant item={old_item_id}, marker={old_marker_id} (db: {db_path})")
+                        print(f"⚠️ Mapping manquant pour item {old_item_id} ou marker {old_marker_id} dans {db_path}")
 
         # 5.2. Fusion des PlaylistItemMarkerBibleVerseMap et ParagraphMap
         for map_type in ['BibleVerse', 'Paragraph']:
