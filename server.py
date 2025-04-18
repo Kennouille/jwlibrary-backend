@@ -2168,7 +2168,7 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
 
         print("✅ Tous les calculs terminés, retour imminent")
 
-        return merged_jwlibrary, max_playlist_id, len(item_id_map), max_media_id, orphaned_deleted, integrity_result, item_id_map
+        return max_playlist_id, len(item_id_map), max_media_id, orphaned_deleted, integrity_result, item_id_map
 
     except Exception as e:
         import traceback
@@ -2879,7 +2879,6 @@ def merge_data():
 
         try:
             (
-                merged_jwlibrary,
                 max_playlist_id,
                 playlist_item_total,
                 max_media_id,
