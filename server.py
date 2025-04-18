@@ -2953,11 +2953,9 @@ def merge_data():
                     WHERE type='table'
                       AND LOWER(name) LIKE 'mergemapping_%'
                 """)
-
-                tables_to_drop = [row[0] for row in cur.fetchall()]
                 rows = cur.fetchall()
+                tables_to_drop = [row[0] for row in rows]  # ✅ lis dans rows une seule fois
                 print(f"🧪 Résultat brut de la requête sqlite_master : {rows}")
-
                 print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
                 for tbl in tables_to_drop:
                     cur.execute(f"DROP TABLE IF EXISTS {tbl}")
