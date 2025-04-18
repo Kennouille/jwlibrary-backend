@@ -2950,7 +2950,7 @@ def merge_data():
                 cleanup_conn.commit()
 
             # 5️⃣ Vérification immédiate post-suppression
-            with sqlite3.connect(merged_db_path) as verify_conn:
+            with sqlite3.connect("uploads/merged_userData.db") as verify_conn:
                 cur = verify_conn.cursor()
                 cur.execute("""
                     SELECT name
@@ -2961,23 +2961,22 @@ def merge_data():
                 remaining = [row[0] for row in cur.fetchall()]
                 print(f"📋 Tables MergeMapping_ restantes : {remaining}")
 
-            print(f"🔍 Check direct via sqlite3: {merged_db_path}")
-            with sqlite3.connect(merged_db_path) as check_conn:
+            # 🔍 Vérification juste avant la copie
+            with sqlite3.connect("uploads/merged_userData.db") as check_conn:
                 check_cursor = check_conn.cursor()
                 check_cursor.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
                 leftover = [row[0] for row in check_cursor.fetchall()]
                 print(f"🎯 Tables restantes juste avant la copie: {leftover}")
 
-            print("📄 Vérification taille et date de userData.db juste avant la copie")
-            print("📍 Fichier:", merged_db_path)
-            print("🕒 Modifié le:", os.path.getmtime(merged_db_path))
-            print("📦 Taille:", os.path.getsize(merged_db_path), "octets")
+            print("📄 Vérification taille et date de merged_userData.db juste avant la copie")
+            print("📍 Fichier:", "uploads/merged_userData.db")
+            print("🕒 Modifié le:", os.path.getmtime("uploads/merged_userData.db"))
+            print("📦 Taille:", os.path.getsize("uploads/merged_userData.db"), "octets")
 
             # 3️⃣ Copier la DB propre dans UPLOAD_FOLDER
             final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-            shutil.copy(merged_db_path, os.path.join(UPLOAD_FOLDER, "userData.db"))
+            shutil.copy("uploads/merged_userData.db", final_db_dest)
             print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
-            print(f"📁 merged_db_path utilisé pour la copie : {merged_db_path}")
 
             # 6️⃣ Vérification finale sur le fichier copié
             with sqlite3.connect(final_db_dest) as postcopy_conn:
@@ -3015,7 +3014,7 @@ def merge_data():
 
 @app.route('/download', methods=['GET'])
 def download_file():
-    merged_db_path = os.path.join(UPLOAD_FOLDER, "userData.db")
+    merged_db_path = os.path.join(UPLOAD_FOLDER, "merged_userData.db")
     if not os.path.exists(merged_db_path):
         return jsonify({"error": "Fichier fusionné non trouvé."}), 404
     print("📥 Fichier envoyé depuis :", merged_db_path)
