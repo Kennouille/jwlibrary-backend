@@ -2899,8 +2899,7 @@ def merge_data():
             playlist_item_total,
             max_media_id,
             orphaned_deleted,
-            integrity_result,
-            item_id_map
+            integrity_result
         ) = merge_playlists(
             merged_db_path,
             file1_db,
