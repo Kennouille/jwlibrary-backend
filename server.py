@@ -2976,6 +2976,12 @@ def merge_data():
             print("✅ Copie vers UPLOAD_FOLDER réussie :", final_db_dest)
             print(f"📁 merged_db_path utilisé pour la copie : {merged_db_path}")
 
+            # 6️⃣ Vérification finale sur le fichier copié
+            with sqlite3.connect(final_db_dest) as postcopy_conn:
+                cur = postcopy_conn.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                print("📋 Tables dans userData.db juste après copie :", [row[0] for row in cur.fetchall()])
+
             # 4️⃣ Retour JSON
             final_result = {
                 "merged_file": "userData.db",
