@@ -2938,8 +2938,12 @@ def merge_data():
                 old_id: new_id
                 for (_, old_id), new_id in sorted(location_id_map.items())
             }
-            update_location_references(merged_db_path, location_replacements_flat)
-            print("✔ Mise à jour des références LocationId terminée")
+            print("⏳ Appel de update_location_references...")
+            try:
+                update_location_references(merged_db_path, location_replacements_flat)
+                print("✔ Mise à jour des références LocationId terminée")
+            except Exception as e:
+                print(f"❌ ERREUR dans update_location_references : {e}")
 
             print("⚠️ Juste avant ouverture de cleanup_conn")
 
