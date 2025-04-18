@@ -3004,6 +3004,8 @@ def merge_data():
                 "cleaned_items": orphaned_deleted,
                 "integrity_check": integrity_result
             }
+            sys.stdout.flush()
+
             return jsonify(final_result), 200
 
         except Exception as e:
