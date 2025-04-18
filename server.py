@@ -2174,13 +2174,12 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         return merged_jwlibrary, max_playlist_id, len(item_id_map), max_media_id, orphaned_deleted, integrity_result, item_id_map
 
     except Exception as e:
-
+        import traceback
+        traceback.print_exc()
         print(f"ERREUR CRITIQUE dans merge_playlists: {str(e)}")
-
-        return None, 0, 0, 0, 0, "error"
+        return None, 0, 0, 0, 0, "error", {}
 
     finally:
-
         if conn:
             conn.close()
 
