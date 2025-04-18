@@ -2943,22 +2943,25 @@ def merge_data():
                 old_id: new_id
                 for (_, old_id), new_id in sorted(location_id_map.items())
             }
+
             print("⏳ Appel de update_location_references...")
             try:
                 update_location_references(merged_db_path, location_replacements_flat)
                 print("✔ Mise à jour des références LocationId terminée")
-                sys.stdout.flush()
-                time.sleep(0.5)
-                print("✅ Fin normale de update_location_references()")
-
             except Exception as e:
                 print(f"❌ ERREUR dans update_location_references : {e}")
 
-            print("⚠️ Juste avant ouverture de cleanup_conn")
+            # 🧪 Debug immédiat après update_location_references
+            print("🟡 Après update_location_references")
+            sys.stdout.flush()
+            time.sleep(0.5)
+            print("🟢 Avant suppression des tables MergeMapping_*")
+            sys.stdout.flush()
 
             # 2️⃣ Suppression des tables MergeMapping_*
             print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
             with sqlite3.connect(merged_db_path) as cleanup_conn:
+                print("🔵 Connexion cleanup_conn ouverte")
                 cur = cleanup_conn.cursor()
                 cur.execute("""
                     SELECT name
@@ -2967,7 +2970,7 @@ def merge_data():
                       AND LOWER(name) LIKE 'mergemapping_%'
                 """)
                 rows = cur.fetchall()
-                tables_to_drop = [row[0] for row in rows]  # ✅ lis dans rows une seule fois
+                tables_to_drop = [row[0] for row in rows]
                 print(f"🧪 Résultat brut de la requête sqlite_master : {rows}")
                 print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
                 for tbl in tables_to_drop:
