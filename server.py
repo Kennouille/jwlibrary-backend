@@ -799,7 +799,11 @@ def update_location_references(merged_db_path, location_replacements):
             print(f"Erreur sécurisée mise à jour PublicationLocationId {old_loc}: {e}")
 
     conn.commit()
-    conn.close()
+    try:
+        conn.close()
+        print("🔚 Connexion fermée dans update_location_references()")
+    except Exception as e:
+        print(f"❌ ERREUR lors de conn.close() : {e}")
 
 
 def merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map):
@@ -2945,7 +2949,8 @@ def merge_data():
                 print("✔ Mise à jour des références LocationId terminée")
                 sys.stdout.flush()
                 time.sleep(0.5)
-                print("⚠️ Juste avant ouverture de cleanup_conn")
+                print("✅ Fin normale de update_location_references()")
+
             except Exception as e:
                 print(f"❌ ERREUR dans update_location_references : {e}")
 
