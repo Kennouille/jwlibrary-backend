@@ -1793,34 +1793,37 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
 
         # 3. Fusion PlaylistItemMediaMap
         print("\n[FUSION PlaylistItemMediaMap]")
-        for db_path in [file1_db, file2_db]:
-            with sqlite3.connect(db_path) as src_conn:
-                src_cur = src_conn.cursor()
-                src_cur.execute("""
-                    SELECT PlaylistItemId, MediaFileId, OrderIndex
-                    FROM PlaylistItemMediaMap
-                """)
-                rows = src_cur.fetchall()
-                print(f"{len(rows)} lignes trouvées dans {os.path.basename(db_path)}")
 
-                for old_item_id, old_media_id, order_idx in rows:
-                    print(
-                        f"Mapping demandé pour ({db_path}, {old_item_id}) → {item_id_map.get((db_path, old_item_id))}")
-                    new_item_id = item_id_map.get((os.path.normpath(db_path), old_item_id))
-                    new_media_id = independent_media_map.get((db_path, old_media_id))
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='PlaylistItemMediaMap'")
+        if not cursor.fetchone():
+            print("🚫 Table 'PlaylistItemMediaMap' absente — étape ignorée.")
+        else:
+            for db_path in [file1_db, file2_db]:
+                with sqlite3.connect(db_path) as src_conn:
+                    src_cur = src_conn.cursor()
+                    src_cur.execute("""
+                        SELECT PlaylistItemId, MediaFileId, OrderIndex
+                        FROM PlaylistItemMediaMap
+                    """)
+                    rows = src_cur.fetchall()
+                    print(f"{len(rows)} lignes trouvées dans {os.path.basename(db_path)}")
 
-                    if new_item_id and new_media_id:
-                        try:
-                            cursor.execute("""
-                                INSERT OR IGNORE INTO PlaylistItemMediaMap
-                                (PlaylistItemId, MediaFileId, OrderIndex)
-                                VALUES (?, ?, ?)
-                            """, (new_item_id, new_media_id, order_idx))
-                        except sqlite3.IntegrityError as e:
-                            print(f"Erreur PlaylistItemMediaMap: {e}")
-                    else:
-                        print(
-                            f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, MediaFileId={old_media_id} (db: {db_path})")
+                    for old_item_id, old_media_id, order_idx in rows:
+                        new_item_id = item_id_map.get((os.path.normpath(db_path), old_item_id))
+                        new_media_id = independent_media_map.get((db_path, old_media_id))
+
+                        if new_item_id and new_media_id:
+                            try:
+                                cursor.execute("""
+                                    INSERT OR IGNORE INTO PlaylistItemMediaMap
+                                    (PlaylistItemId, MediaFileId, OrderIndex)
+                                    VALUES (?, ?, ?)
+                                """, (new_item_id, new_media_id, order_idx))
+                            except sqlite3.IntegrityError as e:
+                                print(f"Erreur PlaylistItemMediaMap: {e}")
+                        else:
+                            print(
+                                f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, MediaFileId={old_media_id} (db: {db_path})")
 
         # 4. Fusion PlaylistItemMarker
         print("\n[FUSION PLAYLISTITEMMARKER]")
