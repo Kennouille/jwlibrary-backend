@@ -2875,6 +2875,7 @@ def merge_data():
         print("📍 Avant le résumé final")
 
         print("▶️ Appel de merge_playlists...")
+        print("🛑 merge_playlists appelée")
 
         try:
             (
@@ -2925,6 +2926,8 @@ def merge_data():
             time.sleep(0.5)
             print("🟢 Avant suppression des tables MergeMapping_*")
             sys.stdout.flush()
+
+            print("🧨 Début suppression des MergeMapping_*")
 
             # 2️⃣ Suppression des tables MergeMapping_*
             print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
