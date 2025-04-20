@@ -2969,24 +2969,23 @@ def merge_data():
             print("🕒 Modifié le:", os.path.getmtime("uploads/merged_userData.db"))
             print("📦 Taille:", os.path.getsize("uploads/merged_userData.db"), "octets")
 
-            with sqlite3.connect("uploads/merged_userData.db") as check_conn:
-                check_cursor = check_conn.cursor()
-                check_cursor.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
-                leftover = [row[0] for row in check_cursor.fetchall()]
-                print(f"🎯 Tables restantes juste avant la copie: {leftover}")
+            with sqlite3.connect(merged_db_path) as check_conn:
+                cur = check_conn.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
+                leftover = [row[0] for row in cur.fetchall()]
+                print(f"🧪 Tables restantes juste avant la copie (vérification finale): {leftover}")
 
             # 3️⃣ Copier la DB propre dans UPLOAD_FOLDER
-            final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-            shutil.copy(CLEANED_DB, final_db_dest)
-            print(f"✅ Copie vers UPLOAD_FOLDER réussie : {final_db_dest}")
-            print(f"📥 Fichier réellement copié : {CLEANED_DB} → {final_db_dest}")
+            temp_filename = f"temp_{uuid.uuid4().hex}.db"
+            temp_path = os.path.join(UPLOAD_FOLDER, temp_filename)
+            shutil.copy(merged_db_path, temp_path)
+            print(f"📦 Copie vers fichier temporaire : {temp_path}")
 
             # 6️⃣ Vérification finale sur le fichier copié
-            with sqlite3.connect(final_db_dest) as conn_check:
-                cur = conn_check.cursor()
+            with sqlite3.connect(temp_path) as final_check:
+                cur = final_check.cursor()
                 cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
-                aftercopy = [row[0] for row in cur.fetchall()]
-                print("🧪 Tables MergeMapping_ dans userData.db copié :", aftercopy)
+                print("📋 Vérification finale dans fichier temporaire:", [row[0] for row in cur.fetchall()])
 
             # 4️⃣ Retour JSON
             final_result = {
