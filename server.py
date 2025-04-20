@@ -2155,6 +2155,38 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
             if new_wal_status != "wal":
                 print("Avertissement: Échec de l'activation WAL")
 
+        # 2️⃣ Suppression des tables MergeMapping_*
+        print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
+        with sqlite3.connect(merged_db_path) as cleanup_conn:
+            print("🔵 Connexion cleanup_conn ouverte")
+            cur = cleanup_conn.cursor()
+            cur.execute("""
+                    SELECT name
+                    FROM sqlite_master
+                    WHERE type='table'
+                      AND LOWER(name) LIKE 'mergemapping_%'
+                """)
+            rows = cur.fetchall()
+            tables_to_drop = [row[0] for row in rows]
+            print(f"🧪 Résultat brut de la requête sqlite_master : {rows}")
+            print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
+            for tbl in tables_to_drop:
+                cur.execute(f"DROP TABLE IF EXISTS {tbl}")
+                print(f"✔ Table supprimée : {tbl}")
+            cleanup_conn.commit()
+
+        # 5️⃣ Vérification immédiate post-suppression
+        with sqlite3.connect("uploads/merged_userData.db") as verify_conn:
+            cur = verify_conn.cursor()
+            cur.execute("""
+                    SELECT name
+                    FROM sqlite_master
+                    WHERE type='table'
+                    AND name LIKE 'MergeMapping_%'
+                """)
+            remaining = [row[0] for row in cur.fetchall()]
+            print(f"📋 Tables MergeMapping_ restantes : {remaining}")
+
         # Retour final de merge_playlists
         print("\n🎯 Résumé final:")
         print(f"- Playlists max ID: {max_playlist_id}")
@@ -2929,38 +2961,6 @@ def merge_data():
 
             print("🧨 Début suppression des MergeMapping_*")
 
-            # 2️⃣ Suppression des tables MergeMapping_*
-            print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
-            with sqlite3.connect(merged_db_path) as cleanup_conn:
-                print("🔵 Connexion cleanup_conn ouverte")
-                cur = cleanup_conn.cursor()
-                cur.execute("""
-                    SELECT name
-                    FROM sqlite_master
-                    WHERE type='table'
-                      AND LOWER(name) LIKE 'mergemapping_%'
-                """)
-                rows = cur.fetchall()
-                tables_to_drop = [row[0] for row in rows]
-                print(f"🧪 Résultat brut de la requête sqlite_master : {rows}")
-                print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
-                for tbl in tables_to_drop:
-                    cur.execute(f"DROP TABLE IF EXISTS {tbl}")
-                    print(f"✔ Table supprimée : {tbl}")
-                cleanup_conn.commit()
-
-            # 5️⃣ Vérification immédiate post-suppression
-            with sqlite3.connect("uploads/merged_userData.db") as verify_conn:
-                cur = verify_conn.cursor()
-                cur.execute("""
-                    SELECT name
-                    FROM sqlite_master
-                    WHERE type='table'
-                    AND name LIKE 'MergeMapping_%'
-                """)
-                remaining = [row[0] for row in cur.fetchall()]
-                print(f"📋 Tables MergeMapping_ restantes : {remaining}")
-
             # 🔍 Vérification juste avant la copie
             with sqlite3.connect("uploads/merged_userData.db") as check_conn:
                 check_cursor = check_conn.cursor()
@@ -2972,6 +2972,12 @@ def merge_data():
             print("📍 Fichier:", "uploads/merged_userData.db")
             print("🕒 Modifié le:", os.path.getmtime("uploads/merged_userData.db"))
             print("📦 Taille:", os.path.getsize("uploads/merged_userData.db"), "octets")
+
+            with sqlite3.connect(merged_db_path) as check_conn:
+                cur = check_conn.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
+                leftover = [row[0] for row in cur.fetchall()]
+                print(f"📋 Tables MergeMapping_ dans merged_db_path avant copy(): {leftover}")
 
             # 3️⃣ Copier la DB propre dans UPLOAD_FOLDER
             final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
