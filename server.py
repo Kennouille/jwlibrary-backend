@@ -8,6 +8,7 @@ import shutil
 import uuid
 import time
 import sys
+import gc
 
 
 app = Flask(__name__)
@@ -2965,11 +2966,20 @@ def merge_data():
                 leftover = [row[0] for row in cur.fetchall()]
                 print(f"🧪 Tables restantes juste avant la copie (vérification finale): {leftover}")
 
+            # 3️⃣ Forcer fermeture de toutes connexions SQLite avant conversion
+            print("🧹 Libération des connexions SQLite…")
+            gc.collect()
+
+            # 4️⃣ Désactiver WAL pour forcer écriture dans le .db principal
             print("🛠️ Désactivation WAL et écriture finale sur disque...")
-            with sqlite3.connect(merged_db_path) as wal_conn:
-                wal_conn.execute("PRAGMA journal_mode=DELETE")
-                wal_conn.commit()
-            print("✅ WAL désactivé, base consolidée en .db")
+            try:
+                with sqlite3.connect(merged_db_path, timeout=5) as wal_conn:
+                    wal_conn.execute("PRAGMA journal_mode=DELETE")
+                    wal_conn.commit()
+                print("✅ WAL désactivé, base consolidée en .db")
+            except Exception as e:
+                print(f"❌ Erreur pendant désactivation WAL : {e}")
+                raise e  # on laisse remonter l’erreur pour interruption propre
 
             # 3️⃣ Copier la DB propre dans UPLOAD_FOLDER
             final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
