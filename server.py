@@ -372,17 +372,43 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
                     continue
 
                 # Vérifier et ajuster le slot pour éviter les conflits
-                original_slot = slot
-                while True:
-                    cursor.execute("""
-                        SELECT BookmarkId FROM Bookmark
-                        WHERE PublicationLocationId = ? AND Slot = ?
-                    """, (new_pub_loc_id, slot))
-                    if not cursor.fetchone():
-                        break
-                    print(
-                        f"Conflit détecté pour PublicationLocationId={new_pub_loc_id}, Slot={slot}. Incrémentation du slot.")
-                    slot += 1
+                # ⚖️ Vérifie si un bookmark identique existe déjà au même emplacement
+                cursor.execute("""
+                    SELECT BookmarkId, LocationId, Title, Snippet, BlockType, BlockIdentifier
+                    FROM Bookmark
+                    WHERE PublicationLocationId = ? AND Slot = ?
+                """, (new_pub_loc_id, slot))
+                existing = cursor.fetchone()
+
+                if existing:
+                    (existing_id, loc_check, title_check, snippet_check,
+                     block_type_check, block_id_check) = existing
+
+                    if (loc_check == new_loc_id and
+                            title_check == title and
+                            snippet_check == snippet and
+                            block_type_check == block_type and
+                            block_id_check == block_id):
+                        print(
+                            f"⏩ Bookmark déjà présent et identique : OldID {old_id} de {db_path} → NewID {existing_id}")
+                        mapping[(db_path, old_id)] = existing_id
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO MergeMapping_Bookmark (SourceDb, OldID, NewID)
+                            VALUES (?, ?, ?)
+                        """, (db_path, old_id, existing_id))
+                        conn.commit()
+                        continue
+                    else:
+                        print(
+                            f"Conflit détecté pour PublicationLocationId={new_pub_loc_id}, Slot={slot}. Incrémentation du slot.")
+                        while True:
+                            slot += 1
+                            cursor.execute("""
+                                SELECT BookmarkId FROM Bookmark
+                                WHERE PublicationLocationId = ? AND Slot = ?
+                            """, (new_pub_loc_id, slot))
+                            if not cursor.fetchone():
+                                break
 
                 print(
                     f"Insertion Bookmark: OldID {old_id} (slot initial {original_slot} -> {slot}), PubLocId {new_pub_loc_id}, Title='{title}'")
@@ -1288,6 +1314,21 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                     print(f"Conflit sur TagMap pour TagId {new_tag_id} à Position {tentative}. Incrémentation.")
                     tentative += 1
 
+                # Vérification d’un doublon fonctionnel exact avant d’insérer
+                cursor.execute("""
+                    SELECT TagMapId FROM TagMap
+                    WHERE TagId = ?
+                      AND IFNULL(PlaylistItemId, -1) = IFNULL(?, -1)
+                      AND IFNULL(LocationId, -1) = IFNULL(?, -1)
+                      AND IFNULL(NoteId, -1) = IFNULL(?, -1)
+                """, (new_tag_id, new_playlist_item_id, new_location_id, new_note_id))
+                existing = cursor.fetchone()
+
+                if existing:
+                    print(f"⏩ Doublon fonctionnel détecté pour TagMapId existant {existing[0]} — insertion ignorée.")
+                    tagmap_id_map[(db_path, old_tagmap_id)] = existing[0]
+                    continue
+
                 max_tagmap_id += 1
                 new_tagmap_id = max_tagmap_id
                 try:
@@ -1376,8 +1417,14 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
         norm_start = safe_number(start_trim)
         norm_end = safe_number(end_trim)
         norm_thumb = safe_text(thumb_path)
-        # Définir la clé de correspondance permettant de détecter des doublons
-        key = (norm_label, norm_start, norm_end, accuracy, end_action, norm_thumb)
+
+        # Nouvelle clé de détection robuste : SHA-256 du contenu
+        import hashlib
+        def generate_full_key(label, start_trim, end_trim, accuracy, end_action, thumbnail_path):
+            normalized = f"{label}|{start_trim}|{end_trim}|{accuracy}|{end_action}|{thumbnail_path}"
+            return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+        key = generate_full_key(norm_label, norm_start, norm_end, accuracy, end_action, norm_thumb)
 
         # Vérifier si cet enregistrement a déjà été traité en consultant la table de mapping
         cursor.execute("SELECT NewItemId FROM MergeMapping_PlaylistItem WHERE SourceDb = ? AND OldItemId = ?", (db_source, old_id))
@@ -1477,10 +1524,28 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
                 new_loc_id = location_id_map.get((db_path, old_loc_id))
                 if new_item_id and new_loc_id:
                     try:
+                        # Vérifie si le couple PlaylistItemId + LocationId existe déjà
                         cursor.execute("""
-                            INSERT OR IGNORE INTO PlaylistItemLocationMap
+                            SELECT MajorMultimediaType, BaseDurationTicks
+                            FROM PlaylistItemLocationMap
+                            WHERE PlaylistItemId = ? AND LocationId = ?
+                        """, (new_item_id, new_loc_id))
+                        existing = cursor.fetchone()
+
+                        if existing:
+                            if existing == (mm_type, duration):
+                                print(f"⏩ Déjà présent et identique : Item {new_item_id}, Location {new_loc_id}")
+                            else:
+                                print(
+                                    f"⚠️ Doublon conflictuel ignoré pour Item {new_item_id}, Location {new_loc_id} (différences de contenu)")
+                            continue
+
+                        # Sinon on l'insère
+                        cursor.execute("""
+                            INSERT INTO PlaylistItemLocationMap
                             VALUES (?, ?, ?, ?)
                         """, (new_item_id, new_loc_id, mm_type, duration))
+
                     except sqlite3.IntegrityError as e:
                         print(f"Erreur PlaylistItemLocationMap: {e}")
                 else:
@@ -1516,14 +1581,26 @@ def merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_ma
                 order_idx = duration_ticks  # on réutilise DurationTicks comme OrderIndex
 
                 if new_item_id and new_media_id:
+                    # ✅ Vérifie si cette association existe déjà dans la base fusionnée
+                    cursor.execute("""
+                        SELECT 1 FROM PlaylistItemMediaMap
+                        WHERE PlaylistItemId = ? AND MediaFileId = ?
+                    """, (new_item_id, new_media_id))
+                    exists = cursor.fetchone()
+
+                    if exists:
+                        print(f"⏩ Déjà présent : (PlaylistItemId={new_item_id}, MediaFileId={new_media_id})")
+                        continue
+
                     try:
                         cursor.execute("""
-                            INSERT OR IGNORE INTO PlaylistItemMediaMap
+                            INSERT INTO PlaylistItemMediaMap
                             (PlaylistItemId, MediaFileId, OrderIndex)
                             VALUES (?, ?, ?)
                         """, (new_item_id, new_media_id, order_idx))
                     except sqlite3.IntegrityError as e:
                         print(f"Erreur PlaylistItemMediaMap: {e}")
+
                 else:
                     print(
                         f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, "
