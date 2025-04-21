@@ -2971,7 +2971,7 @@ def merge_data():
             time.sleep(1.0)
 
             # 6️⃣ Création d’une DB propre avec VACUUM INTO
-            clean_filename = f"cleaned_{uuid.uuid4().hex}.db"
+            clean_filename = f"userData.db"
             clean_path = os.path.join(UPLOAD_FOLDER, clean_filename)
 
             print("🧹 VACUUM INTO pour générer une base nettoyée...")
@@ -2979,19 +2979,14 @@ def merge_data():
                 conn.execute(f"VACUUM INTO '{clean_path}'")
             print(f"✅ Fichier nettoyé généré : {clean_path}")
 
-            # 7️⃣ Copie vers destination finale
-            final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-            shutil.copy(clean_path, final_db_dest)
-            print(f"✅ Copie finale vers UPLOAD_FOLDER réussie : {final_db_dest}")
-
-            # 8️⃣ Vérification finale dans userData.db
-            with sqlite3.connect(final_db_dest) as final_check:
+            # 7️⃣ Vérification finale dans le fichier nettoyé
+            with sqlite3.connect(clean_path) as final_check:
                 cur = final_check.cursor()
                 cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
                 tables_final = [row[0] for row in cur.fetchall()]
-                print("📋 Tables MergeMapping_ dans userData.db copié :", tables_final)
+                print("📋 Tables MergeMapping_ dans userData.db final :", tables_final)
 
-            # 5️⃣ Retour JSON final
+            # 8️⃣ Retour JSON
             final_result = {
                 "merged_file": "userData.db",
                 "playlists": max_playlist_id,
@@ -3000,9 +2995,7 @@ def merge_data():
                 "cleaned_items": orphaned_deleted,
                 "integrity_check": integrity_result
             }
-            sys.stdout.flush()
             print("🎯 Résumé final prêt à être envoyé au frontend.")
-            print("🧪 Test accès à final_result:", final_result)
             return jsonify(final_result), 200
 
         except Exception as e:
@@ -3019,13 +3012,14 @@ def merge_data():
                 pass
 
 
-@app.route('/download', methods=['GET'])
+@app.route("/download")
 def download_file():
-    merged_db_path = os.path.join(UPLOAD_FOLDER, "merged_userData.db")
-    if not os.path.exists(merged_db_path):
-        return jsonify({"error": "Fichier fusionné non trouvé."}), 404
-    print("📥 Fichier envoyé depuis :", merged_db_path)
-    response = send_file(merged_db_path, as_attachment=True)
+    final_db_path = os.path.join(UPLOAD_FOLDER, "userData.db")
+    if not os.path.exists(final_db_path):
+        return jsonify({"error": "Fichier final non trouvé."}), 404
+
+    print("📥 Fichier envoyé depuis :", final_db_path)
+    response = send_file(final_db_path, as_attachment=True)
     response.headers.add("Access-Control-Allow-Origin", "*")
     return response
 
