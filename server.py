@@ -2970,6 +2970,12 @@ def merge_data():
             gc.collect()
             time.sleep(1.0)
 
+            print("🔎 Contrôle : tables restantes AVANT VACUUM")
+            with sqlite3.connect(merged_db_path) as pre_vacuum_conn:
+                cur = pre_vacuum_conn.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
+                print("📋 Tables MergeMapping_ AVANT VACUUM :", [row[0] for row in cur.fetchall()])
+
             # ✅ Alternative fiable : VACUUM (au lieu de changer journal_mode)
             print("🧹 Consolidation finale avec VACUUM...")
             try:
@@ -2980,6 +2986,12 @@ def merge_data():
             except Exception as e:
                 print(f"❌ VACUUM échoué: {e}")
                 raise e
+
+            print("🔎 Contrôle : tables restantes APRÈS VACUUM")
+            with sqlite3.connect(merged_db_path) as post_vacuum_conn:
+                cur = post_vacuum_conn.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
+                print("📋 Tables MergeMapping_ APRÈS VACUUM :", [row[0] for row in cur.fetchall()])
 
             # 3️⃣ Copier la DB propre dans UPLOAD_FOLDER
             final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
