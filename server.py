@@ -380,6 +380,9 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
                 """, (new_pub_loc_id, slot))
                 existing = cursor.fetchone()
 
+                # Avant la vérification
+                original_slot = slot  # 💡 Toujours défini, même si pas de conflit
+
                 if existing:
                     (existing_id, loc_check, title_check, snippet_check,
                      block_type_check, block_id_check) = existing
@@ -401,7 +404,6 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
                     else:
                         print(
                             f"Conflit détecté pour PublicationLocationId={new_pub_loc_id}, Slot={slot}. Incrémentation du slot.")
-                        original_slot = slot
                         while True:
                             slot += 1
                             cursor.execute("""
@@ -410,7 +412,6 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
                             """, (new_pub_loc_id, slot))
                             if not cursor.fetchone():
                                 break
-
                 print(
                     f"Insertion Bookmark: OldID {old_id} (slot initial {original_slot} -> {slot}), PubLocId {new_pub_loc_id}, Title='{title}'")
                 cursor.execute("""
