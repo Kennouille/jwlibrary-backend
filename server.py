@@ -2970,39 +2970,26 @@ def merge_data():
             gc.collect()
             time.sleep(1.0)
 
-            print("🔎 Contrôle : tables restantes AVANT VACUUM")
-            with sqlite3.connect(merged_db_path) as pre_vacuum_conn:
-                cur = pre_vacuum_conn.cursor()
-                cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
-                print("📋 Tables MergeMapping_ AVANT VACUUM :", [row[0] for row in cur.fetchall()])
+            # 6️⃣ Création d’une DB propre avec VACUUM INTO
+            clean_filename = f"cleaned_{uuid.uuid4().hex}.db"
+            clean_path = os.path.join(UPLOAD_FOLDER, clean_filename)
 
-            # ✅ Alternative fiable : VACUUM (au lieu de changer journal_mode)
-            print("🧹 Consolidation finale avec VACUUM...")
-            try:
-                with sqlite3.connect(merged_db_path, timeout=10) as wal_conn:
-                    wal_conn.execute("VACUUM")
-                    wal_conn.commit()
-                print("✅ VACUUM terminé, tous les changements sont persistés.")
-            except Exception as e:
-                print(f"❌ VACUUM échoué: {e}")
-                raise e
+            print("🧹 VACUUM INTO pour générer une base nettoyée...")
+            with sqlite3.connect(merged_db_path) as conn:
+                conn.execute(f"VACUUM INTO '{clean_path}'")
+            print(f"✅ Fichier nettoyé généré : {clean_path}")
 
-            print("🔎 Contrôle : tables restantes APRÈS VACUUM")
-            with sqlite3.connect(merged_db_path) as post_vacuum_conn:
-                cur = post_vacuum_conn.cursor()
-                cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
-                print("📋 Tables MergeMapping_ APRÈS VACUUM :", [row[0] for row in cur.fetchall()])
-
-            # 3️⃣ Copier la DB propre dans UPLOAD_FOLDER
+            # 7️⃣ Copie vers destination finale
             final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-            shutil.copy(merged_db_path, final_db_dest)
-            print(f"✅ Copie vers UPLOAD_FOLDER réussie : {final_db_dest}")
+            shutil.copy(clean_path, final_db_dest)
+            print(f"✅ Copie finale vers UPLOAD_FOLDER réussie : {final_db_dest}")
 
-            # 4️⃣ Vérification finale
+            # 8️⃣ Vérification finale dans userData.db
             with sqlite3.connect(final_db_dest) as final_check:
                 cur = final_check.cursor()
                 cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
-                print("📋 Tables MergeMapping_ dans userData.db copié :", [row[0] for row in cur.fetchall()])
+                tables_final = [row[0] for row in cur.fetchall()]
+                print("📋 Tables MergeMapping_ dans userData.db copié :", tables_final)
 
             # 5️⃣ Retour JSON final
             final_result = {
