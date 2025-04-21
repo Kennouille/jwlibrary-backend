@@ -2981,7 +2981,7 @@ def merge_data():
 
             # 7️⃣ Copie vers destination finale
             final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-            shutil.copy(clean_path, os.path.join(UPLOAD_FOLDER, "userData.db"))
+            shutil.copy(clean_path, final_db_dest)
             print(f"✅ Copie finale vers UPLOAD_FOLDER réussie : {final_db_dest}")
 
             # 8️⃣ Vérification finale dans userData.db
