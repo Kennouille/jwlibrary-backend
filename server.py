@@ -2966,20 +2966,25 @@ def merge_data():
                 leftover = [row[0] for row in cur.fetchall()]
                 print(f"🧪 Tables restantes juste avant la copie (vérification finale): {leftover}")
 
-            # 3️⃣ Forcer fermeture de toutes connexions SQLite avant conversion
             print("🧹 Libération des connexions SQLite…")
             gc.collect()
+            time.sleep(1.0)  # ⏱️ Donne 1 seconde pour que les connexions se ferment
 
-            # 4️⃣ Désactiver WAL pour forcer écriture dans le .db principal
-            print("🛠️ Désactivation WAL et écriture finale sur disque...")
-            try:
-                with sqlite3.connect(merged_db_path, timeout=5) as wal_conn:
-                    wal_conn.execute("PRAGMA journal_mode=DELETE")
-                    wal_conn.commit()
-                print("✅ WAL désactivé, base consolidée en .db")
-            except Exception as e:
-                print(f"❌ Erreur pendant désactivation WAL : {e}")
-                raise e  # on laisse remonter l’erreur pour interruption propre
+            # On tente jusqu'à 3 fois si besoin
+            for attempt in range(3):
+                try:
+                    print(f"🔁 Tentative {attempt + 1}: désactivation du WAL...")
+                    with sqlite3.connect(merged_db_path, timeout=10) as wal_conn:
+                        wal_conn.execute("PRAGMA journal_mode=DELETE")
+                        wal_conn.commit()
+                    print("✅ WAL désactivé et base consolidée.")
+                    break
+                except sqlite3.OperationalError as e:
+                    print(f"⚠️ Tentative échouée: {e}")
+                    if attempt == 2:
+                        print("❌ Erreur définitive après 3 tentatives.")
+                        raise e
+                    time.sleep(1.0)
 
             # 3️⃣ Copier la DB propre dans UPLOAD_FOLDER
             final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
