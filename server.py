@@ -2187,15 +2187,6 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         else:
             log_message("Aucun problème de clé étrangère détecté")
 
-        # 13.4 Optimisation finale
-        print("\nOptimisation finale...")
-        conn.commit()  # S'assurer de clôturer la transaction en cours
-        start_time = time.perf_counter()
-        cursor.execute("VACUUM")
-        cursor.execute("PRAGMA optimize")
-        optimization_time = time.perf_counter() - start_time
-        log_message(f"Optimisation terminée en {optimization_time:.2f}s")
-
         # 14. Finalisation
         # commit final et fermeture propre
         conn.commit()
@@ -2917,15 +2908,6 @@ def merge_data():
                 log_message(f"- Problème: {issue}", "WARNING")
         else:
             log_message("Aucun problème de clé étrangère détecté")
-
-        # 13.4 Optimisation finale
-        print("\nOptimisation finale...")
-        conn.commit()  # S'assurer de clôturer la transaction en cours
-        start_time = time.perf_counter()
-        cursor.execute("VACUUM")
-        cursor.execute("PRAGMA optimize")
-        optimization_time = time.perf_counter() - start_time
-        log_message(f"Optimisation terminée en {optimization_time:.2f}s")
 
         # --- 14. Finalisation ---
         # commit final et fermeture propre de la transaction playlists
