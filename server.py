@@ -2971,7 +2971,7 @@ def merge_data():
             time.sleep(1.0)
 
             # 6️⃣ Création d’une DB propre avec VACUUM INTO
-            clean_filename = f"userData.db"
+            clean_filename = f"cleaned_{uuid.uuid4().hex}.db"
             clean_path = os.path.join(UPLOAD_FOLDER, clean_filename)
 
             print("🧹 VACUUM INTO pour générer une base nettoyée...")
@@ -2979,14 +2979,19 @@ def merge_data():
                 conn.execute(f"VACUUM INTO '{clean_path}'")
             print(f"✅ Fichier nettoyé généré : {clean_path}")
 
-            # 7️⃣ Vérification finale dans le fichier nettoyé
-            with sqlite3.connect(clean_path) as final_check:
+            # 7️⃣ Copie vers destination finale
+            final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
+            shutil.copy(clean_path, final_db_dest)
+            print(f"✅ Copie finale vers UPLOAD_FOLDER réussie : {final_db_dest}")
+
+            # 8️⃣ Vérification finale dans userData.db
+            with sqlite3.connect(final_db_dest) as final_check:
                 cur = final_check.cursor()
                 cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
                 tables_final = [row[0] for row in cur.fetchall()]
-                print("📋 Tables MergeMapping_ dans userData.db final :", tables_final)
+                print("📋 Tables MergeMapping_ dans userData.db copié :", tables_final)
 
-            # 8️⃣ Retour JSON
+            # 5️⃣ Retour JSON final
             final_result = {
                 "merged_file": "userData.db",
                 "playlists": max_playlist_id,
@@ -2995,7 +3000,9 @@ def merge_data():
                 "cleaned_items": orphaned_deleted,
                 "integrity_check": integrity_result
             }
+            sys.stdout.flush()
             print("🎯 Résumé final prêt à être envoyé au frontend.")
+            print("🧪 Test accès à final_result:", final_result)
             return jsonify(final_result), 200
 
         except Exception as e:
