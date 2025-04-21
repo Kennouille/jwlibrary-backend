@@ -2965,6 +2965,12 @@ def merge_data():
                 leftover = [row[0] for row in cur.fetchall()]
                 print(f"🧪 Tables restantes juste avant la copie (vérification finale): {leftover}")
 
+            print("🧹 Synchronisation finale de la base avant copie...")
+            with sqlite3.connect(merged_db_path) as flush_conn:
+                flush_conn.execute("VACUUM")  # force l’écriture et nettoyage
+                flush_conn.commit()
+            print("📦 VACUUM terminé, tous les changements doivent être persistés.")
+
             # 3️⃣ Copier la DB propre dans UPLOAD_FOLDER
             final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
             shutil.copy(merged_db_path, final_db_dest)
