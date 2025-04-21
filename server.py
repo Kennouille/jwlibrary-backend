@@ -2906,6 +2906,7 @@ def merge_data():
 
             # 🧪 Résumé post merge_playlists
             print("\n🎯 Résumé final après merge_playlists:")
+            print(f"- Fichier fusionné: {merged_jwlibrary}")
             print(f"- Playlists max ID: {max_playlist_id}")
             print(f"- PlaylistItem total: {playlist_item_total}")
             print(f"- Médias max ID: {max_media_id}")
@@ -2918,7 +2919,8 @@ def merge_data():
             merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
             print("✔ Fusion InputFields terminée")
             location_replacements_flat = {
-                old_id: new_id for (_, old_id), new_id in sorted(location_id_map.items())
+                old_id: new_id
+                for (_, old_id), new_id in sorted(location_id_map.items())
             }
 
             print("⏳ Appel de update_location_references...")
@@ -2936,37 +2938,39 @@ def merge_data():
             # 2️⃣ Suppression des tables MergeMapping_*
             print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
             with sqlite3.connect(merged_db_path) as cleanup_conn:
-                print("🔵 Connexion cleanup_conn ouverte")
+                cleanup_conn.execute("PRAGMA busy_timeout = 5000")
                 cur = cleanup_conn.cursor()
                 cur.execute("""
-                    SELECT name FROM sqlite_master
-                    WHERE type='table' AND LOWER(name) LIKE 'mergemapping_%'
+                    SELECT name
+                    FROM sqlite_master
+                    WHERE type='table'
+                      AND LOWER(name) LIKE 'mergemapping_%'
                 """)
                 rows = cur.fetchall()
                 tables_to_drop = [row[0] for row in rows]
-                print(f"🧪 Tables détectées : {tables_to_drop}")
+                print(f"🧪 Résultat brut de la requête sqlite_master : {rows}")
+                print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
                 for tbl in tables_to_drop:
                     cur.execute(f"DROP TABLE IF EXISTS {tbl}")
                     print(f"✔ Table supprimée : {tbl}")
                 cleanup_conn.commit()
 
-            # 3️⃣ Vérification finale avant VACUUM INTO
-            print("📄 Vérification taille et date de merged_userData.db juste avant le VACUUM")
+            # 🔍 Vérification juste avant la copie
+            print("📄 Vérification taille et date de merged_userData.db juste avant la copie")
             print("📍 Fichier:", merged_db_path)
             print("🕒 Modifié le:", os.path.getmtime(merged_db_path))
             print("📦 Taille:", os.path.getsize(merged_db_path), "octets")
-
             with sqlite3.connect(merged_db_path) as check_conn:
                 cur = check_conn.cursor()
                 cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
                 leftover = [row[0] for row in cur.fetchall()]
-                print(f"🧪 Tables restantes juste avant le VACUUM INTO : {leftover}")
+                print(f"🧪 Tables restantes juste avant la copie (vérification finale): {leftover}")
 
             print("🧹 Libération mémoire et attente...")
             gc.collect()
             time.sleep(1.0)
 
-            # 4️⃣ VACUUM INTO pour générer une base propre
+            # 6️⃣ Création d’une DB propre avec VACUUM INTO
             clean_filename = f"cleaned_{uuid.uuid4().hex}.db"
             clean_path = os.path.join(UPLOAD_FOLDER, clean_filename)
 
@@ -2975,19 +2979,19 @@ def merge_data():
                 conn.execute(f"VACUUM INTO '{clean_path}'")
             print(f"✅ Fichier nettoyé généré : {clean_path}")
 
-            # 5️⃣ Copie vers destination finale
+            # 7️⃣ Copie vers destination finale
             final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-            shutil.copy(clean_path, final_db_dest)
+            shutil.copy(clean_path, os.path.join(UPLOAD_FOLDER, "userData.db"))
             print(f"✅ Copie finale vers UPLOAD_FOLDER réussie : {final_db_dest}")
 
-            # 6️⃣ Vérification finale dans userData.db
+            # 8️⃣ Vérification finale dans userData.db
             with sqlite3.connect(final_db_dest) as final_check:
                 cur = final_check.cursor()
                 cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
                 tables_final = [row[0] for row in cur.fetchall()]
                 print("📋 Tables MergeMapping_ dans userData.db copié :", tables_final)
 
-            # 7️⃣ Retour JSON final
+            # 5️⃣ Retour JSON final
             final_result = {
                 "merged_file": "userData.db",
                 "playlists": max_playlist_id,
@@ -2996,6 +3000,7 @@ def merge_data():
                 "cleaned_items": orphaned_deleted,
                 "integrity_check": integrity_result
             }
+            sys.stdout.flush()
             print("🎯 Résumé final prêt à être envoyé au frontend.")
             print("🧪 Test accès à final_result:", final_result)
             return jsonify(final_result), 200
