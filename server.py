@@ -2938,7 +2938,7 @@ def merge_data():
             # 2️⃣ Suppression des tables MergeMapping_*
             print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
             with sqlite3.connect(merged_db_path) as cleanup_conn:
-                print("🔵 Connexion cleanup_conn ouverte")
+                cleanup_conn.execute("PRAGMA busy_timeout = 5000")
                 cur = cleanup_conn.cursor()
                 cur.execute("""
                     SELECT name
@@ -2966,30 +2966,24 @@ def merge_data():
                 leftover = [row[0] for row in cur.fetchall()]
                 print(f"🧪 Tables restantes juste avant la copie (vérification finale): {leftover}")
 
-            print("🧹 Libération des connexions SQLite…")
+            print("🧹 Libération mémoire et attente...")
             gc.collect()
-            time.sleep(1.0)  # ⏱️ Donne 1 seconde pour que les connexions se ferment
+            time.sleep(1.0)
 
-            # On tente jusqu'à 3 fois si besoin
-            for attempt in range(3):
-                try:
-                    print(f"🔁 Tentative {attempt + 1}: désactivation du WAL...")
-                    with sqlite3.connect(merged_db_path, timeout=10) as wal_conn:
-                        wal_conn.execute("PRAGMA journal_mode=DELETE")
-                        wal_conn.commit()
-                    print("✅ WAL désactivé et base consolidée.")
-                    break
-                except sqlite3.OperationalError as e:
-                    print(f"⚠️ Tentative échouée: {e}")
-                    if attempt == 2:
-                        print("❌ Erreur définitive après 3 tentatives.")
-                        raise e
-                    time.sleep(1.0)
+            # ✅ Alternative fiable : VACUUM (au lieu de changer journal_mode)
+            print("🧹 Consolidation finale avec VACUUM...")
+            try:
+                with sqlite3.connect(merged_db_path, timeout=10) as wal_conn:
+                    wal_conn.execute("VACUUM")
+                    wal_conn.commit()
+                print("✅ VACUUM terminé, tous les changements sont persistés.")
+            except Exception as e:
+                print(f"❌ VACUUM échoué: {e}")
+                raise e
 
             # 3️⃣ Copier la DB propre dans UPLOAD_FOLDER
             final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
             shutil.copy(merged_db_path, final_db_dest)
-
             print(f"✅ Copie vers UPLOAD_FOLDER réussie : {final_db_dest}")
 
             # 4️⃣ Vérification finale
@@ -3007,10 +3001,9 @@ def merge_data():
                 "cleaned_items": orphaned_deleted,
                 "integrity_check": integrity_result
             }
+            sys.stdout.flush()
             print("🎯 Résumé final prêt à être envoyé au frontend.")
             print("🧪 Test accès à final_result:", final_result)
-            sys.stdout.flush()
-
             return jsonify(final_result), 200
 
         except Exception as e:
