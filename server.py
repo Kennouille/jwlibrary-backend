@@ -401,6 +401,7 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
                     else:
                         print(
                             f"Conflit détecté pour PublicationLocationId={new_pub_loc_id}, Slot={slot}. Incrémentation du slot.")
+                        original_slot = slot
                         while True:
                             slot += 1
                             cursor.execute("""
