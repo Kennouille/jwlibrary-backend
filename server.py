@@ -2929,6 +2929,7 @@ def merge_data():
                 print(f"❌ ERREUR dans update_location_references : {e}")
 
             print("🟡 Après update_location_references")
+            sys.stdout.flush()
             time.sleep(0.5)
             print("🟢 Avant suppression des tables MergeMapping_*")
 
