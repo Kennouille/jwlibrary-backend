@@ -2124,10 +2124,6 @@ def merge_data():
 
         print("\n▶️ Début de la fusion des éléments liés aux playlists...")
 
-        # Fusion finale de la table Playlist
-        playlist_id_map = merge_playlist_final(merged_db_path, file1_db, file2_db)
-        print(f"--> Table Playlist fusionnée, playlists mappées: {len(playlist_id_map)}")
-
         print("\n▶️ Fusion des éléments liés aux playlists terminée.")
 
         # ─── Avant merge_other_tables ────────────────────────────────────────────
