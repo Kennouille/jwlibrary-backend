@@ -1960,6 +1960,9 @@ def merge_data():
         usermark_guid_map = merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map)
 
         # Gestion spécifique de LastModified
+        conn = sqlite3.connect(merged_db_path)
+        cursor = conn.cursor()
+
         cursor.execute("DELETE FROM LastModified")
         cursor.execute("INSERT INTO LastModified (LastModified) VALUES (?)", (merge_date,))
         conn.commit()
