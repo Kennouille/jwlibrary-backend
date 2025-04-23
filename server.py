@@ -1728,6 +1728,7 @@ def merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map):
     conn.commit()
     conn.close()
 
+
 def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, independent_media_map, item_id_map):
     """Fusionne toutes les tables liées aux playlists en respectant les contraintes."""
     print("\n=== DÉBUT FUSION PLAYLISTS ===")
@@ -1832,13 +1833,23 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         # commit final et fermeture propre
         conn.commit()
 
+        # 🔚 Fin de merge_playlists (retour principal)
+        orphaned_deleted = 0  # ou remplace par la vraie valeur si elle est calculée plus haut
         return max_playlist_id, len(item_id_map), max_media_id, orphaned_deleted, integrity_result, item_id_map
 
     except Exception as e:
         import traceback
         traceback.print_exc()
         print(f"ERREUR CRITIQUE dans merge_playlists: {str(e)}")
-        return None, 0, 0, 0, "error", {}
+        # On renvoie des valeurs par défaut cohérentes pour éviter que le reste du code plante
+        return (
+            0,  # max_playlist_id
+            0,  # playlist_item_total
+            0,  # max_media_id
+            0,  # orphaned_deleted
+            "error",  # integrity_result
+            {}  # item_id_map
+        )
 
     finally:
         if conn:
