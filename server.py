@@ -2081,6 +2081,10 @@ def merge_data():
         # --- FUSION NOTES ---
         merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_guid_map)
 
+        print("playlist_item_id_map keys:", list(item_id_map.keys()))
+        print("location_id_map keys:", list(location_id_map.keys()))
+        print("note_mapping keys:", list(note_mapping.keys()))
+
         # --- Étape 1 : fusion des Tags et TagMap (utilise location_id_map) ---
         try:
             tag_id_map, tagmap_id_map = merge_tags_and_tagmap(
@@ -2100,6 +2104,7 @@ def merge_data():
 
         # --- Vérification Tag ---
         print("\n=== TAGS VERIFICATION ===")
+
         try:
             with sqlite3.connect(merged_db_path) as conn:
                 cursor = conn.cursor()
