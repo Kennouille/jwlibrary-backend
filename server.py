@@ -1845,6 +1845,11 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         for (src, old_id), new_id in item_id_map.items():
             print(f"  {src} — {old_id} → {new_id}")
 
+        with sqlite3.connect(merged_db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA quick_check")
+            integrity_result = cursor.fetchone()[0]
+
         return (
             max_playlist_id,
             len(item_id_map),
@@ -2393,7 +2398,6 @@ def merge_data():
                 )
                 print(f"Tag ID Map: {tag_id_map}")
                 print(f"TagMap ID Map: {tagmap_id_map}")
-
 
             except Exception as e:
                 import traceback
