@@ -1512,11 +1512,13 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
             mappings = src_cursor.fetchall()
             print(f"{len(mappings)} mappings trouvés dans {os.path.basename(db_path)}")
             for old_item_id, old_loc_id, mm_type, duration in mappings:
+                # Appliquer les mappings à l'Item et Location
                 new_item_id = item_id_map.get((os.path.normpath(db_path), old_item_id))
-                new_loc_id = location_id_map.get((db_path, old_loc_id))
+                new_loc_id = location_id_map.get((os.path.normpath(db_path), old_loc_id))
+
                 if new_item_id and new_loc_id:
                     try:
-                        # Vérifie si le couple PlaylistItemId + LocationId existe déjà
+                        # Vérifie si le couple PlaylistItemId + LocationId existe déjà dans la DB fusionnée
                         cursor.execute("""
                             SELECT MajorMultimediaType, BaseDurationTicks
                             FROM PlaylistItemLocationMap
@@ -1532,11 +1534,13 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
                                     f"⚠️ Doublon conflictuel ignoré pour Item {new_item_id}, Location {new_loc_id} (différences de contenu)")
                             continue
 
-                        # Sinon on l'insère
+                        # Si l'enregistrement n'existe pas ou a des données différentes, on l'insère
                         cursor.execute("""
                             INSERT INTO PlaylistItemLocationMap
+                            (PlaylistItemId, LocationId, MajorMultimediaType, BaseDurationTicks)
                             VALUES (?, ?, ?, ?)
                         """, (new_item_id, new_loc_id, mm_type, duration))
+                        print(f"Insertion : Item {new_item_id}, Location {new_loc_id}")
 
                     except sqlite3.IntegrityError as e:
                         print(f"Erreur PlaylistItemLocationMap: {e}")
