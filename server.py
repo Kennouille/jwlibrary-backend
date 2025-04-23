@@ -1254,14 +1254,25 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                     print("  → mapped PlaylistItemId:", item_id_map.get((db_path, pid)))
 
             for old_tagmap_id, playlist_item_id, location_id, note_id, old_tag_id, position in rows:
+                # 🧭 Mappage du TagId en priorité
+                new_tag_id = tag_id_map.get((db_path, old_tag_id))
+                if new_tag_id is None:
+                    print(f"❌ TagId {old_tag_id} de {db_path} non mappé → ligne ignorée")
+                    continue
+
+                # Doublon exact ? on vérifie AVANT les insertions
                 cursor.execute("""
-                    SELECT NewTagMapId FROM MergeMapping_TagMap
-                    WHERE SourceDb = ? AND OldTagMapId = ?
-                """, (db_path, old_tagmap_id))
-                res = cursor.fetchone()
-                if res:
-                    tagmap_id_map[(db_path, old_tagmap_id)] = res[0]
-                    print(f"TagMap déjà fusionné: OldTagMapId {old_tagmap_id} -> NewTagMapId {res[0]}")
+                    SELECT TagMapId FROM TagMap
+                    WHERE TagId = ?
+                      AND IFNULL(PlaylistItemId, -1) = IFNULL(?, -1)
+                      AND IFNULL(LocationId, -1) = IFNULL(?, -1)
+                      AND IFNULL(NoteId, -1) = IFNULL(?, -1)
+                      AND Position = ?
+                """, (new_tag_id, playlist_item_id, location_id, note_id, position))
+                existing = cursor.fetchone()
+                if existing:
+                    print(f"⏩ Doublon exact détecté pour TagMapId {existing[0]} → ligne ignorée.")
+                    tagmap_id_map[(db_path, old_tagmap_id)] = existing[0]
                     continue
 
                 # Faire les mappings ici avant le test
@@ -1271,9 +1282,15 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                 new_location_id = normalized_map.get(norm_key) if location_id else None
                 new_playlist_item_id = item_id_map.get((db_path, playlist_item_id)) if playlist_item_id else None
 
-                if all(v is None for v in [new_note_id, new_location_id, new_playlist_item_id]):
+                # Vérifie qu'une et une seule référence est présente
+                non_null_refs = sum(x is not None for x in [new_note_id, new_location_id, new_playlist_item_id])
+                if non_null_refs != 1:
                     print(
-                        f"⛔ Aucune référence valide dans TagMap {old_tagmap_id} — NoteId={note_id}, PlaylistItemId={playlist_item_id}, LocationId={location_id}")
+                        f"⛔ Ligne TagMap ignorée car ambiguë ou vide — "
+                        f"NoteId={note_id}->{new_note_id}, "
+                        f"LocationId={location_id}->{new_location_id}, "
+                        f"PlaylistItemId={playlist_item_id}->{new_playlist_item_id}"
+                    )
                     continue
 
                 # Ajuster la Position en cas de conflit pour ce Tag
