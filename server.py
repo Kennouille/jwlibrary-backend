@@ -2081,27 +2081,6 @@ def merge_data():
         # --- FUSION NOTES ---
         merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_guid_map)
 
-        print("playlist_item_id_map keys:", list(item_id_map.keys()))
-        print("location_id_map keys:", list(location_id_map.keys()))
-        print("note_mapping keys:", list(note_mapping.keys()))
-
-        # --- Étape 1 : fusion des Tags et TagMap (utilise location_id_map) ---
-        try:
-            tag_id_map, tagmap_id_map = merge_tags_and_tagmap(
-                merged_db_path,
-                file1_db,
-                file2_db,
-                note_mapping,
-                location_id_map,
-                item_id_map
-            )
-        except Exception as e:
-            print(f"Échec de merge_tags_and_tagmap: {str(e)}")
-            return jsonify({"error": "Échec de la fusion des tags"}), 500
-
-        print(f"Tag ID Map: {tag_id_map}")
-        print(f"TagMap ID Map: {tagmap_id_map}")
-
         # --- Vérification Tag ---
         print("\n=== TAGS VERIFICATION ===")
 
@@ -2351,6 +2330,27 @@ def merge_data():
             print(f"- Orphelins supprimés: {orphaned_deleted}")
             print(f"- Résultat intégrité: {integrity_result}")
             print("✅ Tous les calculs terminés, nettoyage…")
+
+            print("playlist_item_id_map keys:", list(item_id_map.keys()))
+            print("location_id_map keys:", list(location_id_map.keys()))
+            print("note_mapping keys:", list(note_mapping.keys()))
+
+            # --- Étape 1 : fusion des Tags et TagMap (utilise location_id_map) ---
+            try:
+                tag_id_map, tagmap_id_map = merge_tags_and_tagmap(
+                    merged_db_path,
+                    file1_db,
+                    file2_db,
+                    note_mapping,
+                    location_id_map,
+                    item_id_map
+                )
+            except Exception as e:
+                print(f"Échec de merge_tags_and_tagmap: {str(e)}")
+                return jsonify({"error": "Échec de la fusion des tags"}), 500
+
+            print(f"Tag ID Map: {tag_id_map}")
+            print(f"TagMap ID Map: {tagmap_id_map}")
 
             # 1️⃣ Mise à jour des LocationId résiduels
             print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
