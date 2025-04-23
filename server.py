@@ -2355,7 +2355,6 @@ def merge_data():
 
             # 🧪 Résumé post merge_playlists
             print("\n🎯 Résumé final après merge_playlists:")
-            print(f"- Fichier fusionné: {merged_jwlibrary}")
             print(f"- Playlists max ID: {max_playlist_id}")
             print(f"- PlaylistItem total: {playlist_item_total}")
             print(f"- Médias max ID: {max_media_id}")
