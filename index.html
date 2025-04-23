@@ -591,26 +591,42 @@
   }
 
   async function rebuildFinalZip() {
-    // 1. Télécharger le fichier userData.db directement depuis le backend
-    const response = await fetch(`${BASE_URL}/download?ngrok-skip-browser-warning=true`);
-    const blob = await response.blob();
+    const zip = new JSZip();
 
-    // 2. Créer un lien temporaire pour le téléchargement
+    // 1. Télécharger userData.db, .shm et .wal depuis le backend
+    const fetchFile = async (filename) => {
+      const response = await fetch(`${BASE_URL}/download/${filename}?ngrok-skip-browser-warning=true`);
+      if (!response.ok) throw new Error(`Erreur lors du téléchargement de ${filename}`);
+      return await response.blob();
+    };
+
+    const userDataDb = await fetchFile("userData.db");
+    const shmFile = await fetchFile("userData.db-shm");
+    const walFile = await fetchFile("userData.db-wal");
+
+    zip.file("userData.db", userDataDb);
+    zip.file("userData.db-shm", shmFile);
+    zip.file("userData.db-wal", walFile);
+
+    // 2. Ajouter les fichiers médias dédupliqués (déjà stockés dans window.mediaToInclude)
+    if (window.mediaToInclude && Array.isArray(window.mediaToInclude)) {
+      for (const media of window.mediaToInclude) {
+        const content = await media.file.async("blob");
+        zip.file(media.name, content);
+      }
+    }
+
+    // 3. Générer le ZIP et le télécharger
+    const blob = await zip.generateAsync({ type: "blob" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "userData.db"; // nom du fichier à sauvegarder
+    link.download = "merged.jwlibrary";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-
-    // 3. Nettoyer l’URL temporaire
     URL.revokeObjectURL(url);
   }
-
-
-
-
 
 </script>
 </body>

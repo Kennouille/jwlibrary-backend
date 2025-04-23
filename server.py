@@ -9,6 +9,7 @@ import uuid
 import time
 import sys
 import gc
+import io
 
 
 app = Flask(__name__)
@@ -2441,6 +2442,19 @@ def merge_data():
             shutil.copy(clean_path, final_db_dest)
             print(f"✅ Copie finale vers UPLOAD_FOLDER réussie : {final_db_dest}")
 
+            # ✅ Forcer la génération des fichiers WAL et SHM
+            try:
+                print("🧪 Activation du mode WAL pour générer les fichiers -wal et -shm...")
+                with sqlite3.connect(final_db_dest) as conn:
+                    conn.execute("PRAGMA journal_mode=WAL;")
+                    conn.execute("CREATE TABLE IF NOT EXISTS _Dummy (x INTEGER);")
+                    conn.execute("INSERT INTO _Dummy (x) VALUES (1);")
+                    conn.execute("DELETE FROM _Dummy;")
+                    conn.commit()
+                print("✅ Fichiers WAL et SHM générés avec succès.")
+            except Exception as e:
+                print(f"❌ Erreur lors de la génération des fichiers WAL/SHM : {e}")
+
             # 8️⃣ Vérification finale dans userData.db
             with sqlite3.connect(final_db_dest) as final_check:
                 cur = final_check.cursor()
@@ -2476,14 +2490,18 @@ def merge_data():
                 pass
 
 
-@app.route("/download")
-def download_file():
-    final_db_path = os.path.join(UPLOAD_FOLDER, "userData.db")
-    if not os.path.exists(final_db_path):
-        return jsonify({"error": "Fichier final non trouvé."}), 404
+@app.route("/download/<filename>")
+def download_file(filename):
+    allowed_files = {"userData.db", "userData.db-shm", "userData.db-wal"}
+    if filename not in allowed_files:
+        return jsonify({"error": "Fichier non autorisé"}), 400
 
-    print("📥 Fichier envoyé depuis :", final_db_path)
-    response = send_file(final_db_path, as_attachment=True)
+    path = os.path.join(UPLOAD_FOLDER, filename)
+    if not os.path.exists(path):
+        return jsonify({"error": "Fichier introuvable"}), 404
+
+    print(f"📥 Envoi du fichier : {filename}")
+    response = send_file(path, as_attachment=True)
     response.headers.add("Access-Control-Allow-Origin", "*")
     return response
 
