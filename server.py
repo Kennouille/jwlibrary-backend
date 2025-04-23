@@ -1314,6 +1314,7 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                         f"⛔ Aucune référence valide dans TagMap {old_tagmap_id} — NoteId={note_id}, PlaylistItemId={playlist_item_id}, LocationId={location_id}")
                     continue
 
+
                 # Ajuster la Position en cas de conflit pour ce Tag
                 tentative = position
                 while True:
