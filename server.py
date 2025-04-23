@@ -308,17 +308,15 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
     """
     Fusionne les bookmarks depuis les deux fichiers sources dans la base fusionnée,
     de façon idempotente.
-    Pour chaque bookmark, un mapping (SourceDb, OldID) -> NewID est enregistré dans
-    la table MergeMapping_Bookmark. En cas de conflit sur (PublicationLocationId, Slot),
-    le Slot est incrémenté jusqu'à trouver une valeur libre.
-    Retourne un mapping { (db_source, old_id): new_id }.
+    Si une ligne est identique en tout sauf en PublicationLocationId (ou Slot),
+    elle est reconnue comme doublon et non insérée.
     """
     print("\n[FUSION BOOKMARKS - IDÉMPOTENT]")
     mapping = {}
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
 
-    # Créer la table de mapping pour Bookmark si elle n'existe pas déjà
+    # Table de mapping
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS MergeMapping_Bookmark (
             SourceDb TEXT,
@@ -346,65 +344,58 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
             for row in src_cursor.fetchall():
                 old_id, loc_id, pub_loc_id, slot, title, snippet, block_type, block_id = row
 
-                # Vérifier si déjà fusionné
+                # Déjà fusionné ?
                 cursor.execute("""
                     SELECT NewID FROM MergeMapping_Bookmark
                     WHERE SourceDb = ? AND OldID = ?
                 """, (db_path, old_id))
                 res = cursor.fetchone()
                 if res:
-                    new_id = res[0]
-                    print(f"Bookmark déjà fusionné pour OldID {old_id} dans {db_path} -> NewID {new_id}")
-                    mapping[(db_path, old_id)] = new_id
+                    mapping[(db_path, old_id)] = res[0]
                     continue
 
-                # Appliquer mapping des IDs
+                # Nouveau LocationId mappé
                 new_loc_id = location_id_map.get((db_path, loc_id), loc_id)
                 new_pub_loc_id = location_id_map.get((db_path, pub_loc_id), pub_loc_id)
 
-                # Vérifier que les LocationIds existent
+                # Vérifier que LocationId et PublicationLocationId existent
                 cursor.execute("SELECT 1 FROM Location WHERE LocationId IN (?, ?)", (new_loc_id, new_pub_loc_id))
                 if len(cursor.fetchall()) != 2:
-                    print(f"⚠️ LocationId introuvable pour Bookmark OldID {old_id} dans {db_path} (LocationId {new_loc_id} ou PublicationLocationId {new_pub_loc_id}), bookmark ignoré.")
+                    print(f"⚠️ LocationId introuvable pour Bookmark OldID {old_id} dans {db_path} (LocationId {new_loc_id} ou PublicationLocationId {new_pub_loc_id}), ignoré.")
                     continue
 
-                original_slot = slot
-
-                # Vérification de doublon exact
+                # 🔍 Vérification de doublon sur tous les champs SAUF PublicationLocationId et Slot
                 cursor.execute("""
-                    SELECT BookmarkId, LocationId, Title, Snippet, BlockType, BlockIdentifier
-                    FROM Bookmark
-                    WHERE PublicationLocationId = ? AND Slot = ?
-                """, (new_pub_loc_id, slot))
+                    SELECT BookmarkId FROM Bookmark
+                    WHERE LocationId = ?
+                    AND Title = ?
+                    AND IFNULL(Snippet, '') = IFNULL(?, '')
+                    AND BlockType = ?
+                    AND IFNULL(BlockIdentifier, -1) = IFNULL(?, -1)
+                """, (new_loc_id, title, snippet, block_type, block_id))
                 existing = cursor.fetchone()
 
                 if existing:
-                    (existing_id, loc_check, title_check, snippet_check,
-                     block_type_check, block_id_check) = existing
+                    existing_id = existing[0]
+                    print(f"⏩ Bookmark identique trouvé (même contenu mais différent emplacement) : OldID {old_id} → NewID {existing_id}")
+                    mapping[(db_path, old_id)] = existing_id
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO MergeMapping_Bookmark (SourceDb, OldID, NewID)
+                        VALUES (?, ?, ?)
+                    """, (db_path, old_id, existing_id))
+                    conn.commit()
+                    continue
 
-                    if (loc_check == new_loc_id and
-                        title_check == title and
-                        snippet_check == snippet and
-                        block_type_check == block_type and
-                        block_id_check == block_id):
-                        print(f"⏩ Bookmark déjà présent et identique : OldID {old_id} de {db_path} → NewID {existing_id}")
-                        mapping[(db_path, old_id)] = existing_id
-                        cursor.execute("""
-                            INSERT OR IGNORE INTO MergeMapping_Bookmark (SourceDb, OldID, NewID)
-                            VALUES (?, ?, ?)
-                        """, (db_path, old_id, existing_id))
-                        conn.commit()
-                        continue
-                    else:
-                        print(f"Conflit détecté pour PublicationLocationId={new_pub_loc_id}, Slot={slot}. Incrémentation du slot.")
-                        while True:
-                            slot += 1
-                            cursor.execute("""
-                                SELECT BookmarkId FROM Bookmark
-                                WHERE PublicationLocationId = ? AND Slot = ?
-                            """, (new_pub_loc_id, slot))
-                            if not cursor.fetchone():
-                                break
+                # ⚠️ Sinon, vérifier et ajuster le slot
+                original_slot = slot
+                while True:
+                    cursor.execute("""
+                        SELECT 1 FROM Bookmark
+                        WHERE PublicationLocationId = ? AND Slot = ?
+                    """, (new_pub_loc_id, slot))
+                    if not cursor.fetchone():
+                        break
+                    slot += 1
 
                 print(f"Insertion Bookmark: OldID {old_id} (slot initial {original_slot} -> {slot}), PubLocId {new_pub_loc_id}, Title='{title}'")
                 cursor.execute("""
@@ -423,7 +414,7 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
                 conn.commit()
 
     conn.close()
-    print("Fusion Bookmarks terminée (idempotente).")
+    print("✔ Fusion Bookmarks terminée (avec détection de doublons par contenu).")
     return mapping
 
 
