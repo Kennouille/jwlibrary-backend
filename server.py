@@ -1309,7 +1309,6 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                 new_location_id = normalized_map.get(norm_key) if location_id else None
                 new_playlist_item_id = item_id_map.get((db_path, playlist_item_id)) if playlist_item_id else None
 
-
                 if all(v is None for v in [new_note_id, new_location_id, new_playlist_item_id]):
                     print(
                         f"⛔ Aucune référence valide dans TagMap {old_tagmap_id} — NoteId={note_id}, PlaylistItemId={playlist_item_id}, LocationId={location_id}")
@@ -2378,9 +2377,11 @@ def merge_data():
                 print(f"Tag ID Map: {tag_id_map}")
                 print(f"TagMap ID Map: {tagmap_id_map}")
 
+
             except Exception as e:
                 import traceback
                 print("❌ Échec de merge_tags_and_tagmap (mais on continue le merge global) :")
+                print(f"Exception capturée : {e}")
                 traceback.print_exc()
                 tag_id_map, tagmap_id_map = {}, {}
 
