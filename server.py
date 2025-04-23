@@ -1491,38 +1491,44 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
             """)
             mappings = src_cursor.fetchall()
             print(f"{len(mappings)} mappings trouvés dans {os.path.basename(db_path)}")
+
             for old_item_id, old_loc_id, mm_type, duration in mappings:
                 new_item_id = item_id_map.get((normalized_db, old_item_id))
                 new_loc_id = location_id_map.get((db_path, old_loc_id))
-                if new_item_id and new_loc_id:
-                    try:
-                        # Vérifie si déjà présent
-                        cursor.execute("""
-                            SELECT MajorMultimediaType, BaseDurationTicks
-                            FROM PlaylistItemLocationMap
-                            WHERE PlaylistItemId = ? AND LocationId = ?
-                        """, (new_item_id, new_loc_id))
-                        existing = cursor.fetchone()
 
-                        if existing:
-                            if existing == (mm_type, duration):
-                                print(f"⏩ Déjà présent et identique : Item {new_item_id}, Location {new_loc_id}")
-                            else:
-                                print(
-                                    f"⚠️ Doublon conflictuel ignoré pour Item {new_item_id}, Location {new_loc_id} (différences de contenu)")
-                            continue
+                if new_item_id is None:
+                    print(f"❌ Item ID non trouvé pour {old_item_id} dans {normalized_db}")
+                    continue
+                if new_loc_id is None:
+                    print(f"❌ Location ID non trouvé pour {old_loc_id} dans {db_path}")
+                    continue
 
-                        # Insertion si unique
-                        cursor.execute("""
-                            INSERT INTO PlaylistItemLocationMap
-                            VALUES (?, ?, ?, ?)
-                        """, (new_item_id, new_loc_id, mm_type, duration))
+                try:
+                    # Vérifie si le couple existe déjà avec le même contenu
+                    cursor.execute("""
+                        SELECT MajorMultimediaType, BaseDurationTicks
+                        FROM PlaylistItemLocationMap
+                        WHERE PlaylistItemId = ? AND LocationId = ?
+                    """, (new_item_id, new_loc_id))
+                    existing = cursor.fetchone()
 
-                    except sqlite3.IntegrityError as e:
-                        print(f"Erreur PlaylistItemLocationMap: {e}")
-                else:
-                    print(
-                        f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, LocationId={old_loc_id} (db: {db_path})")
+                    if existing:
+                        if existing == (mm_type, duration):
+                            print(f"⏩ Déjà présent et identique : Item {new_item_id}, Location {new_loc_id}")
+                        else:
+                            print(f"⚠️ Doublon conflictuel ignoré : Item {new_item_id}, Location {new_loc_id} — différence de contenu")
+                        continue
+
+                    # Sinon, insertion
+                    cursor.execute("""
+                        INSERT INTO PlaylistItemLocationMap
+                        VALUES (?, ?, ?, ?)
+                    """, (new_item_id, new_loc_id, mm_type, duration))
+                    print(f"✅ Insertion : Item {new_item_id}, Location {new_loc_id}")
+
+                except sqlite3.IntegrityError as e:
+                    print(f"🚫 Erreur d'intégrité PlaylistItemLocationMap: {e}")
+
     conn.commit()
     conn.close()
 
