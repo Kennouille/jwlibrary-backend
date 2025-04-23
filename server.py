@@ -1276,11 +1276,12 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                     continue
 
                 # Faire les mappings ici avant le test
-                new_note_id = note_mapping.get((db_path, note_id)) if note_id else None
+                new_note_id = note_mapping.get((db_path, note_id)) if note_id is not None else None
                 norm_key = (os.path.normpath(db_path), location_id)
                 normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
-                new_location_id = normalized_map.get(norm_key) if location_id else None
-                new_playlist_item_id = item_id_map.get((db_path, playlist_item_id)) if playlist_item_id else None
+                new_location_id = normalized_map.get(norm_key) if location_id is not None else None
+                new_playlist_item_id = item_id_map.get(
+                    (db_path, playlist_item_id)) if playlist_item_id is not None else None
 
                 # Vérifie qu'une et une seule référence est présente
                 non_null_refs = sum(x is not None for x in [new_note_id, new_location_id, new_playlist_item_id])
