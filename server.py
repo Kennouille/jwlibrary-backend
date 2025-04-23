@@ -1282,8 +1282,16 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                 SELECT TagMapId, PlaylistItemId, LocationId, NoteId, TagId, Position
                 FROM TagMap
             """)
-            for old_tagmap_id, playlist_item_id, location_id, note_id, old_tag_id, position in src_cursor.fetchall():
-                # Vérifier si cet enregistrement TagMap est déjà fusionné
+            rows = src_cursor.fetchall()
+
+            print(f"\n🎯 DEBUG TagMap source ({db_path})")
+            for row in rows:
+                tid, pid, _, _, tagid, _ = row
+                print(f"- TagMapId={tid}, PlaylistItemId={pid}, TagId={tagid}")
+                if pid:
+                    print("  → mapped PlaylistItemId:", playlist_item_id_map.get((db_path, pid)))
+
+            for old_tagmap_id, playlist_item_id, location_id, note_id, old_tag_id, position in rows:
                 cursor.execute("""
                     SELECT NewTagMapId FROM MergeMapping_TagMap
                     WHERE SourceDb = ? AND OldTagMapId = ?
@@ -1294,17 +1302,17 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                     print(f"TagMap déjà fusionné: OldTagMapId {old_tagmap_id} -> NewTagMapId {res[0]}")
                     continue
 
-                # Appliquer les mappings aux références
+                # Faire les mappings ici avant le test
                 new_note_id = note_mapping.get((db_path, note_id)) if note_id else None
                 norm_key = (os.path.normpath(db_path), location_id)
                 normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
                 new_location_id = normalized_map.get(norm_key) if location_id else None
-                new_playlist_item_id = playlist_item_id_map.get((db_path, playlist_item_id)) if playlist_item_id else None
-                new_tag_id = tag_id_map.get((db_path, old_tag_id))
+                new_playlist_item_id = playlist_item_id_map.get(
+                    (db_path, playlist_item_id)) if playlist_item_id else None
 
-                # S'assurer qu'il y a au moins une référence parmi Note, Location ou PlaylistItem
                 if all(v is None for v in [new_note_id, new_location_id, new_playlist_item_id]):
-                    print(f"Aucune référence valide pour TagMap OldTagMapId {old_tagmap_id} (db: {db_path}), ignorée.")
+                    print(
+                        f"⛔ Aucune référence valide dans TagMap {old_tagmap_id} — NoteId={note_id}, PlaylistItemId={playlist_item_id}, LocationId={location_id}")
                     continue
 
                 # Ajuster la Position en cas de conflit pour ce Tag
