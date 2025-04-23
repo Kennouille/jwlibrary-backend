@@ -1289,7 +1289,7 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                 tid, pid, _, _, tagid, _ = row
                 print(f"- TagMapId={tid}, PlaylistItemId={pid}, TagId={tagid}")
                 if pid:
-                    print("  → mapped PlaylistItemId:", playlist_item_id_map.get((db_path, pid)))
+                    print("  → mapped PlaylistItemId:", item_id_map.get((db_path, pid)))
 
             for old_tagmap_id, playlist_item_id, location_id, note_id, old_tag_id, position in rows:
                 cursor.execute("""
