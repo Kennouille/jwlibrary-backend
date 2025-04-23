@@ -2344,9 +2344,13 @@ def merge_data():
                 item_id_map
             ) = result
 
-            print("🧪 CONTENU DE item_id_map APRÈS merge_playlists:")
-            for k, v in item_id_map.items():
-                print(f"  {k} → {v}")
+            print("\n🔍 Vérification spécifique de item_id_map pour PlaylistItemId 1 et 2")
+
+            for test_id in [1, 2]:
+                for db in [file1_db, file2_db]:
+                    key = (db, test_id)
+                    found = item_id_map.get(key)
+                    print(f"  {key} → {found}")
 
             # 🧪 Résumé post merge_playlists
             print("\n🎯 Résumé final après merge_playlists:")
@@ -2357,7 +2361,7 @@ def merge_data():
             print(f"- Résultat intégrité: {integrity_result}")
             print("✅ Tous les calculs terminés, nettoyage…")
 
-            print("playlist_item_id_map keys:", list(item_id_map.keys()))
+            print("item_id_map keys:", list(item_id_map.keys()))
             print("location_id_map keys:", list(location_id_map.keys()))
             print("note_mapping keys:", list(note_mapping.keys()))
 
