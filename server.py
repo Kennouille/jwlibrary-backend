@@ -1539,7 +1539,7 @@ def cleanup_playlist_item_location_map(conn):
     cursor.execute("""
         DELETE FROM PlaylistItemLocationMap
         WHERE PlaylistItemId NOT IN (
-            SELECT DISTINCT NewID FROM MergeMapping_PlaylistItem
+            SELECT PlaylistItemId FROM PlaylistItem
         )
     """)
     print("🧹 Nettoyage post-merge : PlaylistItemLocationMap nettoyée.")
