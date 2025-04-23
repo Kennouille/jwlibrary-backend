@@ -1196,7 +1196,7 @@ def compare_data():
     return jsonify(result), 200
 
 
-def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, location_id_map, playlist_item_id_map):
+def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, location_id_map, item_id_map):
     """
     Fusionne les Tags et la table TagMap de façon idempotente.
     Pour chaque tag (sachant qu'un tag est identifié par (Type, Name)), on vérifie s'il existe déjà dans la DB fusionnée.
