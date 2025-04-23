@@ -1836,6 +1836,7 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         # 🔚 Fin de merge_playlists (retour principal)
         orphaned_deleted = 0  # ou remplace par la vraie valeur si elle est calculée plus haut
         playlist_item_total = len(item_id_map)
+
         return (
             max_playlist_id,
             playlist_item_total,
@@ -2347,6 +2348,10 @@ def merge_data():
                 independent_media_map,
                 item_id_map  # ✅ ajouté ici
             )
+
+            print("🧪 CONTENU DE item_id_map APRÈS merge_playlists:")
+            for k, v in item_id_map.items():
+                print(f"  {k} → {v}")
 
             # 🧪 Résumé post merge_playlists
             print("\n🎯 Résumé final après merge_playlists:")
