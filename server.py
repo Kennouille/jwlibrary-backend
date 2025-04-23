@@ -1839,7 +1839,7 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
 
         return (
             max_playlist_id,
-            playlist_item_total,
+            len(item_id_map),
             max_media_id,
             orphaned_deleted,
             integrity_result,
@@ -1850,15 +1850,7 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         import traceback
         traceback.print_exc()
         print(f"ERREUR CRITIQUE dans merge_playlists: {str(e)}")
-        # On renvoie des valeurs par défaut cohérentes pour éviter que le reste du code plante
-        return (
-            0,  # max_playlist_id
-            0,  # playlist_item_total
-            0,  # max_media_id
-            0,  # orphaned_deleted
-            "error",  # integrity_result
-            {}  # item_id_map
-        )
+        return None, 0, 0, 0, "error", {}
 
     finally:
         if conn:
@@ -2345,8 +2337,7 @@ def merge_data():
                 file1_db,
                 file2_db,
                 location_id_map,
-                independent_media_map,
-                item_id_map  # ✅ ajouté ici
+                independent_media_map
             )
 
             print("🧪 CONTENU DE item_id_map APRÈS merge_playlists:")
