@@ -1003,31 +1003,27 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
             location_id_map[(db_source, old_loc_id)] = new_id
             continue
 
-        # Chercher une correspondance déjà existante dans la DB fusionnée
+        # Chercher une correspondance exacte dans la DB fusionnée (sauf LocationId)
         found = False
-        new_loc_id = None
 
-        # Première contrainte UNIQUE pour publications classiques
-        if None not in (book_num, chap_num, key_sym, meps_lang, loc_type):
-            cur.execute("""
-                SELECT LocationId FROM Location
-                WHERE BookNumber = ? AND ChapterNumber = ? AND KeySymbol = ? AND MepsLanguage = ? AND Type = ?
-            """, (book_num, chap_num, key_sym, meps_lang, loc_type))
-            result = cur.fetchone()
-            if result:
-                found = True
-                new_loc_id = result[0]
+        cur.execute("""
+            SELECT LocationId FROM Location
+            WHERE 
+                IFNULL(BookNumber, '') = IFNULL(?, '') AND
+                IFNULL(ChapterNumber, '') = IFNULL(?, '') AND
+                IFNULL(DocumentId, '') = IFNULL(?, '') AND
+                IFNULL(Track, '') = IFNULL(?, '') AND
+                IFNULL(IssueTagNumber, '') = IFNULL(?, '') AND
+                IFNULL(KeySymbol, '') = IFNULL(?, '') AND
+                IFNULL(MepsLanguage, '') = IFNULL(?, '') AND
+                IFNULL(Type, '') = IFNULL(?, '') AND
+                IFNULL(Title, '') = IFNULL(?, '')
+        """, (book_num, chap_num, doc_id, track, issue, key_sym, meps_lang, loc_type, title))
 
-        # Sinon, vérification pour périodiques
-        if not found and None not in (key_sym, issue, meps_lang, doc_id, track, loc_type):
-            cur.execute("""
-                SELECT LocationId FROM Location
-                WHERE KeySymbol = ? AND IssueTagNumber = ? AND MepsLanguage = ? AND DocumentId = ? AND Track = ? AND Type = ?
-            """, (key_sym, issue, meps_lang, doc_id, track, loc_type))
-            result = cur.fetchone()
-            if result:
-                found = True
-                new_loc_id = result[0]
+        result = cur.fetchone()
+        if result:
+            found = True
+            new_loc_id = result[0]
 
         if not found:
             # Aucune correspondance : on insère une nouvelle ligne
