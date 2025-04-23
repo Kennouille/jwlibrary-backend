@@ -2331,13 +2331,14 @@ def merge_data():
                 max_media_id,
                 orphaned_deleted,
                 integrity_result,
-                item_id_map
+                item_id_map  # ✅ ce mapping est bien récupéré ici
             ) = merge_playlists(
                 merged_db_path,
                 file1_db,
                 file2_db,
                 location_id_map,
-                independent_media_map
+                independent_media_map,
+                item_id_map  # ✅ ici on passe le mapping vide ou partiel
             )
 
             print("🧪 CONTENU DE item_id_map APRÈS merge_playlists:")
@@ -2356,6 +2357,10 @@ def merge_data():
             print("playlist_item_id_map keys:", list(item_id_map.keys()))
             print("location_id_map keys:", list(location_id_map.keys()))
             print("note_mapping keys:", list(note_mapping.keys()))
+
+            print("📦 Vérification complète de item_id_map AVANT merge_tags_and_tagmap:")
+            for (db_path, old_id), new_id in item_id_map.items():
+                print(f"  FROM {db_path} - OldID: {old_id} → NewID: {new_id}")
 
             # --- Étape 1 : fusion des Tags et TagMap (utilise location_id_map) ---
             try:
