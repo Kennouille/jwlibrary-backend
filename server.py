@@ -1274,6 +1274,10 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
     cursor.execute("SELECT COALESCE(MAX(TagMapId), 0) FROM TagMap")
     max_tagmap_id = cursor.fetchone()[0]
 
+    print("🔎 item_id_map complet transmis à merge_tags_and_tagmap:")
+    for (src, old_id), new_id in item_id_map.items():
+        print(f"  {src} — {old_id} → {new_id}")
+
     tagmap_id_map = {}
     for db_path in [file1_db, file2_db]:
         with sqlite3.connect(db_path) as src_conn:
@@ -1313,7 +1317,6 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                     print(
                         f"⛔ Aucune référence valide dans TagMap {old_tagmap_id} — NoteId={note_id}, PlaylistItemId={playlist_item_id}, LocationId={location_id}")
                     continue
-
 
                 # Ajuster la Position en cas de conflit pour ce Tag
                 tentative = position
