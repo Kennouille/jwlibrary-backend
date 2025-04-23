@@ -1840,6 +1840,11 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         orphaned_deleted = 0  # ou remplace par la vraie valeur si elle est calculée plus haut
         playlist_item_total = len(item_id_map)
 
+        print("\n🧪 DEBUG FINAL DANS merge_playlists")
+        print("Item ID Map complet:")
+        for (src, old_id), new_id in item_id_map.items():
+            print(f"  {src} — {old_id} → {new_id}")
+
         return (
             max_playlist_id,
             len(item_id_map),
@@ -2371,6 +2376,10 @@ def merge_data():
             print("📦 Vérification complète de item_id_map AVANT merge_tags_and_tagmap:")
             for (db_path, old_id), new_id in item_id_map.items():
                 print(f"  FROM {db_path} - OldID: {old_id} → NewID: {new_id}")
+
+            print("🧪 CONTENU DE item_id_map APRÈS merge_playlists:")
+            for k, v in item_id_map.items():
+                print(f"  {k} → {v}")
 
             # --- Étape 1 : fusion des Tags et TagMap (utilise location_id_map) ---
             try:
