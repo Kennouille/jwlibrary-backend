@@ -1482,16 +1482,6 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
 
-    # 🧹 Nettoyage des lignes non mappées avec PlaylistItemId ou LocationId inconnus
-    cursor.execute("""
-        DELETE FROM PlaylistItemLocationMap
-        WHERE PlaylistItemId NOT IN (
-            SELECT DISTINCT NewID FROM MergeMapping_PlaylistItem
-        )
-    """)
-    print("🧹 Anciennes lignes PlaylistItemLocationMap (non mappées) supprimées.")
-
-
     for db_path in [file1_db, file2_db]:
         normalized_db = os.path.normpath(db_path)
         with sqlite3.connect(db_path) as src_conn:
@@ -1542,6 +1532,17 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
 
     conn.commit()
     conn.close()
+
+
+def cleanup_playlist_item_location_map(conn):
+    cursor = conn.cursor()
+    cursor.execute("""
+        DELETE FROM PlaylistItemLocationMap
+        WHERE PlaylistItemId NOT IN (
+            SELECT DISTINCT NewID FROM MergeMapping_PlaylistItem
+        )
+    """)
+    print("🧹 Nettoyage post-merge : PlaylistItemLocationMap nettoyée.")
 
 
 def merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map):
@@ -2400,6 +2401,9 @@ def merge_data():
                 print("✔ Mise à jour des références LocationId terminée")
             except Exception as e:
                 print(f"❌ ERREUR dans update_location_references : {e}")
+
+            with sqlite3.connect(merged_db_path) as conn:
+                cleanup_playlist_item_location_map(conn)
 
             print("🟡 Après update_location_references")
             sys.stdout.flush()
