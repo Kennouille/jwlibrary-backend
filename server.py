@@ -1835,7 +1835,15 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
 
         # 🔚 Fin de merge_playlists (retour principal)
         orphaned_deleted = 0  # ou remplace par la vraie valeur si elle est calculée plus haut
-        return max_playlist_id, len(item_id_map), max_media_id, orphaned_deleted, integrity_result, item_id_map
+        playlist_item_total = len(item_id_map)
+        return (
+            max_playlist_id,
+            playlist_item_total,
+            max_media_id,
+            orphaned_deleted,
+            integrity_result,
+            item_id_map
+        )
 
     except Exception as e:
         import traceback
