@@ -423,7 +423,7 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
     Fusionne la table Note de façon à ne pas écraser les données existantes.
     Si une note avec le même GUID existe déjà mais que le contenu diffère,
     on insère une nouvelle note avec un nouveau GUID et on laisse en place la note existante.
-    Retourne le mapping (SourceDb, OldNoteId) -> NewNoteId.
+    Renvoie un mapping (SourceDb, OldNoteId) -> NewNoteId
     """
     print("\n=== FUSION DES NOTES (résolution de conflit par insertion) ===")
     inserted = 0
@@ -432,7 +432,6 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
 
-    # On itère d'abord sur file1, puis sur file2
     for db_path in [file1_db, file2_db]:
         with sqlite3.connect(db_path) as src_conn:
             src_cursor = src_conn.cursor()
@@ -445,29 +444,26 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
             for (old_note_id, guid, usermark_guid, location_id, title, content,
                  last_modified, created, block_type, block_identifier) in src_cursor.fetchall():
 
-                # Appliquer les mappings sur LocationId et UserMarkId
                 normalized_key = (os.path.normpath(db_path), location_id)
                 normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
                 new_location_id = normalized_map.get(normalized_key) if location_id else None
-
                 new_usermark_id = usermark_guid_map.get(usermark_guid) if usermark_guid else None
 
                 if new_location_id is None:
                     print(f"⚠️ LocationId introuvable pour Note guid={guid} (source: {db_path}), ignorée.")
                     continue
 
-                # Vérifier l'existence d'une note avec ce GUID dans la DB fusionnée
-                cursor.execute("SELECT Title, Content FROM Note WHERE Guid = ?", (guid,))
+                # Vérifier si le GUID existe déjà
+                cursor.execute("SELECT NoteId, Title, Content FROM Note WHERE Guid = ?", (guid,))
                 existing = cursor.fetchone()
 
                 if existing:
-                    # Si le contenu est identique, on ne fait rien
-                    if existing[0] == title and existing[1] == content:
+                    existing_note_id, existing_title, existing_content = existing
+                    if existing_title == title and existing_content == content:
                         print(f"Note guid={guid} déjà présente et identique (source: {db_path}), aucune action.")
+                        note_mapping[(db_path, old_note_id)] = existing_note_id
                         continue
                     else:
-                        # Conflit détecté : le GUID existe mais le contenu est différent.
-                        # On génère alors un nouveau GUID pour insérer la note sans écraser l'existante.
                         new_guid = str(uuid.uuid4())
                         print(f"Conflit pour Note guid={guid} (source: {db_path}). "
                               f"Insertion d'une nouvelle note avec nouveau GUID {new_guid}.")
@@ -475,7 +471,6 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
                 else:
                     guid_to_insert = guid
 
-                # Insertion de la note (soit en conservant le GUID, soit avec un nouveau)
                 cursor.execute("""
                     INSERT INTO Note
                     (Guid, UserMarkId, LocationId, Title, Content,
@@ -492,9 +487,8 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
                     block_type,
                     block_identifier
                 ))
-
                 new_note_id = cursor.lastrowid
-                note_mapping[(os.path.normpath(db_path), old_note_id)] = new_note_id
+                note_mapping[(db_path, old_note_id)] = new_note_id
                 inserted += 1
 
     conn.commit()
@@ -2051,7 +2045,33 @@ def merge_data():
         conn.close()
 
         # --- FUSION NOTES ---
-        merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_guid_map)
+        note_mapping = merge_notes(
+            merged_db_path,
+            file1_db,
+            file2_db,
+            location_id_map,
+            usermark_guid_map
+        )
+
+        # --- Étape suivante : fusion des Tags et TagMap ---
+        try:
+            tag_id_map, tagmap_id_map = merge_tags_and_tagmap(
+                merged_db_path,
+                file1_db,
+                file2_db,
+                note_mapping,
+                location_id_map,
+                item_id_map
+            )
+            print(f"Tag ID Map: {tag_id_map}")
+            print(f"TagMap ID Map: {tagmap_id_map}")
+
+        except Exception as e:
+            import traceback
+            print("❌ Échec de merge_tags_and_tagmap (mais on continue le merge global) :")
+            print(f"Exception capturée : {e}")
+            traceback.print_exc()
+            tag_id_map, tagmap_id_map = {}, {}
 
         # --- Vérification Tag ---
         print("\n=== TAGS VERIFICATION ===")
