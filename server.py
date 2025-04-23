@@ -1477,9 +1477,20 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
     Fusionne la table PlaylistItemLocationMap de façon idempotente en appliquant
     le mapping des PlaylistItems et des Locations.
     """
+
     print("\n[FUSION PLAYLISTITEMLOCATIONMAP]")
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
+
+    # 🧹 Nettoyage des lignes non mappées avec PlaylistItemId ou LocationId inconnus
+    cursor.execute("""
+        DELETE FROM PlaylistItemLocationMap
+        WHERE PlaylistItemId NOT IN (
+            SELECT DISTINCT NewID FROM MergeMapping_PlaylistItem
+        )
+    """)
+    print("🧹 Anciennes lignes PlaylistItemLocationMap (non mappées) supprimées.")
+
 
     for db_path in [file1_db, file2_db]:
         normalized_db = os.path.normpath(db_path)
