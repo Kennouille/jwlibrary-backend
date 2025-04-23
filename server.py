@@ -2325,21 +2325,24 @@ def merge_data():
         print("🛑 merge_playlists appelée")
 
         try:
+            result = merge_playlists(
+                merged_db_path,
+                file1_db,
+                file2_db,
+                location_id_map,
+                independent_media_map,
+                item_id_map  # ⚠️ on passe le dict déjà défini (pas un nouveau {})
+            )
+
+            # 🔄 mise à jour propre des variables
             (
                 max_playlist_id,
                 playlist_item_total,
                 max_media_id,
                 orphaned_deleted,
                 integrity_result,
-                item_id_map  # ✅ ce mapping est bien récupéré ici
-            ) = merge_playlists(
-                merged_db_path,
-                file1_db,
-                file2_db,
-                location_id_map,
-                independent_media_map,
-                item_id_map  # ✅ ici on passe le mapping vide ou partiel
-            )
+                item_id_map
+            ) = result
 
             print("🧪 CONTENU DE item_id_map APRÈS merge_playlists:")
             for k, v in item_id_map.items():
@@ -2372,9 +2375,14 @@ def merge_data():
                     location_id_map,
                     item_id_map
                 )
+                print(f"Tag ID Map: {tag_id_map}")
+                print(f"TagMap ID Map: {tagmap_id_map}")
+
             except Exception as e:
-                print(f"Échec de merge_tags_and_tagmap: {str(e)}")
-                return jsonify({"error": "Échec de la fusion des tags"}), 500
+                import traceback
+                print("❌ Échec de merge_tags_and_tagmap (mais on continue le merge global) :")
+                traceback.print_exc()
+                tag_id_map, tagmap_id_map = {}, {}
 
             print(f"Tag ID Map: {tag_id_map}")
             print(f"TagMap ID Map: {tagmap_id_map}")
