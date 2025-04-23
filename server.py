@@ -727,63 +727,16 @@ def update_location_references(merged_db_path, location_replacements):
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
 
-    tables_with_single_location = [
-        "InputField", "Note", "PlaylistItemLocationMap", "TagMap", "UserMark"
-    ]
-
-    for table in tables_with_single_location:
-        for old_loc, new_loc in location_replacements.items():
-            try:
-                if table == "InputField":
-                    # On gère ligne par ligne pour éviter les doublons
-                    cursor.execute("SELECT TextTag FROM InputField WHERE LocationId = ?", (old_loc,))
-                    texttags = cursor.fetchall()
-                    for (texttag,) in texttags:
-                        cursor.execute("""
-                            SELECT 1 FROM InputField WHERE LocationId = ? AND TextTag = ?
-                        """, (new_loc, texttag))
-                        if cursor.fetchone():
-                            # Conflit détecté, on cherche un TextTag libre
-                            base_tag = texttag
-                            i = 1
-                            new_tag = f"{base_tag}_{i}"
-                            while True:
-                                cursor.execute("""
-                                    SELECT 1 FROM InputField WHERE LocationId = ? AND TextTag = ?
-                                """, (new_loc, new_tag))
-                                if not cursor.fetchone():
-                                    break
-                                i += 1
-                                new_tag = f"{base_tag}_{i}"
-
-                            # Met à jour en modifiant le TextTag
-                            cursor.execute("""
-                                UPDATE InputField SET LocationId = ?, TextTag = ?
-                                WHERE LocationId = ? AND TextTag = ?
-                            """, (new_loc, new_tag, old_loc, base_tag))
-                            print(
-                                f"⚠️ Conflit évité : LocationId {old_loc} -> {new_loc}, TextTag={base_tag} devient {new_tag}")
-                        cursor.execute("""
-                            UPDATE InputField SET LocationId = ?
-                            WHERE LocationId = ? AND TextTag = ?
-                        """, (new_loc, old_loc, texttag))
-                        print(f"InputField mis à jour: LocationId {old_loc} -> {new_loc}, TextTag={texttag}")
-                else:
-                    cursor.execute(f"UPDATE {table} SET LocationId = ? WHERE LocationId = ?", (new_loc, old_loc))
-                    print(f"{table} mis à jour: LocationId {old_loc} -> {new_loc}")
-            except Exception as e:
-                print(f"Erreur mise à jour {table} pour LocationId {old_loc}: {e}")
-
-    # Mise à jour sécurisée pour Bookmark
     for old_loc, new_loc in location_replacements.items():
+        # 🔁 Mise à jour Bookmark.LocationId
         try:
             cursor.execute("UPDATE Bookmark SET LocationId = ? WHERE LocationId = ?", (new_loc, old_loc))
             print(f"Bookmark LocationId mis à jour: {old_loc} -> {new_loc}")
         except Exception as e:
             print(f"Erreur mise à jour Bookmark LocationId {old_loc}: {e}")
 
+        # 🔁 Mise à jour Bookmark.PublicationLocationId avec conflit Slot
         try:
-            # Sélection des lignes concernées par PublicationLocationId
             cursor.execute("""
                 SELECT BookmarkId, Slot FROM Bookmark
                 WHERE PublicationLocationId = ?
@@ -806,9 +759,35 @@ def update_location_references(merged_db_path, location_replacements):
                         WHERE BookmarkId = ?
                     """, (new_loc, bookmark_id))
                     print(f"Bookmark PublicationLocationId mis à jour: {old_loc} -> {new_loc} (BookmarkId {bookmark_id})")
-
         except Exception as e:
             print(f"Erreur sécurisée mise à jour PublicationLocationId {old_loc}: {e}")
+
+        # 🔁 Mise à jour PlaylistItemLocationMap sécurisée
+        try:
+            cursor.execute("""
+                SELECT PlaylistItemId FROM PlaylistItemLocationMap
+                WHERE LocationId = ?
+            """, (old_loc,))
+            rows = cursor.fetchall()
+
+            for playlist_item_id, in rows:
+                cursor.execute("""
+                    SELECT 1 FROM PlaylistItemLocationMap
+                    WHERE PlaylistItemId = ? AND LocationId = ?
+                """, (playlist_item_id, new_loc))
+                conflict = cursor.fetchone()
+
+                if conflict:
+                    print(f"⚠️ Mise à jour ignorée pour PlaylistItemLocationMap: ItemId={playlist_item_id}, conflit LocationId {new_loc}")
+                else:
+                    cursor.execute("""
+                        UPDATE PlaylistItemLocationMap
+                        SET LocationId = ?
+                        WHERE PlaylistItemId = ? AND LocationId = ?
+                    """, (new_loc, playlist_item_id, old_loc))
+                    print(f"PlaylistItemLocationMap mis à jour: ItemId={playlist_item_id}, LocationId {old_loc} -> {new_loc}")
+        except Exception as e:
+            print(f"Erreur mise à jour PlaylistItemLocationMap pour {old_loc} -> {new_loc}: {e}")
 
     conn.commit()
     try:
