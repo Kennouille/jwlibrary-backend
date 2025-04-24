@@ -2441,6 +2441,11 @@ def merge_data():
                 conn.execute(f"VACUUM INTO '{clean_path}'")
             print(f"✅ Fichier nettoyé généré : {clean_path}")
 
+            # 🧪 Téléchargement immédiat d'une copie pour comparaison (debug uniquement)
+            debug_copy_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
+            shutil.copy(clean_path, debug_copy_path)
+            print(f"📤 Copie de debug disponible : {debug_copy_path}")
+
             # 7️⃣ Copie vers destination finale
             final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
             shutil.copy(clean_path, final_db_dest)
@@ -2492,6 +2497,14 @@ def merge_data():
                 conn.close()
             except:
                 pass
+
+
+@app.route("/download/debug")
+def download_debug_copy():
+    path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
+    if not os.path.exists(path):
+        return jsonify({"error": "Fichier debug non trouvé"}), 404
+    return send_file(path, as_attachment=True, download_name="debug_cleaned_before_copy.db")
 
 
 @app.route("/download/<filename>")
