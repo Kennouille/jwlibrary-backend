@@ -187,6 +187,23 @@ def create_merged_schema(merged_db_path, base_db_path):
         print(f"Erreur lors de la création de la table LastModified: {e}")
     merged_conn.commit()
 
+    # Création correcte de PlaylistItemMediaMap si elle n'existe pas
+    merged_cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='PlaylistItemMediaMap'"
+    )
+    if not merged_cursor.fetchone():
+        merged_cursor.execute("""
+            CREATE TABLE PlaylistItemMediaMap (
+                PlaylistItemId   INTEGER NOT NULL,
+                MediaFileId      INTEGER NOT NULL,
+                OrderIndex       INTEGER NOT NULL,
+                PRIMARY KEY (PlaylistItemId, MediaFileId),
+                FOREIGN KEY (PlaylistItemId) REFERENCES PlaylistItem(PlaylistItemId),
+                FOREIGN KEY (MediaFileId)  REFERENCES IndependentMedia(IndependentMediaId)
+            )
+        """)
+        print("PlaylistItemMediaMap (avec MediaFileId, OrderIndex) créée dans la base fusionnée.")
+
     merged_conn.commit()
     merged_conn.close()
 
@@ -1485,6 +1502,62 @@ def cleanup_playlist_item_location_map(conn):
     print("🧹 Nettoyage post-merge : PlaylistItemLocationMap nettoyée.")
 
 
+def merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map):
+    """
+    Fusionne la table PlaylistItemIndependentMediaMap des deux sources dans
+    PlaylistItemMediaMap de la DB fusionnée de façon idempotente.
+    Utilise DurationTicks de la source pour remplir OrderIndex dans la cible.
+    """
+    print("\n[FUSION PLAYLISTITEMMEDIA MAP]")
+    conn = sqlite3.connect(merged_db_path)
+    cursor = conn.cursor()
+
+    for db_path in [file1_db, file2_db]:
+        with sqlite3.connect(db_path) as src_conn:
+            src_cursor = src_conn.cursor()
+            src_cursor.execute("""
+                SELECT PlaylistItemId, IndependentMediaId, DurationTicks
+                FROM PlaylistItemIndependentMediaMap
+            """)
+            rows = src_cursor.fetchall()
+            print(f"{len(rows)} lignes trouvées dans {os.path.basename(db_path)}")
+
+            for old_item_id, old_media_id, duration_ticks in rows:
+                new_item_id = item_id_map.get((os.path.normpath(db_path), old_item_id))
+                new_media_id = independent_media_map.get((db_path, old_media_id))
+                order_idx = duration_ticks  # on réutilise DurationTicks comme OrderIndex
+
+                if new_item_id and new_media_id:
+                    # ✅ Vérifie si cette association existe déjà dans la base fusionnée
+                    cursor.execute("""
+                        SELECT 1 FROM PlaylistItemMediaMap
+                        WHERE PlaylistItemId = ? AND MediaFileId = ?
+                    """, (new_item_id, new_media_id))
+                    exists = cursor.fetchone()
+
+                    if exists:
+                        print(f"⏩ Déjà présent : (PlaylistItemId={new_item_id}, MediaFileId={new_media_id})")
+                        continue
+
+                    try:
+                        cursor.execute("""
+                            INSERT INTO PlaylistItemMediaMap
+                            (PlaylistItemId, MediaFileId, OrderIndex)
+                            VALUES (?, ?, ?)
+                        """, (new_item_id, new_media_id, order_idx))
+                    except sqlite3.IntegrityError as e:
+                        print(f"Erreur PlaylistItemMediaMap: {e}")
+
+                else:
+                    print(
+                        f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, "
+                        f"IndependentMediaId={old_media_id} (db: {db_path})"
+                    )
+
+    conn.commit()
+    conn.close()
+
+
 def merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map):
     """
     Fusionne la table PlaylistItemMarker de façon idempotente.
@@ -1592,58 +1665,6 @@ def merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map):
     conn.commit()
     conn.close()
 
-def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map):
-    """
-    Fusionne la table PlaylistItemIndependentMediaMap de façon idempotente.
-    Cette version NE crée PAS PlaylistItemMediaMap et NE touche PAS à OrderIndex.
-    """
-    print("\n[FUSION PLAYLISTITEMINDEPENDENTMEDIAMAP]")
-    conn = sqlite3.connect(merged_db_path)
-    cursor = conn.cursor()
-
-    for db_path in [file1_db, file2_db]:
-        norm_db = os.path.normpath(db_path)
-        with sqlite3.connect(db_path) as src_conn:
-            src_cursor = src_conn.cursor()
-            src_cursor.execute("""
-                SELECT PlaylistItemId, IndependentMediaId, DurationTicks
-                FROM PlaylistItemIndependentMediaMap
-            """)
-            rows = src_cursor.fetchall()
-            print(f"{len(rows)} lignes trouvées dans {os.path.basename(db_path)}")
-
-            for old_item_id, old_media_id, duration in rows:
-                new_item_id = item_id_map.get((norm_db, old_item_id))
-                new_media_id = independent_media_map.get((db_path, old_media_id))
-
-                if new_item_id is None or new_media_id is None:
-                    print(f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, IndependentMediaId={old_media_id}")
-                    continue
-
-                # Vérifie si l'association existe déjà
-                cursor.execute("""
-                    SELECT 1 FROM PlaylistItemIndependentMediaMap
-                    WHERE PlaylistItemId = ? AND IndependentMediaId = ?
-                """, (new_item_id, new_media_id))
-                exists = cursor.fetchone()
-
-                if exists:
-                    print(f"⏩ Déjà présent : Item {new_item_id}, Media {new_media_id}")
-                    continue
-
-                try:
-                    cursor.execute("""
-                        INSERT INTO PlaylistItemIndependentMediaMap
-                        (PlaylistItemId, IndependentMediaId, DurationTicks)
-                        VALUES (?, ?, ?)
-                    """, (new_item_id, new_media_id, duration))
-                    print(f"✅ Insertion : Item {new_item_id}, Media {new_media_id}")
-                except sqlite3.IntegrityError as e:
-                    print(f"❌ Erreur d'insertion : {e}")
-
-    conn.commit()
-    conn.close()
-
 
 def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, independent_media_map, item_id_map):
     """Fusionne toutes les tables liées aux playlists en respectant les contraintes."""
@@ -1683,11 +1704,10 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map)
         print("--> PlaylistItemLocationMap fusionnée.")
 
-        # 3. Fusion PlaylistItemindependentMap
-        merge_playlist_item_independent_media_map(
-            merged_db_path, file1_db, file2_db, item_id_map, independent_media_map
-        )
-        print("--> PlaylistItemIndependentMediaMap fusionnée.")
+        # 3. Fusion PlaylistItemMediaMap
+        # Fusion de PlaylistItemMediaMap
+        merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map)
+        print("--> PlaylistItemMediaMap fusionnée.")
 
         # 4. Fusion PlaylistItemMarker
         # Fusion de PlaylistItemMarker et récupération du mapping des markers
@@ -1701,6 +1721,11 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         # Fusion des MarkerMaps (BibleVerse, Paragraph, etc.)
         merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map)
         print("--> MarkerMaps fusionnées.")
+
+        # 6. Fusion de PlaylistItemIndependentMediaMap
+        # Fusion de PlaylistItemMediaMap (basée sur PlaylistItemIndependentMediaMap)
+        merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map)
+        print("--> PlaylistItemMediaMap fusionnée.")
 
         # ========================
         # Maintenant, on démarre les opérations qui ouvrent leurs propres connexions
@@ -2377,7 +2402,7 @@ def merge_data():
                     SELECT name
                     FROM sqlite_master
                     WHERE type='table'
-                      AND (LOWER(name) LIKE 'mergemapping_%' OR LOWER(name) = '_dummy_for_wal')
+                      AND LOWER(name) LIKE 'mergemapping_%'
                 """)
                 rows = cur.fetchall()
                 tables_to_drop = [row[0] for row in rows]
