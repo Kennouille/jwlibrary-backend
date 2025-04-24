@@ -2448,7 +2448,8 @@ def merge_data():
 
             # 7️⃣ Copie vers destination finale
             final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-            shutil.copy(clean_path, final_db_dest)
+            test_debug_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
+            shutil.copy(test_debug_path, final_db_dest)
             print(f"✅ Copie finale vers UPLOAD_FOLDER réussie : {final_db_dest}")
 
             # ✅ Forcer la génération des fichiers WAL et SHM
