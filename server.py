@@ -2428,6 +2428,10 @@ def merge_data():
             gc.collect()
             time.sleep(1.0)
 
+            with sqlite3.connect(merged_db_path) as conn:
+                conn.execute("DROP TABLE IF EXISTS PlaylistItemMediaMap")
+                print("🗑️ Table PlaylistItemMediaMap supprimée avant VACUUM.")
+
             # 6️⃣ Création d’une DB propre avec VACUUM INTO
             clean_filename = f"cleaned_{uuid.uuid4().hex}.db"
             clean_path = os.path.join(UPLOAD_FOLDER, clean_filename)
