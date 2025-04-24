@@ -1592,6 +1592,58 @@ def merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map):
     conn.commit()
     conn.close()
 
+def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map):
+    """
+    Fusionne la table PlaylistItemIndependentMediaMap de façon idempotente.
+    Cette version NE crée PAS PlaylistItemMediaMap et NE touche PAS à OrderIndex.
+    """
+    print("\n[FUSION PLAYLISTITEMINDEPENDENTMEDIAMAP]")
+    conn = sqlite3.connect(merged_db_path)
+    cursor = conn.cursor()
+
+    for db_path in [file1_db, file2_db]:
+        norm_db = os.path.normpath(db_path)
+        with sqlite3.connect(db_path) as src_conn:
+            src_cursor = src_conn.cursor()
+            src_cursor.execute("""
+                SELECT PlaylistItemId, IndependentMediaId, DurationTicks
+                FROM PlaylistItemIndependentMediaMap
+            """)
+            rows = src_cursor.fetchall()
+            print(f"{len(rows)} lignes trouvées dans {os.path.basename(db_path)}")
+
+            for old_item_id, old_media_id, duration in rows:
+                new_item_id = item_id_map.get((norm_db, old_item_id))
+                new_media_id = independent_media_map.get((db_path, old_media_id))
+
+                if new_item_id is None or new_media_id is None:
+                    print(f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, IndependentMediaId={old_media_id}")
+                    continue
+
+                # Vérifie si l'association existe déjà
+                cursor.execute("""
+                    SELECT 1 FROM PlaylistItemIndependentMediaMap
+                    WHERE PlaylistItemId = ? AND IndependentMediaId = ?
+                """, (new_item_id, new_media_id))
+                exists = cursor.fetchone()
+
+                if exists:
+                    print(f"⏩ Déjà présent : Item {new_item_id}, Media {new_media_id}")
+                    continue
+
+                try:
+                    cursor.execute("""
+                        INSERT INTO PlaylistItemIndependentMediaMap
+                        (PlaylistItemId, IndependentMediaId, DurationTicks)
+                        VALUES (?, ?, ?)
+                    """, (new_item_id, new_media_id, duration))
+                    print(f"✅ Insertion : Item {new_item_id}, Media {new_media_id}")
+                except sqlite3.IntegrityError as e:
+                    print(f"❌ Erreur d'insertion : {e}")
+
+    conn.commit()
+    conn.close()
+
 
 def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, independent_media_map, item_id_map):
     """Fusionne toutes les tables liées aux playlists en respectant les contraintes."""
@@ -1630,6 +1682,12 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         # 2. Fusion PlaylistItemLocationMap
         merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map)
         print("--> PlaylistItemLocationMap fusionnée.")
+
+        # 3. Fusion PlaylistItemindependentMap
+        merge_playlist_item_independent_media_map(
+            merged_db_path, file1_db, file2_db, item_id_map, independent_media_map
+        )
+        print("--> PlaylistItemIndependentMediaMap fusionnée.")
 
         # 4. Fusion PlaylistItemMarker
         # Fusion de PlaylistItemMarker et récupération du mapping des markers
