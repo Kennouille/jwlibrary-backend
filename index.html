@@ -580,30 +580,29 @@
 
   async function rebuildFinalZip() {
     try {
-      console.log("📥 Téléchargement de userData.db lancé depuis rebuildFinalZip");
+      console.log("📥 Téléchargement de debug_cleaned_before_copy.db lancé");
 
       const zip = new JSZip();
 
+      // 1. Télécharger le fichier debug (sans le renommer ici)
+      const debugBlob = await fetch(`${BASE_URL}/download_debug_db?ngrok-skip-browser-warning=true`)
+        .then(res => res.blob());
+
+      // 2. Télécharger les fichiers SHM et WAL
       const fetchFile = async (filename) => {
         const response = await fetch(`${BASE_URL}/download/${filename}?ngrok-skip-browser-warning=true`);
         if (!response.ok) throw new Error(`Erreur lors du téléchargement de ${filename}`);
         return await response.blob();
       };
 
-      const userDataDb = await fetch(`${BASE_URL}/download_debug_db?ngrok-skip-browser-warning=true`)
-        .then(res => res.blob());
+      const shmBlob = await fetchFile("userData.db-shm");
+      const walBlob = await fetchFile("userData.db-wal");
 
-      const shmFile = await fetchFile("userData.db-shm");
-      const walFile = await fetchFile("userData.db-wal");
+      // 3. Ajouter les fichiers shm et wal
+      zip.file("userData.db-shm", shmBlob);
+      zip.file("userData.db-wal", walBlob);
 
-      console.log("🧪 RebuildFinalZip — hash userData.db téléchargé (début JSZip)");
-      console.log(await hashBlob(userDataDb));
-
-
-      zip.file("userData.db", userDataDb);
-      zip.file("userData.db-shm", shmFile);
-      zip.file("userData.db-wal", walFile);
-
+      // 4. Ajouter les médias
       if (window.mediaToInclude && Array.isArray(window.mediaToInclude)) {
         for (const media of window.mediaToInclude) {
           const content = await media.file.async("blob");
@@ -611,10 +610,15 @@
         }
       }
 
-      console.log("📦 RebuildFinalZip — génération du ZIP terminée");
+      // 5. Ajouter ensuite le debug renommé dans le ZIP en tant que "userData.db"
+      zip.file("userData.db", debugBlob);
 
-      const blob = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(blob);
+      console.log("📦 Tous les fichiers ajoutés au zip. Génération en cours...");
+
+      // 6. Générer le zip final
+      const finalZip = await zip.generateAsync({ type: "blob" });
+
+      const url = URL.createObjectURL(finalZip);
       const link = document.createElement("a");
       link.href = url;
       link.download = "merged.jwlibrary";
@@ -622,10 +626,11 @@
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-    } catch (e) {
-      console.error("❌ Erreur dans rebuildFinalZip:", e);
+    } catch (error) {
+      console.error("❌ Erreur dans rebuildFinalZip:", error);
     }
   }
+
 
 
 
