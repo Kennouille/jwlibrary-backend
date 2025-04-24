@@ -318,9 +318,6 @@
       Les éléments uniques de chaque fichier ont été ajoutés automatiquement.
     </p>
   </div>
-
-  <a id="download" href="#" download="fusionne.jwlibrary" class="hidden">📥 Télécharger le fichier fusionné</a>
-
 </div>
 
 
@@ -553,18 +550,12 @@
       // Texte final
       document.getElementById("progressDetails").textContent = "Fichier prêt";
 
-
-      // Afficher le bouton de téléchargement
-      const downloadLink = document.getElementById('download');
-      downloadLink.href = `${BASE_URL}/download?ngrok-skip-browser-warning=true`;
-      downloadLink.classList.remove('hidden');
-
       // Résumé clair
       const summaryText = document.getElementById('summary-text');
       summaryText.innerHTML = `
         La fusion est terminée. Les données identiques (notes, surlignages, marques-pages, playlists, etc.) ont été conservées.
         Les éléments uniques de chaque fichier ont été ajoutés.<br><br>
-        <strong>💡 Si le téléchargement ne démarre pas automatiquement, cliquez sur le bouton ci-dessous.</strong>
+        <strong>💡 Une fois le téléchargement automatique effectué, tous les fichiers sont immédiatement effacés. Si le téléchargement ne s'est pas bien passé, actualise la page et renouvelle l'opération en entier.</strong>
       `;
       document.getElementById('merge-summary').classList.remove('hidden');
 
@@ -572,16 +563,6 @@
       await rebuildFinalZip();
 
       document.getElementById("progressDetails").textContent = "✅ Téléchargement terminé ou en cours.";
-
-      // Change le bouton pour relancer le téléchargement
-      mergeButton.textContent = "Débuter le téléchargement";
-      setTimeout(() => {
-        mergeButton.disabled = false;
-        mergeButton.textContent = "Débuter le téléchargement";
-        mergeButton.onclick = () => {
-          window.location.href = downloadLink.href;
-        };
-      }, 1000);
 
     } catch (error) {
       console.error("Erreur:", error);
