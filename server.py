@@ -2319,7 +2319,7 @@ def merge_data():
                     SELECT name
                     FROM sqlite_master
                     WHERE type='table'
-                      AND LOWER(name) LIKE 'mergemapping_%'
+                      AND (LOWER(name) LIKE 'mergemapping_%' OR LOWER(name) = '_dummy_for_wal')
                 """)
                 rows = cur.fetchall()
                 tables_to_drop = [row[0] for row in rows]
