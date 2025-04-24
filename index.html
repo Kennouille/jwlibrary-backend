@@ -318,6 +318,9 @@
       Les éléments uniques de chaque fichier ont été ajoutés automatiquement.
     </p>
   </div>
+
+  <a id="download" href="#" download="fusionne.jwlibrary" class="hidden">📥 Télécharger le fichier fusionné</a>
+
 </div>
 
 
@@ -550,12 +553,18 @@
       // Texte final
       document.getElementById("progressDetails").textContent = "Fichier prêt";
 
+
+      // Afficher le bouton de téléchargement
+      const downloadLink = document.getElementById('download');
+      downloadLink.href = `${BASE_URL}/download?ngrok-skip-browser-warning=true`;
+      downloadLink.classList.remove('hidden');
+
       // Résumé clair
       const summaryText = document.getElementById('summary-text');
       summaryText.innerHTML = `
         La fusion est terminée. Les données identiques (notes, surlignages, marques-pages, playlists, etc.) ont été conservées.
         Les éléments uniques de chaque fichier ont été ajoutés.<br><br>
-        <strong>💡 Une fois le téléchargement automatique effectué, tous les fichiers sont immédiatement effacés. Si le téléchargement ne s'est pas bien passé, actualise la page et renouvelle l'opération en entier.</strong>
+        <strong>💡 Si le téléchargement ne démarre pas automatiquement, cliquez sur le bouton ci-dessous.</strong>
       `;
       document.getElementById('merge-summary').classList.remove('hidden');
 
@@ -563,6 +572,16 @@
       await rebuildFinalZip();
 
       document.getElementById("progressDetails").textContent = "✅ Téléchargement terminé ou en cours.";
+
+      // Change le bouton pour relancer le téléchargement
+      mergeButton.textContent = "Débuter le téléchargement";
+      setTimeout(() => {
+        mergeButton.disabled = false;
+        mergeButton.textContent = "Débuter le téléchargement";
+        mergeButton.onclick = () => {
+          window.location.href = downloadLink.href;
+        };
+      }, 1000);
 
     } catch (error) {
       console.error("Erreur:", error);
@@ -574,38 +593,30 @@
   async function rebuildFinalZip() {
     const zip = new JSZip();
 
-    // 1. Télécharger userData.db, .shm et .wal depuis le backend
-    const fetchFile = async (filename) => {
-      const response = await fetch(`${BASE_URL}/download/${filename}?ngrok-skip-browser-warning=true`);
-      if (!response.ok) throw new Error(`Erreur lors du téléchargement de ${filename}`);
-      return await response.blob();
-    };
+    // 1. Télécharger le userData.db fusionné
+    const response = await fetch(`${BASE_URL}/download?ngrok-skip-browser-warning=true`);
+    const mergedBlob = await response.blob();
+    zip.file("userData.db", mergedBlob);
 
-    const userDataDb = await fetchFile("userData.db");
-    const shmFile = await fetchFile("userData.db-shm");
-    const walFile = await fetchFile("userData.db-wal");
-
-    zip.file("userData.db", userDataDb);
-    zip.file("userData.db-shm", shmFile);
-    zip.file("userData.db-wal", walFile);
-
-    // 2. Ajouter les fichiers médias dédupliqués (déjà stockés dans window.mediaToInclude)
-    if (window.mediaToInclude && Array.isArray(window.mediaToInclude)) {
-      for (const media of window.mediaToInclude) {
-        const content = await media.file.async("blob");
-        zip.file(media.name, content);
-      }
+    // 2. Ajouter les médias conservés
+    for (const media of window.mediaToInclude || []) {
+      const content = await media.file.async("arraybuffer");
+      zip.file(media.name, content);
     }
 
-    // 3. Générer le ZIP et le télécharger
+    // 3. Générer le ZIP final
     const blob = await zip.generateAsync({ type: "blob" });
     const url = URL.createObjectURL(blob);
+
+    // 4. Déclencher le téléchargement
     const link = document.createElement("a");
     link.href = url;
-    link.download = "merged.jwlibrary";
+    link.download = "userData.db";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+
+    // 5. Nettoyer le lien temporaire
     URL.revokeObjectURL(url);
   }
 
