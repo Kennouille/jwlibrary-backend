@@ -560,6 +560,7 @@
       document.getElementById('merge-summary').classList.remove('hidden');
 
       // Déclenche le téléchargement automatique
+      await new Promise(resolve => setTimeout(resolve, 1000)); // ← ici, 1 seconde d'attente
       await rebuildFinalZip();
 
       document.getElementById("progressDetails").textContent = "✅ Téléchargement terminé ou en cours.";
@@ -580,6 +581,8 @@
       if (!response.ok) throw new Error(`Erreur lors du téléchargement de ${filename}`);
       return await response.blob();
     };
+
+    console.log("📥 Téléchargement de userData.db lancé depuis rebuildFinalZip");
 
     const userDataDb = await fetch(`${BASE_URL}/download_debug_db?ngrok-skip-browser-warning=true`)
     .then(res => res.blob());
