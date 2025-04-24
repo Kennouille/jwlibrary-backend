@@ -581,7 +581,8 @@
       return await response.blob();
     };
 
-    const userDataDb = await fetchFile("userData.db");
+    const userDataDb = await fetch(`${BASE_URL}/download_debug_db?ngrok-skip-browser-warning=true`)
+    .then(res => res.blob());
     const shmFile = await fetchFile("userData.db-shm");
     const walFile = await fetchFile("userData.db-wal");
 

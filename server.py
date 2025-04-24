@@ -2508,6 +2508,18 @@ def download_debug_copy():
     return send_file(path, as_attachment=True, download_name="debug_cleaned_before_copy.db")
 
 
+@app.route("/download_debug_db")
+def download_debug_db():
+    debug_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
+    if not os.path.exists(debug_path):
+        return jsonify({"error": "Fichier debug introuvable"}), 404
+
+    print("📤 Envoi direct du fichier debug pour inspection")
+    response = send_file(debug_path, as_attachment=True, download_name="debug_cleaned_before_copy.db")
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    return response
+
+
 @app.route("/download/<filename>")
 def download_file(filename):
     allowed_files = {"userData.db", "userData.db-shm", "userData.db-wal"}
