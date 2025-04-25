@@ -2441,10 +2441,12 @@ def merge_data():
                 conn.execute(f"VACUUM INTO '{clean_path}'")
             print(f"✅ Fichier nettoyé généré : {clean_path}")
 
+            debug_copy_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
+
             # ✅ Forcer WAL + générer les fichiers -wal et -shm, puis supprimer _Dummy
             try:
                 print("🧪 Activation du mode WAL pour générer les fichiers -wal et -shm...")
-                with sqlite3.connect(clean_path) as conn:
+                with sqlite3.connect(debug_copy_path) as conn:
                     conn.execute("PRAGMA journal_mode=WAL;")
                     conn.execute("CREATE TABLE IF NOT EXISTS _Dummy (x INTEGER);")
                     conn.execute("INSERT INTO _Dummy (x) VALUES (1);")
@@ -2456,9 +2458,16 @@ def merge_data():
                 print(f"❌ Erreur lors de la génération des fichiers WAL/SHM : {e}")
 
             # ✅ Créer la copie de debug (version finale à envoyer au frontend)
-            debug_copy_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
+            final_db_dest = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
             shutil.copy(clean_path, debug_copy_path)
             print(f"📤 Copie debug FINALE disponible : {debug_copy_path}")
+
+            # 8️⃣ Vérification finale dans userData.db
+            with sqlite3.connect(final_db_dest) as final_check:
+                cur = final_check.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
+                tables_final = [row[0] for row in cur.fetchall()]
+                print("📋 Tables MergeMapping_ dans userData.db copié :", tables_final)
 
             # 5️⃣ Retour JSON final
             final_result = {
