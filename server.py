@@ -2436,13 +2436,13 @@ def merge_data():
             clean_filename = f"cleaned_{uuid.uuid4().hex}.db"
             clean_path = os.path.join(UPLOAD_FOLDER, clean_filename)
 
-            # 🧹 VACUUM INTO pour générer une base nettoyée
+            # 🧹 VACUUM INTO pour générer une base nettoyée...
             print("🧹 VACUUM INTO pour générer une base nettoyée...")
             with sqlite3.connect(merged_db_path) as conn:
                 conn.execute(f"VACUUM INTO '{clean_path}'")
             print(f"✅ Fichier nettoyé généré : {clean_path}")
 
-            # 🧪 Activation du WAL et suppression de _Dummy
+            # 🧪 Activation du mode WAL sur le fichier nettoyé
             try:
                 print("🧪 Activation du mode WAL sur le fichier nettoyé...")
                 with sqlite3.connect(clean_path) as conn:
@@ -2452,36 +2452,37 @@ def merge_data():
                     conn.execute("DELETE FROM _Dummy;")
                     conn.execute("DROP TABLE IF EXISTS _Dummy;")
                     conn.commit()
-                print("✅ WAL activé et _Dummy supprimée.")
+                print("✅ WAL/SHM générés et _Dummy supprimée sur cleaned_xxx.db")
             except Exception as e:
-                print(f"❌ Erreur lors de l'activation WAL/_Dummy : {e}")
+                print(f"❌ Erreur WAL/SHM : {e}")
 
-            # ✨ Forçage écriture pour générer physiquement le -wal et -shm
-            try:
-                print("🛠 Forçage écriture pour création -wal/-shm...")
-                with sqlite3.connect(clean_path) as conn:
-                    conn.execute("CREATE TABLE IF NOT EXISTS temp_dummy (x INTEGER);")
-                    conn.execute("INSERT INTO temp_dummy (x) VALUES (1);")
-                    conn.execute("DELETE FROM temp_dummy;")
-                    conn.execute("DROP TABLE temp_dummy;")
-                    conn.commit()
-                print("✅ Écriture bidon réussie, WAL/SHM générés.")
-            except Exception as e:
-                print(f"❌ Erreur lors de l'écriture pour WAL/SHM : {e}")
-
-            # 📤 Copie finale propre (debug_cleaned_before_copy.db)
+            # 📥 Création de la copie debug propre
             debug_copy_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
             shutil.copy(clean_path, debug_copy_path)
             print(f"📤 Copie debug propre disponible : {debug_copy_path}")
 
-            # 📋 Vérification finale (optionnelle)
+            # 🔁 Renommer aussi les fichiers -shm et -wal pour le debug
+            original_shm = os.path.join(UPLOAD_FOLDER, "userData.db-shm")
+            original_wal = os.path.join(UPLOAD_FOLDER, "userData.db-wal")
+            renamed_shm = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db-shm")
+            renamed_wal = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db-wal")
+
+            if os.path.exists(original_shm):
+                os.rename(original_shm, renamed_shm)
+                print("🔁 SHM renommé correctement")
+
+            if os.path.exists(original_wal):
+                os.rename(original_wal, renamed_wal)
+                print("🔁 WAL renommé correctement")
+
+            # 🧪 Vérification finale
             with sqlite3.connect(debug_copy_path) as final_check:
                 cur = final_check.cursor()
                 cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
                 tables_final = [row[0] for row in cur.fetchall()]
                 print("📋 Tables MergeMapping_ dans debug_cleaned_before_copy.db :", tables_final)
 
-            # ✅ Résultat final prêt
+            # 🎯 Résultat final à retourner au frontend
             final_result = {
                 "merged_file": "userData.db",
                 "playlists": max_playlist_id,
@@ -2490,10 +2491,10 @@ def merge_data():
                 "cleaned_items": orphaned_deleted,
                 "integrity_check": integrity_result
             }
-
             sys.stdout.flush()
             print("🎯 Résumé final prêt à être envoyé au frontend.")
             print("🧪 Test accès à final_result:", final_result)
+
             return jsonify(final_result), 200
 
         except Exception as e:
