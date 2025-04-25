@@ -584,23 +584,29 @@
 
       const zip = new JSZip();
 
-      // Télécharge d'abord les 3 fichiers de base
+      // 🔹 Télécharger le fichier debug_cleaned_before_copy.db (il sera renommé à l’intérieur du zip)
       const debugBlob = await fetch(`${BASE_URL}/download_debug_db?ngrok-skip-browser-warning=true`)
-        .then(res => res.blob());
+        .then(res => {
+          if (!res.ok) throw new Error("Erreur lors du téléchargement de debug_cleaned_before_copy.db");
+          return res.blob();
+        });
+
+      // 🔹 Télécharger les fichiers WAL et SHM normaux (toujours avec userData.db-shm et userData.db-wal)
       const fetchFile = async (filename) => {
         const response = await fetch(`${BASE_URL}/download/${filename}?ngrok-skip-browser-warning=true`);
         if (!response.ok) throw new Error(`Erreur lors du téléchargement de ${filename}`);
         return await response.blob();
       };
-      const shmBlob = await fetchFile("debug_cleaned_before_copy.db-shm");
-      const walBlob = await fetchFile("debug_cleaned_before_copy.db-wal");
 
-      // Ajoute dans le ZIP avec les bons noms renommés
-      zip.file("userData.db", debugBlob);
+      const shmBlob = await fetchFile("userData.db-shm");
+      const walBlob = await fetchFile("userData.db-wal");
+
+      // 🔹 Ajouter les fichiers dans le zip
+      zip.file("userData.db", debugBlob);     // ✅ Renommé correctement dans l’archive
       zip.file("userData.db-shm", shmBlob);
       zip.file("userData.db-wal", walBlob);
 
-      // Ajoute aussi les médias s'il y en a
+      // 🔹 Ajouter les médias (si présents)
       if (window.mediaToInclude && Array.isArray(window.mediaToInclude)) {
         for (const media of window.mediaToInclude) {
           const content = await media.file.async("blob");
@@ -608,12 +614,10 @@
         }
       }
 
-      console.log("📦 Tous les fichiers ajoutés dans le ZIP. Génération...");
+      console.log("📦 Tous les fichiers ajoutés au zip. Génération en cours...");
 
-      // Génère le fichier ZIP final
+      // 🔹 Générer le ZIP final et déclencher le téléchargement
       const finalZip = await zip.generateAsync({ type: "blob" });
-
-      // Télécharge le ZIP renommé en .jwlibrary
       const url = URL.createObjectURL(finalZip);
       const link = document.createElement("a");
       link.href = url;
@@ -623,12 +627,12 @@
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      console.log("✅ merged.jwlibrary généré et lancé pour téléchargement.");
-
+      console.log("✅ merged.jwlibrary téléchargé avec succès");
     } catch (error) {
       console.error("❌ Erreur dans rebuildFinalZip:", error);
     }
   }
+
 
 
 
