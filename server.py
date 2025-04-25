@@ -2441,30 +2441,24 @@ def merge_data():
                 conn.execute(f"VACUUM INTO '{clean_path}'")
             print(f"✅ Fichier nettoyé généré : {clean_path}")
 
-            # 🧪 Téléchargement immédiat d'une copie pour comparaison (debug uniquement)
-            debug_copy_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
-            shutil.copy(clean_path, debug_copy_path)
-            print(f"📤 Copie de debug disponible : {debug_copy_path}")
-
-            # 7️⃣ Copie vers destination finale
-            final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-            test_debug_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
-            shutil.copy(test_debug_path, final_db_dest)
-            print(f"✅ Copie finale vers UPLOAD_FOLDER réussie : {final_db_dest}")
-            print("✅ Copie finale terminée. Le fichier userData.db est prêt pour le téléchargement.")
-
-            # ✅ Forcer la génération des fichiers WAL et SHM
+            # ✅ Forcer WAL + générer les fichiers -wal et -shm, puis supprimer _Dummy
             try:
                 print("🧪 Activation du mode WAL pour générer les fichiers -wal et -shm...")
-                with sqlite3.connect(final_db_dest) as conn:
+                with sqlite3.connect(clean_path) as conn:
                     conn.execute("PRAGMA journal_mode=WAL;")
                     conn.execute("CREATE TABLE IF NOT EXISTS _Dummy (x INTEGER);")
                     conn.execute("INSERT INTO _Dummy (x) VALUES (1);")
                     conn.execute("DELETE FROM _Dummy;")
+                    conn.execute("DROP TABLE IF EXISTS _Dummy;")  # 🔥 suppression finale
                     conn.commit()
-                print("✅ Fichiers WAL et SHM générés avec succès.")
+                print("✅ Fichiers WAL et SHM générés avec succès, table _Dummy supprimée.")
             except Exception as e:
                 print(f"❌ Erreur lors de la génération des fichiers WAL/SHM : {e}")
+
+            # ✅ Créer la copie de debug (version finale à envoyer au frontend)
+            debug_copy_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
+            shutil.copy(clean_path, debug_copy_path)
+            print(f"📤 Copie debug FINALE disponible : {debug_copy_path}")
 
             # 8️⃣ Vérification finale dans userData.db
             with sqlite3.connect(final_db_dest) as final_check:
@@ -2509,14 +2503,6 @@ def download_debug_db():
 
     print(f"📥 Envoi du fichier DEBUG : {debug_path}")
     return send_file(debug_path, as_attachment=True, download_name="userData.db")
-
-
-@app.route("/download/debug")
-def download_debug_copy():
-    path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
-    if not os.path.exists(path):
-        return jsonify({"error": "Fichier debug non trouvé"}), 404
-    return send_file(path, as_attachment=True, download_name="debug_cleaned_before_copy.db")
 
 
 @app.route("/download/<filename>")
