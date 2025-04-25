@@ -584,25 +584,23 @@
 
       const zip = new JSZip();
 
-      // 1. Télécharger le fichier debug (sans le renommer ici)
+      // Télécharge d'abord les 3 fichiers de base
       const debugBlob = await fetch(`${BASE_URL}/download_debug_db?ngrok-skip-browser-warning=true`)
         .then(res => res.blob());
-
-      // 2. Télécharger les fichiers SHM et WAL
       const fetchFile = async (filename) => {
         const response = await fetch(`${BASE_URL}/download/${filename}?ngrok-skip-browser-warning=true`);
         if (!response.ok) throw new Error(`Erreur lors du téléchargement de ${filename}`);
         return await response.blob();
       };
+      const shmBlob = await fetchFile("debug_cleaned_before_copy.db-shm");
+      const walBlob = await fetchFile("debug_cleaned_before_copy.db-wal");
 
-      const shmBlob = await fetchFile("userData.db-shm");
-      const walBlob = await fetchFile("userData.db-wal");
-
-      // 3. Ajouter les fichiers shm et wal
+      // Ajoute dans le ZIP avec les bons noms renommés
+      zip.file("userData.db", debugBlob);
       zip.file("userData.db-shm", shmBlob);
       zip.file("userData.db-wal", walBlob);
 
-      // 4. Ajouter les médias
+      // Ajoute aussi les médias s'il y en a
       if (window.mediaToInclude && Array.isArray(window.mediaToInclude)) {
         for (const media of window.mediaToInclude) {
           const content = await media.file.async("blob");
@@ -610,14 +608,12 @@
         }
       }
 
-      // 5. Ajouter ensuite le debug renommé dans le ZIP en tant que "userData.db"
-      zip.file("userData.db", debugBlob);
+      console.log("📦 Tous les fichiers ajoutés dans le ZIP. Génération...");
 
-      console.log("📦 Tous les fichiers ajoutés au zip. Génération en cours...");
-
-      // 6. Générer le zip final
+      // Génère le fichier ZIP final
       const finalZip = await zip.generateAsync({ type: "blob" });
 
+      // Télécharge le ZIP renommé en .jwlibrary
       const url = URL.createObjectURL(finalZip);
       const link = document.createElement("a");
       link.href = url;
@@ -626,6 +622,9 @@
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
+
+      console.log("✅ merged.jwlibrary généré et lancé pour téléchargement.");
+
     } catch (error) {
       console.error("❌ Erreur dans rebuildFinalZip:", error);
     }
