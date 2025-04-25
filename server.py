@@ -2523,7 +2523,10 @@ def download_debug_db():
 
 @app.route("/download/<filename>")
 def download_file(filename):
-    allowed_files = {"userData.db", "userData.db-shm", "userData.db-wal"}
+    allowed_files = {
+        "userData.db", "userData.db-shm", "userData.db-wal",
+        "debug_cleaned_before_copy.db-shm", "debug_cleaned_before_copy.db-wal"
+    }
     if filename not in allowed_files:
         return jsonify({"error": "Fichier non autorisé"}), 400
 
