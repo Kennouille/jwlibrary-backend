@@ -2500,6 +2500,15 @@ def merge_data():
                 pass
 
 
+@app.route("/download_debug_db")
+def download_debug_db():
+    debug_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
+    if not os.path.exists(debug_path):
+        return jsonify({"error": "Fichier debug introuvable"}), 404
+    print(f"📥 Envoi du fichier DEBUG : {debug_path}")
+    return send_file(debug_path, as_attachment=True, download_name="userData.db")
+
+
 @app.route("/download/debug")
 def download_debug_copy():
     path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
