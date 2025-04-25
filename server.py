@@ -2460,13 +2460,6 @@ def merge_data():
             shutil.copy(clean_path, debug_copy_path)
             print(f"📤 Copie debug FINALE disponible : {debug_copy_path}")
 
-            # 8️⃣ Vérification finale dans userData.db
-            with sqlite3.connect(final_db_dest) as final_check:
-                cur = final_check.cursor()
-                cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
-                tables_final = [row[0] for row in cur.fetchall()]
-                print("📋 Tables MergeMapping_ dans userData.db copié :", tables_final)
-
             # 5️⃣ Retour JSON final
             final_result = {
                 "merged_file": "userData.db",
