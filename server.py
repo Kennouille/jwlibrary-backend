@@ -2436,53 +2436,38 @@ def merge_data():
             clean_filename = f"cleaned_{uuid.uuid4().hex}.db"
             clean_path = os.path.join(UPLOAD_FOLDER, clean_filename)
 
-            # 🧹 VACUUM INTO pour générer une base nettoyée...
             print("🧹 VACUUM INTO pour générer une base nettoyée...")
             with sqlite3.connect(merged_db_path) as conn:
                 conn.execute(f"VACUUM INTO '{clean_path}'")
             print(f"✅ Fichier nettoyé généré : {clean_path}")
 
-            # 🧪 Activation du mode WAL sur le fichier nettoyé
+            # ✅ Forcer WAL + générer les fichiers -wal et -shm, puis supprimer _Dummy
             try:
-                print("🧪 Activation du mode WAL sur le fichier nettoyé...")
+                print("🧪 Activation du mode WAL pour générer les fichiers -wal et -shm...")
                 with sqlite3.connect(clean_path) as conn:
                     conn.execute("PRAGMA journal_mode=WAL;")
                     conn.execute("CREATE TABLE IF NOT EXISTS _Dummy (x INTEGER);")
                     conn.execute("INSERT INTO _Dummy (x) VALUES (1);")
                     conn.execute("DELETE FROM _Dummy;")
-                    conn.execute("DROP TABLE IF EXISTS _Dummy;")
+                    conn.execute("DROP TABLE IF EXISTS _Dummy;")  # 🔥 suppression finale
                     conn.commit()
-                print("✅ WAL/SHM générés et _Dummy supprimée sur cleaned_xxx.db")
+                print("✅ Fichiers WAL et SHM générés avec succès, table _Dummy supprimée.")
             except Exception as e:
-                print(f"❌ Erreur WAL/SHM : {e}")
+                print(f"❌ Erreur lors de la génération des fichiers WAL/SHM : {e}")
 
-            # 📥 Création de la copie debug propre
+            # ✅ Créer la copie de debug (version finale à envoyer au frontend)
             debug_copy_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
             shutil.copy(clean_path, debug_copy_path)
-            print(f"📤 Copie debug propre disponible : {debug_copy_path}")
+            print(f"📤 Copie debug FINALE disponible : {debug_copy_path}")
 
-            # 🔁 Renommer aussi les fichiers -shm et -wal pour le debug
-            original_shm = os.path.join(UPLOAD_FOLDER, "userData.db-shm")
-            original_wal = os.path.join(UPLOAD_FOLDER, "userData.db-wal")
-            renamed_shm = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db-shm")
-            renamed_wal = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db-wal")
-
-            if os.path.exists(original_shm):
-                os.rename(original_shm, renamed_shm)
-                print("🔁 SHM renommé correctement")
-
-            if os.path.exists(original_wal):
-                os.rename(original_wal, renamed_wal)
-                print("🔁 WAL renommé correctement")
-
-            # 🧪 Vérification finale
-            with sqlite3.connect(debug_copy_path) as final_check:
+            # 8️⃣ Vérification finale dans userData.db
+            with sqlite3.connect(final_db_dest) as final_check:
                 cur = final_check.cursor()
                 cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
                 tables_final = [row[0] for row in cur.fetchall()]
-                print("📋 Tables MergeMapping_ dans debug_cleaned_before_copy.db :", tables_final)
+                print("📋 Tables MergeMapping_ dans userData.db copié :", tables_final)
 
-            # 🎯 Résultat final à retourner au frontend
+            # 5️⃣ Retour JSON final
             final_result = {
                 "merged_file": "userData.db",
                 "playlists": max_playlist_id,
@@ -2494,7 +2479,6 @@ def merge_data():
             sys.stdout.flush()
             print("🎯 Résumé final prêt à être envoyé au frontend.")
             print("🧪 Test accès à final_result:", final_result)
-
             return jsonify(final_result), 200
 
         except Exception as e:
@@ -2523,10 +2507,7 @@ def download_debug_db():
 
 @app.route("/download/<filename>")
 def download_file(filename):
-    allowed_files = {
-        "userData.db", "userData.db-shm", "userData.db-wal",
-        "debug_cleaned_before_copy.db-shm", "debug_cleaned_before_copy.db-wal"
-    }
+    allowed_files = {"userData.db", "userData.db-shm", "userData.db-wal"}
     if filename not in allowed_files:
         return jsonify({"error": "Fichier non autorisé"}), 400
 
