@@ -287,10 +287,15 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
                     rows = []
                 for row in rows:
                     # On ignore la première colonne (clé primaire) lors de la comparaison
-                    where_clause = " AND ".join([f"{col}=?" for col in columns[1:]])
-                    check_query = f"SELECT 1 FROM {table} WHERE {where_clause} LIMIT 1"
-                    merged_cursor.execute(check_query, row[1:])
-                    exists = merged_cursor.fetchone()
+                    if len(columns) > 1:
+                        where_clause = " AND ".join([f"{col}=?" for col in columns[1:]])
+                        check_query = f"SELECT 1 FROM {table} WHERE {where_clause} LIMIT 1"
+                        merged_cursor.execute(check_query, row[1:])
+                        exists = merged_cursor.fetchone()
+                    else:
+                        # Cas où il n'y a pas de colonnes à comparer (seulement clé primaire)
+                        exists = None
+
                     if not exists:
                         # Si la ligne n'existe pas, on détermine la nouvelle clé
                         cur_max = merged_cursor.execute(f"SELECT MAX({columns[0]}) FROM {table}").fetchone()[0] or 0
