@@ -299,7 +299,7 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
                     if not exists:
                         cur_max = merged_cursor.execute(f"SELECT MAX({str(columns[0])}) FROM {table}").fetchone()[
                                       0] or 0
-                        new_id = cur_max + 1
+                        new_id = int(cur_max) + 1
                         new_row = (new_id,) + row[1:]
                         print(f"✅ INSERT dans {table} depuis {source_path}: {new_row}")
                         merged_cursor.execute(
