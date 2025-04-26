@@ -1918,6 +1918,7 @@ def merge_data():
             location_id_map = merge_location_from_sources(merged_db_path, *required_dbs)
             print("Location ID Map:", location_id_map)
         except Exception as e:
+            import traceback
             print(f"❌ Erreur dans merge_location_from_sources : {e}")
             traceback.print_exc()
             raise
@@ -1926,6 +1927,7 @@ def merge_data():
             independent_media_map = merge_independent_media(merged_db_path, file1_db, file2_db)
             print("Mapping IndependentMedia:", independent_media_map)
         except Exception as e:
+            import traceback
             print(f"❌ Erreur dans merge_independent_media : {e}")
             traceback.print_exc()
             raise
@@ -1936,6 +1938,7 @@ def merge_data():
         try:
             usermark_guid_map = merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map)
         except Exception as e:
+            import traceback
             print(f"❌ Erreur dans merge_usermark_from_sources : {e}")
             traceback.print_exc()
             raise
@@ -1953,6 +1956,7 @@ def merge_data():
             note_mapping = create_note_mapping(merged_db_path, file1_db, file2_db)
             print("Note Mapping:", note_mapping)
         except Exception as e:
+            import traceback
             print(f"❌ Erreur dans create_note_mapping : {e}")
             traceback.print_exc()
             raise
@@ -2048,6 +2052,7 @@ def merge_data():
         try:
             merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map)
         except Exception as e:
+            import traceback
             print(f"❌ Erreur dans merge_bookmarks : {e}")
             traceback.print_exc()
             raise
@@ -2059,6 +2064,7 @@ def merge_data():
                 print("ÉCHEC Fusion BlockRange")
                 return jsonify({"error": "BlockRange merge failed"}), 500
         except Exception as e:
+            import traceback
             print(f"❌ Erreur dans merge_blockrange_from_two_sources : {e}")
             traceback.print_exc()
             raise
@@ -2081,6 +2087,7 @@ def merge_data():
                 usermark_guid_map
             )
         except Exception as e:
+            import traceback
             print(f"❌ Erreur dans merge_notes : {e}")
             traceback.print_exc()
             raise
@@ -2172,6 +2179,7 @@ def merge_data():
                 ]
             )
         except Exception as e:
+            import traceback
             print(f"❌ Erreur dans merge_other_tables : {e}")
             traceback.print_exc()
             raise
@@ -2413,6 +2421,7 @@ def merge_data():
                 update_location_references(merged_db_path, location_replacements_flat)
                 print("✔ Mise à jour des références LocationId terminée")
             except Exception as e:
+                import traceback
                 print(f"❌ ERREUR dans update_location_references : {e}")
                 traceback.print_exc()
 
