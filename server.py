@@ -610,12 +610,20 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
                                 print("Problèmes clés étrangères:", dest_cursor.fetchall())
                                 return False
 
-                    # ✅ Commit après avoir fini TOUT le db_path
-                    dest_conn.commit()
-                    print(f"✅ Commit effectué pour {db_path}")
+                except Exception as e:
+                    print(f"❌ Erreur lors du traitement de {db_path}: {e}")
+                    return False
+
+            # ✅ Après avoir traité les deux fichiers, on fait 1 seul commit
+            try:
+                dest_conn.commit()
+                print(f"✅ Commit global effectué après tous les fichiers")
+            except Exception as e:
+                print(f"❌ Erreur critique pendant commit final : {e}")
+                return False
 
     except Exception as e:
-        print(f"❌ Erreur critique dans merge_blockrange_from_two_sources: {e}")
+        print(f"❌ Erreur critique générale dans merge_blockrange_from_two_sources : {e}")
         return False
 
     return True
