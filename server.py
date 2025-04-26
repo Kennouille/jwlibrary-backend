@@ -2452,18 +2452,19 @@ def merge_data():
             shutil.copy(test_debug_path, final_db_dest)
             print(f"✅ Copie finale vers UPLOAD_FOLDER réussie : {final_db_dest}")
 
-            # ✅ Forcer la génération des fichiers WAL et SHM
+            # ✅ Forcer la génération du WAL + SHM et supprimer la table _Dummy
             try:
                 print("🧪 Activation du mode WAL pour générer les fichiers -wal et -shm...")
-                with sqlite3.connect(final_db_dest) as conn:
+                with sqlite3.connect(clean_path) as conn:
                     conn.execute("PRAGMA journal_mode=WAL;")
                     conn.execute("CREATE TABLE IF NOT EXISTS _Dummy (x INTEGER);")
                     conn.execute("INSERT INTO _Dummy (x) VALUES (1);")
                     conn.execute("DELETE FROM _Dummy;")
+                    conn.execute("DROP TABLE IF EXISTS _Dummy;")  # 🔥 suppression finale
                     conn.commit()
-                print("✅ Fichiers WAL et SHM générés avec succès.")
+                print("✅ WAL/SHM générés avec succès, table _Dummy supprimée.")
             except Exception as e:
-                print(f"❌ Erreur lors de la génération des fichiers WAL/SHM : {e}")
+                print(f"❌ Erreur lors de la génération du WAL/SHM : {e}")
 
             # 8️⃣ Vérification finale dans userData.db
             with sqlite3.connect(final_db_dest) as final_check:
