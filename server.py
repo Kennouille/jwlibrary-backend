@@ -1913,18 +1913,28 @@ def merge_data():
             tables = [t[0] for t in dbg_cur.fetchall()]
             print("Tables présentes dans merged_userData.db :", tables)
 
-        # ... Après la création de merged_db_path et avant la fusion des autres mappings
-        # Fusion de la table IndependentMedia et PlaylistItems, etc.
-        location_id_map = merge_location_from_sources(merged_db_path, *required_dbs)
-        print("Location ID Map:", location_id_map)
+        try:
+            location_id_map = merge_location_from_sources(merged_db_path, *required_dbs)
+            print("Location ID Map:", location_id_map)
+        except Exception as e:
+            print(f"❌ Erreur dans merge_location_from_sources : {e}")
+            raise
 
-        independent_media_map = merge_independent_media(merged_db_path, file1_db, file2_db)
-        print("Mapping IndependentMedia:", independent_media_map)
+        try:
+            independent_media_map = merge_independent_media(merged_db_path, file1_db, file2_db)
+            print("Mapping IndependentMedia:", independent_media_map)
+        except Exception as e:
+            print(f"❌ Erreur dans merge_independent_media : {e}")
+            raise
 
         # ❌ NE PAS appeler merge_playlist_items ici
         # item_id_map = merge_playlist_items(...)
 
-        usermark_guid_map = merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map)
+        try:
+            usermark_guid_map = merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map)
+        except Exception as e:
+            print(f"❌ Erreur dans merge_usermark_from_sources : {e}")
+            raise
 
         # Gestion spécifique de LastModified
         conn = sqlite3.connect(merged_db_path)
@@ -1935,9 +1945,12 @@ def merge_data():
         conn.commit()
         conn.close()
 
-        # Après create_note_mapping…
-        note_mapping = create_note_mapping(merged_db_path, file1_db, file2_db)
-        print("Note Mapping:", note_mapping)
+        try:
+            note_mapping = create_note_mapping(merged_db_path, file1_db, file2_db)
+            print("Note Mapping:", note_mapping)
+        except Exception as e:
+            print(f"❌ Erreur dans create_note_mapping : {e}")
+            raise
 
         # (Ré)ouvrir la connexion pour PlaylistItem
         conn = sqlite3.connect(merged_db_path)
@@ -2027,14 +2040,21 @@ def merge_data():
 
         print("\n=== PRÊT POUR FUSION ===\n")
 
-        # --- FUSION BOOKMARKS ---
-        merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map)
+        try:
+            merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map)
+        except Exception as e:
+            print(f"❌ Erreur dans merge_bookmarks : {e}")
+            raise
 
         # --- FUSION BLOCKRANGE ---
         print("\n=== DEBUT FUSION BLOCKRANGE ===")
-        if not merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
-            print("ÉCHEC Fusion BlockRange")
-            return jsonify({"error": "BlockRange merge failed"}), 500
+        try:
+            if not merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
+                print("ÉCHEC Fusion BlockRange")
+                return jsonify({"error": "BlockRange merge failed"}), 500
+        except Exception as e:
+            print(f"❌ Erreur dans merge_blockrange_from_two_sources : {e}")
+            raise
 
         # Mapping inverse UserMarkId original → nouveau
         usermark_guid_map = {}
@@ -2045,14 +2065,17 @@ def merge_data():
             usermark_guid_map[guid] = new_id
         conn.close()
 
-        # --- FUSION NOTES ---
-        note_mapping = merge_notes(
-            merged_db_path,
-            file1_db,
-            file2_db,
-            location_id_map,
-            usermark_guid_map
-        )
+        try:
+            note_mapping = merge_notes(
+                merged_db_path,
+                file1_db,
+                file2_db,
+                location_id_map,
+                usermark_guid_map
+            )
+        except Exception as e:
+            print(f"❌ Erreur dans merge_notes : {e}")
+            raise
 
         # --- Étape suivante : fusion des Tags et TagMap ---
         try:
@@ -2129,17 +2152,20 @@ def merge_data():
                 dbg_cur.execute("DETACH DATABASE src2")
                 print(f"[AVANT ] {tbl}: merged={cnt_merged}, file1={cnt1}, file2={cnt2}")
 
-        # ─── Appel original ────────────────────────────────────────────────────
-        merge_other_tables(
-            merged_db_path,
-            file1_db,
-            file2_db,
-            exclude_tables=[
-                'Note', 'UserMark', 'Location', 'BlockRange',
-                'LastModified', 'Tag', 'TagMap', 'PlaylistItem',
-                'InputField', 'Bookmark'
-            ]
-        )
+        try:
+            merge_other_tables(
+                merged_db_path,
+                file1_db,
+                file2_db,
+                exclude_tables=[
+                    'Note', 'UserMark', 'Location', 'BlockRange',
+                    'LastModified', 'Tag', 'TagMap', 'PlaylistItem',
+                    'InputField', 'Bookmark'
+                ]
+            )
+        except Exception as e:
+            print(f"❌ Erreur dans merge_other_tables : {e}")
+            raise
 
         # ─── Après merge_other_tables ───────────────────────────────────────────
         print("\n--- COMPTES APRÈS merge_other_tables ---")
