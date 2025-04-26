@@ -2441,30 +2441,29 @@ def merge_data():
                 conn.execute(f"VACUUM INTO '{clean_path}'")
             print(f"✅ Fichier nettoyé généré : {clean_path}")
 
-            # 🧪 Téléchargement immédiat d'une copie pour comparaison (debug uniquement)
+            # 🧪 Création d'une copie debug (juste pour toi)
             debug_copy_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
             shutil.copy(clean_path, debug_copy_path)
-            print(f"📤 Copie de debug disponible : {debug_copy_path}")
+            print(f"📤 Copie debug créée : {debug_copy_path}")
 
-            # 7️⃣ Copie vers destination finale
+            # 7️⃣ Copie vers destination finale officielle pour le frontend
             final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-            test_debug_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
-            shutil.copy(test_debug_path, final_db_dest)
-            print(f"✅ Copie finale vers UPLOAD_FOLDER réussie : {final_db_dest}")
+            shutil.copy(clean_path, final_db_dest)
+            print(f"✅ Copie finale pour frontend : {final_db_dest}")
 
-            # ✅ Forcer la génération du WAL + SHM et supprimer la table _Dummy
+            # ✅ Forcer la génération des fichiers WAL et SHM sur userData.db
             try:
-                print("🧪 Activation du mode WAL pour générer les fichiers -wal et -shm...")
-                with sqlite3.connect(clean_path) as conn:
+                print("🧪 Activation du mode WAL pour générer les fichiers -wal et -shm sur userData.db...")
+                with sqlite3.connect(final_db_dest) as conn:
                     conn.execute("PRAGMA journal_mode=WAL;")
                     conn.execute("CREATE TABLE IF NOT EXISTS _Dummy (x INTEGER);")
                     conn.execute("INSERT INTO _Dummy (x) VALUES (1);")
                     conn.execute("DELETE FROM _Dummy;")
-                    conn.execute("DROP TABLE IF EXISTS _Dummy;")  # 🔥 suppression finale
+                    conn.execute("DROP TABLE IF EXISTS _Dummy;")  # Suppression finale
                     conn.commit()
-                print("✅ WAL/SHM générés avec succès, table _Dummy supprimée.")
+                print("✅ WAL/SHM générés et _Dummy supprimée sur userData.db")
             except Exception as e:
-                print(f"❌ Erreur lors de la génération du WAL/SHM : {e}")
+                print(f"❌ Erreur WAL/SHM sur userData.db: {e}")
 
             # 8️⃣ Vérification finale dans userData.db
             with sqlite3.connect(final_db_dest) as final_check:
