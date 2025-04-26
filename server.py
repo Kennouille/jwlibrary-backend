@@ -1918,6 +1918,7 @@ def merge_data():
             print("Location ID Map:", location_id_map)
         except Exception as e:
             print(f"❌ Erreur dans merge_location_from_sources : {e}")
+            traceback.print_exc()
             raise
 
         try:
@@ -1925,6 +1926,7 @@ def merge_data():
             print("Mapping IndependentMedia:", independent_media_map)
         except Exception as e:
             print(f"❌ Erreur dans merge_independent_media : {e}")
+            traceback.print_exc()
             raise
 
         # ❌ NE PAS appeler merge_playlist_items ici
@@ -1934,6 +1936,7 @@ def merge_data():
             usermark_guid_map = merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map)
         except Exception as e:
             print(f"❌ Erreur dans merge_usermark_from_sources : {e}")
+            traceback.print_exc()
             raise
 
         # Gestion spécifique de LastModified
@@ -1950,6 +1953,7 @@ def merge_data():
             print("Note Mapping:", note_mapping)
         except Exception as e:
             print(f"❌ Erreur dans create_note_mapping : {e}")
+            traceback.print_exc()
             raise
 
         # (Ré)ouvrir la connexion pour PlaylistItem
@@ -2044,6 +2048,7 @@ def merge_data():
             merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map)
         except Exception as e:
             print(f"❌ Erreur dans merge_bookmarks : {e}")
+            traceback.print_exc()
             raise
 
         # --- FUSION BLOCKRANGE ---
@@ -2054,6 +2059,7 @@ def merge_data():
                 return jsonify({"error": "BlockRange merge failed"}), 500
         except Exception as e:
             print(f"❌ Erreur dans merge_blockrange_from_two_sources : {e}")
+            traceback.print_exc()
             raise
 
         # Mapping inverse UserMarkId original → nouveau
@@ -2075,6 +2081,7 @@ def merge_data():
             )
         except Exception as e:
             print(f"❌ Erreur dans merge_notes : {e}")
+            traceback.print_exc()
             raise
 
         # --- Étape suivante : fusion des Tags et TagMap ---
@@ -2165,6 +2172,7 @@ def merge_data():
             )
         except Exception as e:
             print(f"❌ Erreur dans merge_other_tables : {e}")
+            traceback.print_exc()
             raise
 
         # ─── Après merge_other_tables ───────────────────────────────────────────
@@ -2405,6 +2413,7 @@ def merge_data():
                 print("✔ Mise à jour des références LocationId terminée")
             except Exception as e:
                 print(f"❌ ERREUR dans update_location_references : {e}")
+                traceback.print_exc()
 
             with sqlite3.connect(merged_db_path) as conn:
                 cleanup_playlist_item_location_map(conn)
