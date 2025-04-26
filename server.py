@@ -1252,6 +1252,18 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                 if cursor.fetchone():
                     continue
 
+                # Doublon de TagId + LocationId ? (nouvelle protection)
+                if new_location_id is not None:
+                    cursor.execute("""
+                        SELECT TagMapId FROM TagMap
+                        WHERE TagId = ? AND LocationId = ?
+                    """, (new_tag_id, new_location_id))
+                    existing = cursor.fetchone()
+                    if existing:
+                        # Le mapping existe déjà, inutile de réinsérer
+                        tagmap_id_map[(db_path, old_tagmap_id)] = existing[0]
+                        continue
+
                 # Conflit sur (TagId, Position) ?
                 tentative = position
                 while True:
