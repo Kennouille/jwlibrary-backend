@@ -270,9 +270,9 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
             print(f"❌ Table {table} introuvable dans la DB fusionnée.")
             continue
 
-        # Récupération de la liste des colonnes (on suppose que la première colonne est la clé primaire)
-        columns = [col[1] for col in columns_info]
-        columns_joined = ", ".join(str(c) for c in columns)
+        # 🔵 Correction ici : forcer en str
+        columns = [str(col[1]) for col in columns_info]
+        columns_joined = ", ".join(columns)
         placeholders = ", ".join(["?"] * len(columns))
 
         # Pour chaque source, insérer les lignes qui n'existent pas déjà
