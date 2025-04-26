@@ -2260,11 +2260,11 @@ def merge_data():
 
         # Récapitulatif final
         print("\n=== RÉCAPITULATIF FINAL ===")
-        print(f"{'Playlists:':<20} {max_playlist_id}")
-        print(f"{'Éléments:':<20} {len(item_id_map)}")
-        print(f"{'Médias:':<20} {max_media_id}")
-        print(f"{'Nettoyés:':<20} {orphaned_deleted}")
-        print(f"{'Intégrité:':<20} {integrity_result}")
+        print(f"{'Playlists:':<20}, {max_playlist_id}")
+        print(f"{'Éléments:':<20}, {len(item_id_map)}")
+        print(f"{'Médias:':<20}, {max_media_id}")
+        print(f"{'Nettoyés:':<20}, {orphaned_deleted}")
+        print(f"{'Intégrité:':<20}, {integrity_result}")
         if fk_issues:
             print(f"{'Problèmes FK:':<20} \033[91m{len(fk_issues)}\033[0m")
         else:
