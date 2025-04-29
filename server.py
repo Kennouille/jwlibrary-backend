@@ -2527,6 +2527,22 @@ def merge_data():
             # À la toute fin, juste avant return
             os.remove(os.path.join(UPLOAD_FOLDER, "merge_in_progress"))
 
+            # 9️⃣ Création d'un ZIP backend avec userData.db + shm + wal
+            zip_filename = "userData_only.zip"
+            zip_path = os.path.join(UPLOAD_FOLDER, zip_filename)
+
+            print("🧹 Création du zip userData_only.zip avec debug_cleaned_before_copy.db, .shm et .wal...")
+
+            with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_STORED) as zipf:
+                zipf.write(os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db"), arcname="userData.db")
+                shm_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db-shm")
+                wal_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db-wal")
+                if os.path.exists(shm_path):
+                    zipf.write(shm_path, arcname="userData.db-shm")
+                if os.path.exists(wal_path):
+                    zipf.write(wal_path, arcname="userData.db-wal")
+
+            print(f"✅ Fichier ZIP créé : {zip_path}")
 
             # 5️⃣ Retour JSON final
             final_result = {
@@ -2603,6 +2619,15 @@ def download_file(filename):
     response = send_file(path, as_attachment=True)
     response.headers.add("Access-Control-Allow-Origin", "*")
     return response
+
+
+@app.route("/download_userdata_zip")
+def download_userdata_zip():
+    zip_path = os.path.join(UPLOAD_FOLDER, "userData_only.zip")
+    if not os.path.exists(zip_path):
+        return jsonify({"error": "Fichier ZIP introuvable"}), 404
+    print(f"📥 Envoi du ZIP : {zip_path}")
+    return send_file(zip_path, as_attachment=True, download_name="userData_only.zip")
 
 
 @app.errorhandler(Exception)
