@@ -2527,6 +2527,9 @@ def merge_data():
             # À la toute fin, juste avant return
             os.remove(os.path.join(UPLOAD_FOLDER, "merge_in_progress"))
 
+            gc.collect()
+            time.sleep(1.0)
+
             print("🛡️ Synchronisation de debug_cleaned_before_copy.db avant création du ZIP...")
             with sqlite3.connect(final_db_dest) as conn:
                 conn.execute("PRAGMA wal_checkpoint(FULL);")
