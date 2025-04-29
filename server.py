@@ -2527,6 +2527,13 @@ def merge_data():
             # À la toute fin, juste avant return
             os.remove(os.path.join(UPLOAD_FOLDER, "merge_in_progress"))
 
+            print("🛡️ Synchronisation de debug_cleaned_before_copy.db avant création du ZIP...")
+            with sqlite3.connect(final_db_dest) as conn:
+                conn.execute("PRAGMA wal_checkpoint(FULL);")
+                conn.execute("PRAGMA journal_mode=DELETE;")
+                conn.commit()
+            print("✅ Synchronisation complète.")
+
             # 9️⃣ Création d'un ZIP backend avec userData.db + shm + wal
             zip_filename = "userData_only.zip"
             zip_path = os.path.join(UPLOAD_FOLDER, zip_filename)
