@@ -595,8 +595,11 @@
         return await response.blob();
       };
 
-      const shmBlob = await fetchFile("userData.db-shm");
-      const walBlob = await fetchFile("userData.db-wal");
+      # const shmBlob = await fetchFile("userData.db-shm");
+      # const walBlob = await fetchFile("userData.db-wal");
+      const shmBlob = await fetchFile("debug_cleaned_before_copy.db-shm");
+      const walBlob = await fetchFile("debug_cleaned_before_copy.db-wal");
+
 
       // 3. Ajouter les fichiers shm et wal
       zip.file("userData.db-shm", shmBlob);

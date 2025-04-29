@@ -2486,10 +2486,18 @@ def merge_data():
             shutil.copy(clean_path, debug_copy_path)
             print(f"📤 Copie debug créée : {debug_copy_path}")
 
+
+
             # 7️⃣ Copie vers destination finale officielle pour le frontend
-            final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-            shutil.copy(clean_path, final_db_dest)
-            print(f"✅ Copie finale pour frontend : {final_db_dest}")
+            # ⛔ final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
+            # ⛔ shutil.copy(clean_path, final_db_dest)
+            # ⛔ print(f"✅ Copie finale pour frontend : {final_db_dest}")
+
+            # ✅ On force l’usage uniquement du fichier debug (3 lignes d'ajout pour n'envoyer que le fichier)
+            final_db_dest = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
+            print("🚫 Copie vers userData.db désactivée — envoi direct de debug_cleaned_before_copy.db")
+
+
 
             # ✅ Forcer la génération des fichiers WAL et SHM sur userData.db
             try:
@@ -2510,7 +2518,8 @@ def merge_data():
                 cur = final_check.cursor()
                 cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
                 tables_final = [row[0] for row in cur.fetchall()]
-                print("📋 Tables MergeMapping_ dans userData.db copié :", tables_final)
+                # print("📋 Tables MergeMapping_ dans userData.db copié :", tables_final)
+                print("📋 Tables MergeMapping_ dans debug_cleaned_before_copy.db :", tables_final)
 
             # 5️⃣ Retour JSON final
             final_result = {
@@ -2559,7 +2568,13 @@ def download_debug_copy():
 
 @app.route("/download/<filename>")
 def download_file(filename):
-    allowed_files = {"userData.db", "userData.db-shm", "userData.db-wal"}
+    # allowed_files = {"userData.db", "userData.db-shm", "userData.db-wal"}
+    allowed_files = {
+        "debug_cleaned_before_copy.db",
+        "debug_cleaned_before_copy.db-shm",
+        "debug_cleaned_before_copy.db-wal"
+    }
+
     if filename not in allowed_files:
         return jsonify({"error": "Fichier non autorisé"}), 400
 
