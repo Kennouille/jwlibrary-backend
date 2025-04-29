@@ -539,6 +539,12 @@
 
       if (!response.ok) throw new Error("Échec de la fusion");
 
+      const result = await response.json();
+
+      if (result.merge_status !== "done") {
+        throw new Error("La fusion n’a pas été finalisée correctement.");
+      }
+
       progressBar.classList.remove('progress-bar-animated');
       document.getElementById('construction-container').classList.add('hidden');
 
@@ -595,8 +601,8 @@
         return await response.blob();
       };
 
-      # const shmBlob = await fetchFile("userData.db-shm");
-      # const walBlob = await fetchFile("userData.db-wal");
+      // const shmBlob = await fetchFile("userData.db-shm");
+      // const walBlob = await fetchFile("userData.db-wal");
       const shmBlob = await fetchFile("debug_cleaned_before_copy.db-shm");
       const walBlob = await fetchFile("debug_cleaned_before_copy.db-wal");
 

@@ -1838,6 +1838,9 @@ def create_note_mapping(merged_db_path, file1_db, file2_db):
 
 @app.route('/merge', methods=['POST'])
 def merge_data():
+    # Au tout début du merge
+    open(os.path.join(UPLOAD_FOLDER, "merge_in_progress"), "w").close()
+
     # ─── 0. Initialisation des variables utilisées plus bas ─────────────────────────────
     merged_jwlibrary = None
     max_playlist_id = 0
@@ -2521,10 +2524,15 @@ def merge_data():
                 # print("📋 Tables MergeMapping_ dans userData.db copié :", tables_final)
                 print("📋 Tables MergeMapping_ dans debug_cleaned_before_copy.db :", tables_final)
 
+            # À la toute fin, juste avant return
+            os.remove(os.path.join(UPLOAD_FOLDER, "merge_in_progress"))
+
+
             # 5️⃣ Retour JSON final
             final_result = {
-                "merged_file": "userData.db",
+                "merged_file": "debug_cleaned_before_copy.db",
                 "playlists": max_playlist_id,
+                "merge_status": "done",
                 "playlist_items": playlist_item_total,
                 "media_files": max_media_id,
                 "cleaned_items": orphaned_deleted,
@@ -2547,6 +2555,11 @@ def merge_data():
                 conn.close()
             except:
                 pass
+                # 🔁 Nettoyage du verrou si une exception est survenue
+            try:
+                os.remove(os.path.join(UPLOAD_FOLDER, "merge_in_progress"))
+            except FileNotFoundError:
+                pass
 
 
 @app.route("/download_debug_db")
@@ -2568,6 +2581,10 @@ def download_debug_copy():
 
 @app.route("/download/<filename>")
 def download_file(filename):
+    # 🔒 Empêcher le téléchargement si le merge est encore en cours
+    if os.path.exists(os.path.join(UPLOAD_FOLDER, "merge_in_progress")):
+        return jsonify({"error": "Le fichier est encore en cours de création"}), 503
+
     # allowed_files = {"userData.db", "userData.db-shm", "userData.db-wal"}
     allowed_files = {
         "debug_cleaned_before_copy.db",
