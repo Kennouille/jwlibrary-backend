@@ -2581,8 +2581,8 @@ def download_debug_copy():
 
 @app.route("/download/<filename>")
 def download_file(filename):
-    # 🔒 Empêcher le téléchargement si le merge est encore en cours
     if os.path.exists(os.path.join(UPLOAD_FOLDER, "merge_in_progress")):
+        print("🛑 Tentative de téléchargement bloquée : merge encore en cours.")
         return jsonify({"error": "Le fichier est encore en cours de création"}), 503
 
     # allowed_files = {"userData.db", "userData.db-shm", "userData.db-wal"}

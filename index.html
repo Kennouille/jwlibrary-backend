@@ -597,9 +597,15 @@
       // 2. Télécharger les fichiers SHM et WAL
       const fetchFile = async (filename) => {
         const response = await fetch(`${BASE_URL}/download/${filename}?ngrok-skip-browser-warning=true`);
-        if (!response.ok) throw new Error(`Erreur lors du téléchargement de ${filename}`);
+        if (!response.ok) {
+          if (response.status === 503) {
+            throw new Error(`🚫 Le serveur indique que la fusion n'est pas terminée (503) pour ${filename}`);
+          }
+          throw new Error(`Erreur lors du téléchargement de ${filename}`);
+        }
         return await response.blob();
       };
+
 
       // const shmBlob = await fetchFile("userData.db-shm");
       // const walBlob = await fetchFile("userData.db-wal");
