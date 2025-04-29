@@ -2527,33 +2527,6 @@ def merge_data():
             # À la toute fin, juste avant return
             os.remove(os.path.join(UPLOAD_FOLDER, "merge_in_progress"))
 
-            gc.collect()
-            time.sleep(1.0)
-
-            print("🛡️ Synchronisation de debug_cleaned_before_copy.db avant création du ZIP...")
-            with sqlite3.connect(final_db_dest) as conn:
-                conn.execute("PRAGMA wal_checkpoint(FULL);")
-                conn.execute("PRAGMA journal_mode=DELETE;")
-                conn.commit()
-            print("✅ Synchronisation complète.")
-
-            # 9️⃣ Création d'un ZIP backend avec userData.db + shm + wal
-            zip_filename = "userData_only.zip"
-            zip_path = os.path.join(UPLOAD_FOLDER, zip_filename)
-
-            print("🧹 Création du zip userData_only.zip avec debug_cleaned_before_copy.db, .shm et .wal...")
-
-            with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_STORED) as zipf:
-                zipf.write(os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db"), arcname="userData.db")
-                shm_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db-shm")
-                wal_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db-wal")
-                if os.path.exists(shm_path):
-                    zipf.write(shm_path, arcname="userData.db-shm")
-                if os.path.exists(wal_path):
-                    zipf.write(wal_path, arcname="userData.db-wal")
-
-            print(f"✅ Fichier ZIP créé : {zip_path}")
-
             # 5️⃣ Retour JSON final
             final_result = {
                 "merged_file": "debug_cleaned_before_copy.db",
@@ -2586,6 +2559,36 @@ def merge_data():
                 os.remove(os.path.join(UPLOAD_FOLDER, "merge_in_progress"))
             except FileNotFoundError:
                 pass
+
+
+def create_userdata_zip():
+    print("🧹 Création du zip userData_only.zip après merge terminé...")
+
+    zip_filename = "userData_only.zip"
+    zip_path = os.path.join(UPLOAD_FOLDER, zip_filename)
+
+    debug_db_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
+    shm_path = debug_db_path + "-shm"
+    wal_path = debug_db_path + "-wal"
+
+    with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_STORED) as zipf:
+        zipf.write(debug_db_path, arcname="userData.db")
+        if os.path.exists(shm_path):
+            zipf.write(shm_path, arcname="userData.db-shm")
+        if os.path.exists(wal_path):
+            zipf.write(wal_path, arcname="userData.db-wal")
+
+    print(f"✅ Fichier ZIP final prêt : {zip_path}")
+
+
+@app.route("/create_zip_after_merge")
+def create_zip_after_merge():
+    try:
+        create_userdata_zip()
+        return jsonify({"status": "ZIP créé avec succès"}), 200
+    except Exception as e:
+        print(f"❌ Erreur création ZIP : {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/download_debug_db")

@@ -548,22 +548,29 @@
       progressBar.classList.remove('progress-bar-animated');
       document.getElementById('construction-container').classList.add('hidden');
 
-      await simulateProcessing(1000, 100, "Préparation du téléchargement...", 5);
+      await updateProgress(92, "Création du fichier ZIP final...", 5);
+      console.log("🧱 Appel à /create_zip_after_merge...");
 
-      // ✅ Assure que la barre est bien à 100%
+      const zipResponse = await fetch(`${BASE_URL}/create_zip_after_merge`);
+      if (!zipResponse.ok) {
+        throw new Error("Erreur lors de la création du fichier ZIP après fusion.");
+      }
+      console.log("✅ ZIP backend créé avec succès.");
+
+      await updateProgress(95, "Reconstruction du fichier .jwlibrary...", 5);
+      console.log("🚀 rebuildFinalZip() va être appelé");
+
+      await rebuildFinalZip();
+
       await updateProgress(100, "Fichier prêt", 5);
       progressBar.classList.remove('progress-bar-animated');
 
-
-      // Étape 5 : marquée comme terminée
       const step5 = document.getElementById("step5");
       step5.classList.remove("active");
       step5.classList.add("completed");
 
-      // Texte final
       document.getElementById("progressDetails").textContent = "Fichier prêt";
 
-      // Résumé clair
       const summaryText = document.getElementById('summary-text');
       summaryText.innerHTML = `
         La fusion est terminée. Les données identiques (notes, surlignages, marques-pages, playlists, etc.) ont été conservées.
@@ -572,16 +579,7 @@
       `;
       document.getElementById('merge-summary').classList.remove('hidden');
 
-      console.log("🚀 rebuildFinalZip() va être appelé");
-      await rebuildFinalZip();
-
       document.getElementById("progressDetails").textContent = "✅ Téléchargement terminé ou en cours.";
-
-    } catch (error) {
-      console.error("Erreur:", error);
-      await updateProgress(currentProgress, `Erreur: ${error.message}`);
-      document.getElementById('mergeButton').disabled = false;
-    }
   }
 
   async function rebuildFinalZip() {
