@@ -489,7 +489,7 @@
 
           // 🔍 Ignore les fichiers dont le nom se termine par un nom interdit
           if ([...skipSet].some(skip => name.endsWith(skip))) {
-            console.warn("⛔ Fichier ignoré :", file.name);
+            // console.warn("⛔ Fichier ignoré :", file.name);
             continue;
           }
 
@@ -520,11 +520,11 @@
         }))
       );
 
-      console.log("Structure de mediaToInclude[0]:", {
-        name: window.mediaToInclude[0]?.name,
-        fileType: window.mediaToInclude[0]?.file?.constructor?.name,
-        hash: window.mediaToInclude[0]?.hash
-      });
+      // console.log("Structure de mediaToInclude[0]:", {
+        // name: window.mediaToInclude[0]?.name,
+        // fileType: window.mediaToInclude[0]?.file?.constructor?.name,
+        // hash: window.mediaToInclude[0]?.hash
+      // });
 
       // Préparer le zip à reconstruire plus tard (frontend)
       window.userData1 = userData1;

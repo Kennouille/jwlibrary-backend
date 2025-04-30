@@ -8,4 +8,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 EXPOSE 5000
 
-CMD ["python", "server.py"]
+CMD ["gunicorn", "-w", "2", "--timeout", "180", "-b", "0.0.0.0:5000", "server:app"]
+
+

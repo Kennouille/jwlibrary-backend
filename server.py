@@ -1838,6 +1838,7 @@ def create_note_mapping(merged_db_path, file1_db, file2_db):
 
 @app.route('/merge', methods=['POST'])
 def merge_data():
+    start_time = time.time()
     # Au tout début du merge
     open(os.path.join(UPLOAD_FOLDER, "merge_in_progress"), "w").close()
 
@@ -2527,6 +2528,9 @@ def merge_data():
             # À la toute fin, juste avant return
             os.remove(os.path.join(UPLOAD_FOLDER, "merge_in_progress"))
 
+            elapsed = time.time() - start_time
+            print(f"⏱️ Temps total du merge : {elapsed:.2f} secondes")
+
             # 5️⃣ Retour JSON final
             final_result = {
                 "merged_file": "debug_cleaned_before_copy.db",
@@ -2578,6 +2582,8 @@ def create_userdata_zip():
 
 @app.route("/create_zip_after_merge")
 def create_zip_after_merge():
+    start_time = time.time()
+
     try:
         create_userdata_zip()
 
@@ -2587,6 +2593,9 @@ def create_zip_after_merge():
             print("🧹 Verrou merge_in_progress supprimé après création ZIP.")
         except FileNotFoundError:
             print("⚠️ Aucun verrou à supprimer : merge_in_progress absent.")
+
+        elapsed = time.time() - start_time
+        print(f"📦 Temps de création du ZIP : {elapsed:.2f} secondes")
 
         return jsonify({"status": "ZIP créé avec succès"}), 200
 
