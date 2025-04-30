@@ -2554,11 +2554,6 @@ def merge_data():
                 conn.close()
             except:
                 pass
-                # 🔁 Nettoyage du verrou si une exception est survenue
-            try:
-                os.remove(os.path.join(UPLOAD_FOLDER, "merge_in_progress"))
-            except FileNotFoundError:
-                pass
 
 
 def create_userdata_zip():
@@ -2585,7 +2580,16 @@ def create_userdata_zip():
 def create_zip_after_merge():
     try:
         create_userdata_zip()
+
+        # 🔐 Suppression du verrou juste après création du ZIP
+        try:
+            os.remove(os.path.join(UPLOAD_FOLDER, "merge_in_progress"))
+            print("🧹 Verrou merge_in_progress supprimé après création ZIP.")
+        except FileNotFoundError:
+            print("⚠️ Aucun verrou à supprimer : merge_in_progress absent.")
+
         return jsonify({"status": "ZIP créé avec succès"}), 200
+
     except Exception as e:
         print(f"❌ Erreur création ZIP : {e}")
         return jsonify({"error": str(e)}), 500

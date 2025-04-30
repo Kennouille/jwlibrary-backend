@@ -255,6 +255,7 @@
 
   </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.7.4/umd/index.js"></script>
 </head>
 <body>
 <div class="container">
@@ -480,10 +481,17 @@
         return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
       };
 
-      const collectMedia = async (zip, targetList, skipNames = ["userData.db"]) => {
+      const collectMedia = async (zip, targetList, skipNames = ["userData.db", "userData.db-shm", "userData.db-wal"]) => {
+        const skipSet = new Set(skipNames.map(n => n.toLowerCase()));
+
         for (const file of Object.values(zip.files)) {
-          const lowerName = file.name.toLowerCase();
-          if (skipNames.includes(lowerName)) continue;
+          const name = file.name.toLowerCase();
+
+          // 🔍 Ignore les fichiers dont le nom se termine par un nom interdit
+          if ([...skipSet].some(skip => name.endsWith(skip))) {
+            console.warn("⛔ Fichier ignoré :", file.name);
+            continue;
+          }
 
           const hash = await hashFile(file);
           targetList.push({ name: file.name, file, hash });
@@ -491,8 +499,10 @@
       };
 
 
-      await collectMedia(zip1, media1);
+
+      await collectMedia(zip1, media1); // skipNames est déjà par défaut
       await collectMedia(zip2, media2);
+
 
       // Comparaison des hash pour dédupliquer
       const hashSet1 = new Set(media1.map(m => m.hash));
@@ -501,8 +511,22 @@
       // Fusion des fichiers : tous ceux de file1 + ceux uniques de file2
       const combinedMedia = [...media1, ...uniqueMedia2];
 
+      // Juste avant de définir window.mediaToInclude :
+      window.mediaToInclude = await Promise.all(
+        combinedMedia.map(async (media) => ({
+          name: media.name,
+          file: await media.file.async("blob"),  // Conversion en Blob
+          hash: media.hash
+        }))
+      );
+
+      console.log("Structure de mediaToInclude[0]:", {
+        name: window.mediaToInclude[0]?.name,
+        fileType: window.mediaToInclude[0]?.file?.constructor?.name,
+        hash: window.mediaToInclude[0]?.hash
+      });
+
       // Préparer le zip à reconstruire plus tard (frontend)
-      window.mediaToInclude = combinedMedia;
       window.userData1 = userData1;
       window.userData2 = userData2;
 
@@ -560,7 +584,7 @@
       await updateProgress(95, "Reconstruction du fichier .jwlibrary...", 5);
       console.log("🚀 rebuildFinalZip() va être appelé");
 
-      await rebuildFinalZip();
+      await rebuildFinalZipVrai();
 
       await updateProgress(100, "Fichier prêt", 5);
       progressBar.classList.remove('progress-bar-animated');
@@ -580,9 +604,91 @@
       document.getElementById('merge-summary').classList.remove('hidden');
 
       document.getElementById("progressDetails").textContent = "✅ Téléchargement terminé ou en cours.";
+    } catch (error) {
+      console.error("Erreur:", error);
+      await updateProgress(currentProgress, `Erreur: ${error.message}`);
+      document.getElementById('mergeButton').disabled = false;
+    }
   }
 
   async function rebuildFinalZip() {
+    try {
+      console.log("📥 Téléchargement direct de userData_only.zip lancé...");
+
+      // 1️⃣ Télécharger le zip backend tel quel
+      const userdataZipBlob = await fetch(`${BASE_URL}/download_userdata_zip?ngrok-skip-browser-warning=true`)
+        .then(res => {
+          if (!res.ok) {
+            throw new Error("Erreur lors du téléchargement de userData_only.zip");
+          }
+          return res.blob();
+        });
+
+      // 2️⃣ Créer un lien pour télécharger ce zip directement comme merged.jwlibrary
+      const zipUrl = URL.createObjectURL(userdataZipBlob);
+      const link = document.createElement("a");
+      link.href = zipUrl;
+      link.download = "merged.jwlibrary";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(zipUrl);
+
+      console.log("🎯 Téléchargement direct de merged.jwlibrary terminé.");
+
+    } catch (error) {
+      console.error("❌ Erreur dans rebuildFinalZip:", error);
+    }
+  }
+
+  async function rebuildFinalZipVrai() {
+    try {
+      console.log("📥 Téléchargement de userData_only.zip...");
+
+      // 1️⃣ Télécharger le ZIP original
+      const userdataZipBuffer = await fetch(`${BASE_URL}/download_userdata_zip?ngrok-skip-browser-warning=true`)
+        .then(res => {
+          if (!res.ok) throw new Error("Erreur lors du téléchargement de userData_only.zip");
+          return res.arrayBuffer();
+        });
+
+      // 2️⃣ Désérialiser le ZIP avec fflate
+      const zip = fflate.unzipSync(new Uint8Array(userdataZipBuffer));
+      const zipObj = { ...zip }; // Clone propre
+
+      // 3️⃣ Ajouter les médias (s'ils existent)
+      if (window.mediaToInclude?.length) {
+        for (const media of window.mediaToInclude) {
+          const content = await media.file.arrayBuffer();
+          zipObj[media.name] = new Uint8Array(content);
+        }
+      }
+
+      console.log("✅ Médias ajoutés, génération du ZIP final...");
+
+      // 4️⃣ Recréer le ZIP final sans compression pour tout
+      const finalZip = fflate.zipSync(zipObj, { level: 0 }); // STORE compression (aucune)
+
+      // 5️⃣ Télécharger merged.jwlibrary
+      const zipUrl = URL.createObjectURL(new Blob([finalZip]));
+      const link = document.createElement("a");
+      link.href = zipUrl;
+      link.download = "merged.jwlibrary";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(zipUrl);
+
+      console.log("🎯 Téléchargement de merged.jwlibrary terminé !");
+
+    } catch (error) {
+      console.error("❌ Erreur dans rebuildFinalZipVrai:", error);
+    }
+  }
+
+
+
+  async function rebuildFinalZipAncien() {
     try {
       console.log("📥 Téléchargement de userData_only.zip lancé...");
 
@@ -634,7 +740,6 @@
       console.error("❌ Erreur dans rebuildFinalZip:", error);
     }
   }
-
 
 
 
