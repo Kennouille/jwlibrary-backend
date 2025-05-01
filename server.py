@@ -1442,17 +1442,12 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
 
-    # Étape 1 : suppression des lignes non mappées (IDs non issus du merge)
-    mapped_playlist_ids = set(item_id_map.values())
-    cursor.execute("SELECT PlaylistItemId FROM PlaylistItemLocationMap")
-    existing_ids = [row[0] for row in cursor.fetchall()]
+    # Étape 1: Vider complètement la table avant de la reconstruire
+    # (plus sûr que de supprimer sélectivement)
+    cursor.execute("DELETE FROM PlaylistItemLocationMap")
+    print("🗑️ Table PlaylistItemLocationMap vidée avant reconstruction")
 
-    to_delete = [pid for pid in existing_ids if pid not in mapped_playlist_ids]
-    for pid in to_delete:
-        cursor.execute("DELETE FROM PlaylistItemLocationMap WHERE PlaylistItemId = ?", (pid,))
-        print(f"🗑️ Supprimé : ligne avec PlaylistItemId={pid} (non mappé)")
-
-    # Étape 2 : insertion des lignes fusionnées (issues des mappings)
+    # Étape 2: insertion des lignes fusionnées (issues des mappings)
     for db_path in [file1_db, file2_db]:
         normalized_db = os.path.normpath(db_path)
         with sqlite3.connect(db_path) as src_conn:
@@ -1469,16 +1464,18 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
                 new_loc_id = location_id_map.get((normalized_db, old_loc_id))
 
                 if new_item_id is None or new_loc_id is None:
-                    continue  # On ignore les lignes sans mapping complet
+                    print(f"⚠️ Ignoré: item_id={old_item_id} ou location_id={old_loc_id} non mappé")
+                    continue
 
-                # Vérifie doublon exact
+                # Vérifie doublon exact (redondant maintenant qu'on a vidé la table)
                 cursor.execute("""
                     SELECT 1 FROM PlaylistItemLocationMap
                     WHERE PlaylistItemId = ? AND LocationId = ?
                 """, (new_item_id, new_loc_id))
                 exists = cursor.fetchone()
                 if exists:
-                    continue  # déjà inséré
+                    print(f"⚠️ Doublon détecté: Item {new_item_id}, Location {new_loc_id}")
+                    continue
 
                 # Insertion sûre
                 cursor.execute("""
@@ -1486,9 +1483,15 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
                     (PlaylistItemId, LocationId, MajorMultimediaType, BaseDurationTicks)
                     VALUES (?, ?, ?, ?)
                 """, (new_item_id, new_loc_id, mm_type, duration))
-                print(f"✅ Insertion : Item {new_item_id}, Location {new_loc_id}")
+                print(f"✅ Insertion: Item {new_item_id}, Location {new_loc_id}")
 
     conn.commit()
+
+    # Vérification finale
+    cursor.execute("SELECT COUNT(*) FROM PlaylistItemLocationMap")
+    count = cursor.fetchone()[0]
+    print(f"🔍 Total après fusion: {count} lignes")
+
     conn.close()
 
 
