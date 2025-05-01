@@ -1442,6 +1442,17 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
 
+    # Étape 1 : suppression des lignes non mappées (IDs non issus du merge)
+    mapped_playlist_ids = set(item_id_map.values())
+    cursor.execute("SELECT PlaylistItemId FROM PlaylistItemLocationMap")
+    existing_ids = [row[0] for row in cursor.fetchall()]
+
+    to_delete = [pid for pid in existing_ids if pid not in mapped_playlist_ids]
+    for pid in to_delete:
+        cursor.execute("DELETE FROM PlaylistItemLocationMap WHERE PlaylistItemId = ?", (pid,))
+        print(f"🗑️ Supprimé : ligne avec PlaylistItemId={pid} (non mappé)")
+
+    # Étape 2 : insertion des lignes fusionnées (issues des mappings)
     for db_path in [file1_db, file2_db]:
         normalized_db = os.path.normpath(db_path)
         with sqlite3.connect(db_path) as src_conn:
@@ -1457,21 +1468,19 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
                 new_item_id = item_id_map.get((normalized_db, old_item_id))
                 new_loc_id = location_id_map.get((normalized_db, old_loc_id))
 
-                # Si l’un des deux IDs n’a pas de mapping, on ignore complètement cette ligne
                 if new_item_id is None or new_loc_id is None:
-                    continue
+                    continue  # On ignore les lignes sans mapping complet
 
-                # Vérifier si une ligne identique existe déjà
+                # Vérifie doublon exact
                 cursor.execute("""
                     SELECT 1 FROM PlaylistItemLocationMap
                     WHERE PlaylistItemId = ? AND LocationId = ?
                 """, (new_item_id, new_loc_id))
                 exists = cursor.fetchone()
-
                 if exists:
-                    continue  # doublon exact, on ne réinsère pas
+                    continue  # déjà inséré
 
-                # Insertion de la ligne fusionnée
+                # Insertion sûre
                 cursor.execute("""
                     INSERT INTO PlaylistItemLocationMap
                     (PlaylistItemId, LocationId, MajorMultimediaType, BaseDurationTicks)
