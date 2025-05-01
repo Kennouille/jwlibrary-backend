@@ -1723,6 +1723,10 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map)
         print("--> PlaylistItemLocationMap fusionnée.")
 
+        # Nettoyage : retirer les mappings avec des PlaylistItemId fantômes
+        with sqlite3.connect(merged_db_path) as conn:
+            cleanup_playlist_item_location_map(conn)
+
         # ========================
         # Maintenant, on démarre les opérations qui ouvrent leurs propres connexions
         # ========================
