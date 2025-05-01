@@ -1701,32 +1701,27 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         max_acc_id = merge_playlist_item_accuracy(merged_db_path, file1_db, file2_db)
         print(f"--> PlaylistItemAccuracy fusionnée, max ID final: {max_acc_id}")
 
-        # 2. Fusion PlaylistItemLocationMap
-        merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map)
-        print("--> PlaylistItemLocationMap fusionnée.")
-
-        # 3. Fusion PlaylistItemMediaMap
-        # Fusion de PlaylistItemMediaMap
-        merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map)
-        print("--> PlaylistItemMediaMap fusionnée.")
-
-        # 4. Fusion PlaylistItemMarker
+        # 2. Fusion PlaylistItemMarker
         # Fusion de PlaylistItemMarker et récupération du mapping des markers
         marker_id_map = merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map)
         print(f"--> PlaylistItemMarker fusionnée, markers mappés: {len(marker_id_map)}")
 
-        # 5. Fusion des PlaylistItemMarkerMap et Marker*Map (BibleVerse/Paragraph)
+        # 3. Fusion des PlaylistItemMarkerMap et Marker*Map (BibleVerse/Paragraph)
         print("\n[FUSION MARKER MAPS]")
 
-        # 5.2. Fusion des PlaylistItemMarkerBibleVerseMap et ParagraphMap
+        # 4. Fusion des PlaylistItemMarkerBibleVerseMap et ParagraphMap
         # Fusion des MarkerMaps (BibleVerse, Paragraph, etc.)
         merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map)
         print("--> MarkerMaps fusionnées.")
 
-        # 6. Fusion de PlaylistItemIndependentMediaMap
+        # 5. Fusion de PlaylistItemIndependentMediaMap
         # Fusion de PlaylistItemMediaMap (basée sur PlaylistItemIndependentMediaMap)
         merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map)
         print("--> PlaylistItemMediaMap fusionnée.")
+
+        # 6. Fusion PlaylistItemLocationMap
+        merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map)
+        print("--> PlaylistItemLocationMap fusionnée.")
 
         # ========================
         # Maintenant, on démarre les opérations qui ouvrent leurs propres connexions

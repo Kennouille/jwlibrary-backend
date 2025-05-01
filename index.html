@@ -538,12 +538,11 @@
       await updateProgress(20, "Début de l'upload...", 2);
       await uploadWithProgress(`${BASE_URL}/upload`, formData);
 
-
       await updateProgress(50, "Extraction des données...", 3);
-      await simulateProcessing(3000, 80, "Analyse des contenus...", 3);
+      await simulateProcessing(3000, 70, "Analyse des contenus...", 3);
 
-      await updateProgress(90, "Fusion en cours...", 4);
       appendToMergeLog("Fusion en cours, veuillez patienter...");
+      await simulateProcessing(120000, 92, "Fusion en cours...", 4);
 
       const local_datetime = document.getElementById('local_datetime').value;
 
@@ -572,22 +571,15 @@
       progressBar.classList.remove('progress-bar-animated');
       document.getElementById('construction-container').classList.add('hidden');
 
-      await updateProgress(92, "Création du fichier ZIP final...", 5);
-      console.log("🧱 Appel à /create_zip_after_merge...");
+      // Création du ZIP (fluide 92 → 95%)
+      await simulateProcessing(40000, 95, "Création du fichier ZIP final...", 5);
+      await simulateProcessing(20000, 100, "Reconstruction du fichier .jwlibrary...", 5);
 
-      const zipResponse = await fetch(`${BASE_URL}/create_zip_after_merge`);
-      if (!zipResponse.ok) {
-        throw new Error("Erreur lors de la création du fichier ZIP après fusion.");
-      }
-      console.log("✅ ZIP backend créé avec succès.");
-
-      await updateProgress(95, "Reconstruction du fichier .jwlibrary...", 5);
       console.log("🚀 rebuildFinalZip() va être appelé");
 
-      await rebuildFinalZipAncien();
+      await rebuildFinalZip();
 
       await updateProgress(100, "Fichier prêt", 5);
-      progressBar.classList.remove('progress-bar-animated');
 
       const step5 = document.getElementById("step5");
       step5.classList.remove("active");
@@ -613,118 +605,42 @@
 
   async function rebuildFinalZip() {
     try {
-      console.log("📥 Téléchargement direct de userData_only.zip lancé...");
+      console.log("📥 Téléchargement des fichiers .db, .shm, .wal...");
 
-      // 1️⃣ Télécharger le zip backend tel quel
-      const userdataZipBlob = await fetch(`${BASE_URL}/download_userdata_zip?ngrok-skip-browser-warning=true`)
-        .then(res => {
-          if (!res.ok) {
-            throw new Error("Erreur lors du téléchargement de userData_only.zip");
-          }
-          return res.blob();
-        });
+      const fetchFile = async (name) => {
+        const res = await fetch(`${BASE_URL}/download/${name}?ngrok-skip-browser-warning=true`);
+        if (!res.ok) throw new Error(`Erreur lors du téléchargement de ${name}`);
+        return await res.blob();
+      };
 
-      // 2️⃣ Créer un lien pour télécharger ce zip directement comme merged.jwlibrary
-      const zipUrl = URL.createObjectURL(userdataZipBlob);
-      const link = document.createElement("a");
-      link.href = zipUrl;
-      link.download = "merged.jwlibrary";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(zipUrl);
+      const debugBlob = await fetchFile("debug_cleaned_before_copy.db");
+      const shmBlob = await fetchFile("debug_cleaned_before_copy.db-shm");
+      const walBlob = await fetchFile("debug_cleaned_before_copy.db-wal");
 
-      console.log("🎯 Téléchargement direct de merged.jwlibrary terminé.");
-
-    } catch (error) {
-      console.error("❌ Erreur dans rebuildFinalZip:", error);
-    }
-  }
-
-  async function rebuildFinalZipVrai() {
-    try {
-      console.log("📥 Téléchargement de userData_only.zip...");
-
-      // 1️⃣ Télécharger le ZIP original
-      const userdataZipBuffer = await fetch(`${BASE_URL}/download_userdata_zip?ngrok-skip-browser-warning=true`)
-        .then(res => {
-          if (!res.ok) throw new Error("Erreur lors du téléchargement de userData_only.zip");
-          return res.arrayBuffer();
-        });
-
-      // 2️⃣ Désérialiser le ZIP avec fflate
-      const zip = fflate.unzipSync(new Uint8Array(userdataZipBuffer));
-      const zipObj = { ...zip }; // Clone propre
-
-      // 3️⃣ Ajouter les médias (s'ils existent)
-      if (window.mediaToInclude?.length) {
-        for (const media of window.mediaToInclude) {
-          const content = await media.file.arrayBuffer();
-          zipObj[media.name] = new Uint8Array(content);
-        }
-      }
-
-      console.log("✅ Médias ajoutés, génération du ZIP final...");
-
-      // 4️⃣ Recréer le ZIP final sans compression pour tout
-      const finalZip = fflate.zipSync(zipObj, { level: 0 }); // STORE compression (aucune)
-
-      // 5️⃣ Télécharger merged.jwlibrary
-      const zipUrl = URL.createObjectURL(new Blob([finalZip]));
-      const link = document.createElement("a");
-      link.href = zipUrl;
-      link.download = "merged.jwlibrary";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(zipUrl);
-
-      console.log("🎯 Téléchargement de merged.jwlibrary terminé !");
-
-    } catch (error) {
-      console.error("❌ Erreur dans rebuildFinalZipVrai:", error);
-    }
-  }
-
-
-
-  async function rebuildFinalZipAncien() {
-    try {
-      console.log("📥 Téléchargement de userData_only.zip lancé...");
+      console.log("✅ Fichiers .db, .shm, .wal téléchargés");
 
       const zip = new JSZip();
 
-      // 1️⃣ Télécharger le zip backend (userData_only.zip)
-      const userdataZipBlob = await fetch(`${BASE_URL}/download_userdata_zip?ngrok-skip-browser-warning=true`)
-        .then(res => {
-          if (!res.ok) {
-            throw new Error("Erreur lors du téléchargement de userData_only.zip");
-          }
-          return res.blob();
-        });
+      // 🎯 Ajout des fichiers de base renommés
+      zip.file("userData.db", debugBlob, { binary: true, compression: "DEFLATE" });
+      zip.file("userData.db-shm", shmBlob, { binary: true, compression: "DEFLATE" });
+      zip.file("userData.db-wal", walBlob, { binary: true, compression: "DEFLATE" });
 
-      // 2️⃣ Charger le zip existant dans JSZip
-      const userdataZip = await JSZip.loadAsync(userdataZipBlob);
-
-      console.log("✅ userData_only.zip chargé, ajout des médias...");
-
-      // 3️⃣ Ajouter les fichiers médias (jpg, mp4, etc.)
-      if (window.mediaToInclude && Array.isArray(window.mediaToInclude)) {
+      // 🎯 Ajout des fichiers médias (jpg, png, mp4, etc.)
+      if (window.mediaToInclude?.length) {
         for (const media of window.mediaToInclude) {
-          const content = await media.file.async("blob");
-          userdataZip.file(media.name, content);
+          zip.file(media.name, media.file, { binary: true, compression: "DEFLATE" });
         }
       }
 
-      console.log("✅ Médias ajoutés, génération du fichier final...");
+      console.log("📦 Création de l'archive .jwlibrary avec JSZip...");
 
-      // 4️⃣ Générer le zip final (sans compression pour éviter tout risque)
-      const finalZip = await userdataZip.generateAsync({
+      const finalZip = await zip.generateAsync({
         type: "blob",
-        compression: "STORE" // Important : pas de compression pour préserver userData.db
+        compression: "DEFLATE",
+        compressionOptions: { level: 9 }
       });
 
-      // 5️⃣ Déclencher le téléchargement du merged.jwlibrary
       const zipUrl = URL.createObjectURL(finalZip);
       const link = document.createElement("a");
       link.href = zipUrl;
@@ -734,12 +650,12 @@
       document.body.removeChild(link);
       URL.revokeObjectURL(zipUrl);
 
-      console.log("🎯 Téléchargement de merged.jwlibrary terminé.");
-
+      console.log("🎯 Téléchargement de merged.jwlibrary terminé !");
     } catch (error) {
       console.error("❌ Erreur dans rebuildFinalZip:", error);
     }
   }
+
 
 
 
