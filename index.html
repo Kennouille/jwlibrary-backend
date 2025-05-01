@@ -439,13 +439,10 @@
       const file2 = document.getElementById('file2').files[0];
       const localDatetime = document.getElementById('local_datetime').value;
 
-      // Vérification des fichiers
       if (!file1 || !file2) throw new Error("Veuillez sélectionner deux fichiers .jwlibrary");
       if (!file1.name.endsWith('.jwlibrary') || !file2.name.endsWith('.jwlibrary')) {
         throw new Error("Les deux fichiers doivent avoir l'extension .jwlibrary");
       }
-
-      // Vérification de la date/heure locale
       if (!localDatetime) {
         throw new Error("Veuillez indiquer la date et l'heure locales actuelles");
       }
@@ -456,21 +453,17 @@
       await updateProgress(5, "Préparation des fichiers...", 1);
       await simulateProcessing(800, 20, "Chargement des fichiers...", 1);
 
-      // Nouvelle logique : extraire et filtrer les fichiers ZIP
       const zip1 = await JSZip.loadAsync(file1);
       const zip2 = await JSZip.loadAsync(file2);
 
-      // Récupération des userData.db
       const userData1 = await zip1.file("userData.db").async("blob");
       const userData2 = await zip2.file("userData.db").async("blob");
 
-      // Vérification taille des fichiers userData.db
-      const maxCombinedSize = 95 * 1024 * 1024; // 95MB
+      const maxCombinedSize = 95 * 1024 * 1024;
       if (userData1.size + userData2.size > maxCombinedSize) {
         throw new Error("Les fichiers userData.db sont trop volumineux (plus de 95MB combinés).");
       }
 
-      // Filtrage des fichiers médias (images / vidéos)
       const mediaExtensions = [".jpg", ".jpeg", ".png", ".mp4"];
       const media1 = [];
       const media2 = [];
@@ -483,54 +476,32 @@
 
       const collectMedia = async (zip, targetList, skipNames = ["userData.db", "userData.db-shm", "userData.db-wal"]) => {
         const skipSet = new Set(skipNames.map(n => n.toLowerCase()));
-
         for (const file of Object.values(zip.files)) {
           const name = file.name.toLowerCase();
-
-          // 🔍 Ignore les fichiers dont le nom se termine par un nom interdit
-          if ([...skipSet].some(skip => name.endsWith(skip))) {
-            // console.warn("⛔ Fichier ignoré :", file.name);
-            continue;
-          }
-
+          if ([...skipSet].some(skip => name.endsWith(skip))) continue;
           const hash = await hashFile(file);
           targetList.push({ name: file.name, file, hash });
         }
       };
 
-
-
-      await collectMedia(zip1, media1); // skipNames est déjà par défaut
+      await collectMedia(zip1, media1);
       await collectMedia(zip2, media2);
 
-
-      // Comparaison des hash pour dédupliquer
       const hashSet1 = new Set(media1.map(m => m.hash));
       const uniqueMedia2 = media2.filter(m => !hashSet1.has(m.hash));
-
-      // Fusion des fichiers : tous ceux de file1 + ceux uniques de file2
       const combinedMedia = [...media1, ...uniqueMedia2];
 
-      // Juste avant de définir window.mediaToInclude :
       window.mediaToInclude = await Promise.all(
         combinedMedia.map(async (media) => ({
           name: media.name,
-          file: await media.file.async("blob"),  // Conversion en Blob
+          file: await media.file.async("blob"),
           hash: media.hash
         }))
       );
 
-      // console.log("Structure de mediaToInclude[0]:", {
-        // name: window.mediaToInclude[0]?.name,
-        // fileType: window.mediaToInclude[0]?.file?.constructor?.name,
-        // hash: window.mediaToInclude[0]?.hash
-      // });
-
-      // Préparer le zip à reconstruire plus tard (frontend)
       window.userData1 = userData1;
       window.userData2 = userData2;
 
-      // Upload vers backend uniquement les 2 userData.db
       const formData = new FormData();
       formData.append("file1", new File([userData1], "userData1.db"));
       formData.append("file2", new File([userData2], "userData2.db"));
@@ -539,14 +510,11 @@
       await uploadWithProgress(`${BASE_URL}/upload`, formData);
 
       await updateProgress(50, "Extraction des données...", 3);
-      await simulateProcessing(3000, 70, "Analyse des contenus...", 3);
+      await simulateProcessing(3000, 80, "Analyse des contenus...", 3);
 
+      await updateProgress(90, "Fusion en cours...", 4);
       appendToMergeLog("Fusion en cours, veuillez patienter...");
-      await simulateProcessing(120000, 92, "Fusion en cours...", 4);
 
-      const local_datetime = document.getElementById('local_datetime').value;
-
-      // 💡 Ajout : animation fluide visible entre 90 et 99 %
       const progressBar = document.getElementById('progressBar');
       progressBar.classList.add('progress-bar-animated');
       document.getElementById('construction-container').classList.remove('hidden');
@@ -557,7 +525,7 @@
           "Content-Type": "application/json",
           "ngrok-skip-browser-warning": "true"
         },
-        body: JSON.stringify({ local_datetime })
+        body: JSON.stringify({ local_datetime: localDatetime })
       });
 
       if (!response.ok) throw new Error("Échec de la fusion");
@@ -571,15 +539,15 @@
       progressBar.classList.remove('progress-bar-animated');
       document.getElementById('construction-container').classList.add('hidden');
 
-      // Création du ZIP (fluide 92 → 95%)
-      await simulateProcessing(40000, 95, "Création du fichier ZIP final...", 5);
-      await simulateProcessing(20000, 100, "Reconstruction du fichier .jwlibrary...", 5);
+      await updateProgress(92, "Création du fichier ZIP final...", 5);
 
+      await updateProgress(95, "Reconstruction du fichier .jwlibrary...", 5);
       console.log("🚀 rebuildFinalZip() va être appelé");
 
       await rebuildFinalZip();
 
       await updateProgress(100, "Fichier prêt", 5);
+      progressBar.classList.remove('progress-bar-animated');
 
       const step5 = document.getElementById("step5");
       step5.classList.remove("active");
@@ -588,11 +556,11 @@
       document.getElementById("progressDetails").textContent = "Fichier prêt";
 
       const summaryText = document.getElementById('summary-text');
-      summaryText.innerHTML = `
-        La fusion est terminée. Les données identiques (notes, surlignages, marques-pages, playlists, etc.) ont été conservées.
+      summaryText.innerHTML =
+        `La fusion est terminée. Les données identiques (notes, surlignages, marques-pages, playlists, etc.) ont été conservées.
         Les éléments uniques de chaque fichier ont été ajoutés.<br><br>
-        <strong>💡 Une fois le téléchargement automatique effectué, tous les fichiers sont immédiatement effacés. Si le téléchargement ne s'est pas bien passé, actualise la page et renouvelle l'opération en entier.</strong>
-      `;
+        <strong>💡 Une fois le téléchargement automatique effectué, tous les fichiers sont immédiatement effacés. Si le téléchargement ne s'est pas bien passé, actualise la page et renouvelle l'opération en entier.</strong>`;
+
       document.getElementById('merge-summary').classList.remove('hidden');
 
       document.getElementById("progressDetails").textContent = "✅ Téléchargement terminé ou en cours.";
@@ -602,6 +570,8 @@
       document.getElementById('mergeButton').disabled = false;
     }
   }
+
+
 
   async function rebuildFinalZip() {
     try {

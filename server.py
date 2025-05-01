@@ -1457,29 +1457,24 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
                 new_item_id = item_id_map.get((normalized_db, old_item_id))
                 new_loc_id = location_id_map.get((normalized_db, old_loc_id))
 
-                if new_item_id is None:
-                    print(f"❌ Item ID non trouvé pour {old_item_id} dans {normalized_db}")
-                    continue
-                if new_loc_id is None:
-                    print(f"❌ Location ID non trouvé pour {old_loc_id} dans {normalized_db}")
+                # Si l’un des deux IDs n’a pas de mapping, on ignore complètement cette ligne
+                if new_item_id is None or new_loc_id is None:
                     continue
 
+                # Vérifier si une ligne identique existe déjà
                 cursor.execute("""
-                    SELECT MajorMultimediaType, BaseDurationTicks
-                    FROM PlaylistItemLocationMap
+                    SELECT 1 FROM PlaylistItemLocationMap
                     WHERE PlaylistItemId = ? AND LocationId = ?
                 """, (new_item_id, new_loc_id))
-                existing = cursor.fetchone()
+                exists = cursor.fetchone()
 
-                if existing:
-                    if existing == (mm_type, duration):
-                        print(f"⏩ Déjà présent et identique : Item {new_item_id}, Location {new_loc_id}")
-                    else:
-                        print(f"⚠️ Doublon conflictuel ignoré : Item {new_item_id}, Location {new_loc_id}")
-                    continue
+                if exists:
+                    continue  # doublon exact, on ne réinsère pas
 
+                # Insertion de la ligne fusionnée
                 cursor.execute("""
                     INSERT INTO PlaylistItemLocationMap
+                    (PlaylistItemId, LocationId, MajorMultimediaType, BaseDurationTicks)
                     VALUES (?, ?, ?, ?)
                 """, (new_item_id, new_loc_id, mm_type, duration))
                 print(f"✅ Insertion : Item {new_item_id}, Location {new_loc_id}")
