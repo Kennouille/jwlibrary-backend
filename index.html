@@ -584,7 +584,7 @@
       await updateProgress(95, "Reconstruction du fichier .jwlibrary...", 5);
       console.log("🚀 rebuildFinalZip() va être appelé");
 
-      await rebuildFinalZipVrai();
+      await rebuildFinalZipAncien();
 
       await updateProgress(100, "Fichier prêt", 5);
       progressBar.classList.remove('progress-bar-animated');

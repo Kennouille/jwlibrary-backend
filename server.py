@@ -2560,48 +2560,59 @@ def merge_data():
                 pass
 
 
-def create_userdata_zip():
-    print("🧹 Création du zip userData_only.zip après merge terminé...")
+# === 🔒 Ancienne méthode de génération ZIP backend (désactivée avec JSZip) ===
 
-    zip_filename = "userData_only.zip"
-    zip_path = os.path.join(UPLOAD_FOLDER, zip_filename)
-
-    debug_db_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
-    shm_path = debug_db_path + "-shm"
-    wal_path = debug_db_path + "-wal"
-
-    with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_STORED) as zipf:
-        zipf.write(debug_db_path, arcname="userData.db")
-        if os.path.exists(shm_path):
-            zipf.write(shm_path, arcname="userData.db-shm")
-        if os.path.exists(wal_path):
-            zipf.write(wal_path, arcname="userData.db-wal")
-
-    print(f"✅ Fichier ZIP final prêt : {zip_path}")
-
-
-@app.route("/create_zip_after_merge")
-def create_zip_after_merge():
-    start_time = time.time()
-
-    try:
-        create_userdata_zip()
-
-        # 🔐 Suppression du verrou juste après création du ZIP
-        try:
-            os.remove(os.path.join(UPLOAD_FOLDER, "merge_in_progress"))
-            print("🧹 Verrou merge_in_progress supprimé après création ZIP.")
-        except FileNotFoundError:
-            print("⚠️ Aucun verrou à supprimer : merge_in_progress absent.")
-
-        elapsed = time.time() - start_time
-        print(f"📦 Temps de création du ZIP : {elapsed:.2f} secondes")
-
-        return jsonify({"status": "ZIP créé avec succès"}), 200
-
-    except Exception as e:
-        print(f"❌ Erreur création ZIP : {e}")
-        return jsonify({"error": str(e)}), 500
+# def create_userdata_zip():
+#     print("🧹 Création du zip userData_only.zip après merge terminé...")
+#
+#     zip_filename = "userData_only.zip"
+#     zip_path = os.path.join(UPLOAD_FOLDER, zip_filename)
+#
+#     debug_db_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
+#     shm_path = debug_db_path + "-shm"
+#     wal_path = debug_db_path + "-wal"
+#
+#     with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_STORED) as zipf:
+#         zipf.write(debug_db_path, arcname="userData.db")
+#         if os.path.exists(shm_path):
+#             zipf.write(shm_path, arcname="userData.db-shm")
+#         if os.path.exists(wal_path):
+#             zipf.write(wal_path, arcname="userData.db-wal")
+#
+#     print(f"✅ Fichier ZIP final prêt : {zip_path}")
+#
+#
+# @app.route("/create_zip_after_merge")
+# def create_zip_after_merge():
+#     start_time = time.time()
+#
+#     try:
+#         create_userdata_zip()
+#
+#         # 🔐 Suppression du verrou juste après création du ZIP
+#         try:
+#             os.remove(os.path.join(UPLOAD_FOLDER, "merge_in_progress"))
+#             print("🧹 Verrou merge_in_progress supprimé après création ZIP.")
+#         except FileNotFoundError:
+#             print("⚠️ Aucun verrou à supprimer : merge_in_progress absent.")
+#
+#         elapsed = time.time() - start_time
+#         print(f"📦 Temps de création du ZIP : {elapsed:.2f} secondes")
+#
+#         return jsonify({"status": "ZIP créé avec succès"}), 200
+#
+#     except Exception as e:
+#         print(f"❌ Erreur création ZIP : {e}")
+#         return jsonify({"error": str(e)}), 500
+#
+#
+# @app.route("/download_userdata_zip")
+# def download_userdata_zip():
+#     zip_path = os.path.join(UPLOAD_FOLDER, "userData_only.zip")
+#     if not os.path.exists(zip_path):
+#         return jsonify({"error": "Fichier ZIP introuvable"}), 404
+#     print(f"📥 Envoi du ZIP : {zip_path}")
+#     return send_file(zip_path, as_attachment=True, download_name="userData_only.zip")
 
 
 @app.route("/download_debug_db")
@@ -2645,15 +2656,6 @@ def download_file(filename):
     response = send_file(path, as_attachment=True)
     response.headers.add("Access-Control-Allow-Origin", "*")
     return response
-
-
-@app.route("/download_userdata_zip")
-def download_userdata_zip():
-    zip_path = os.path.join(UPLOAD_FOLDER, "userData_only.zip")
-    if not os.path.exists(zip_path):
-        return jsonify({"error": "Fichier ZIP introuvable"}), 404
-    print(f"📥 Envoi du ZIP : {zip_path}")
-    return send_file(zip_path, as_attachment=True, download_name="userData_only.zip")
 
 
 @app.errorhandler(Exception)
