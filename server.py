@@ -795,19 +795,13 @@ def update_location_references(merged_db_path, location_replacements):
 
 
 def merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map):
-    """
-    Fusionne la table UserMark des deux bases sources dans la DB fusionnée de façon idempotente.
-    Pour chaque UserMark, un mapping (SourceDb, OldUserMarkId) -> NewUserMarkId est enregistré dans la table
-    MergeMapping_UserMark afin d'éviter les réinsertions en doublon.
-    Retourne un dictionnaire mapping de UserMark GUID vers NewUserMarkId.
-    """
     print("\n[FUSION USERMARK - IDÉMPOTENTE]")
     mapping = {}
 
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
 
-    # Créer la table de mapping pour UserMark si elle n'existe pas
+    # Créer la table de mapping
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS MergeMapping_UserMark (
             SourceDb TEXT,
@@ -839,33 +833,40 @@ def merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_
                 res = cursor.fetchone()
                 if res:
                     mapping[(db_path, old_um_id)] = res[0]
+                    mapping[guid] = res[0]
                     continue
 
                 # Appliquer mapping LocationId
                 new_loc = location_id_map.get((db_path, loc_id), loc_id) if loc_id is not None else None
 
-                # Rechercher doublon basé sur GUID
+                # Vérifier si le GUID existe déjà et récupérer toutes ses données
                 cursor.execute("""
                     SELECT UserMarkId, ColorIndex, LocationId, StyleIndex, Version 
-                    FROM UserMark
-                    WHERE UserMarkGuid = ?
+                    FROM UserMark WHERE UserMarkGuid = ?
                 """, (guid,))
                 existing = cursor.fetchone()
 
                 if existing:
-                    existing_id, ex_color, ex_loc, ex_style, ex_version = existing
-                    if (ex_color, ex_loc, ex_style, ex_version) == (color, new_loc, style, version):
+                    existing_id, existing_color, existing_loc, existing_style, existing_version = existing
+
+                    # Si toutes les données sont identiques, réutiliser l'ID existant
+                    if (color, new_loc, style, version) == (
+                    existing_color, existing_loc, existing_style, existing_version):
                         new_um_id = existing_id
-                        print(f"⏩ UserMark guid={guid} déjà présent (identique), réutilisé.")
+                        print(f"⏩ UserMark guid={guid} déjà présent (identique), réutilisé (ID={new_um_id})")
                     else:
+                        # Données différentes - générer un nouveau GUID
+                        new_guid = str(uuid.uuid4())
                         max_id += 1
                         new_um_id = max_id
                         cursor.execute("""
                             INSERT INTO UserMark (UserMarkId, ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version)
                             VALUES (?, ?, ?, ?, ?, ?)
-                        """, (new_um_id, color, new_loc, style, guid, version))
-                        print(f"⚠️ Conflit UserMark guid={guid}, nouvelle entrée créée (NewID={new_um_id})")
+                        """, (new_um_id, color, new_loc, style, new_guid, version))
+                        print(
+                            f"⚠️ Conflit UserMark guid={guid}, nouvelle entrée créée avec nouveau GUID (NewID={new_um_id})")
                 else:
+                    # Nouvel enregistrement
                     max_id += 1
                     new_um_id = max_id
                     cursor.execute("""
@@ -874,17 +875,16 @@ def merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_
                     """, (new_um_id, color, new_loc, style, guid, version))
                     print(f"✅ Insertion UserMark guid={guid}, NewID={new_um_id}")
 
+                # Mise à jour des mappings
                 mapping[(db_path, old_um_id)] = new_um_id
-                mapping[guid] = new_um_id  # aussi par GUID
+                mapping[guid] = new_um_id
                 cursor.execute("""
-                    INSERT INTO MergeMapping_UserMark (SourceDb, OldUserMarkId, NewUserMarkId)
+                    INSERT OR REPLACE INTO MergeMapping_UserMark (SourceDb, OldUserMarkId, NewUserMarkId)
                     VALUES (?, ?, ?)
                 """, (db_path, old_um_id, new_um_id))
 
-    # 🔥 Un seul commit à la fin
     conn.commit()
     conn.close()
-
     print("Fusion UserMark terminée (idempotente).")
     return mapping
 
@@ -1814,6 +1814,24 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
                 pass
 
 
+def check_duplicate_guids_between_sources(file1_db, file2_db):
+    """Vérifie s'il y a des GUIDs en commun entre les deux sources"""
+    guids_file1 = set()
+    guids_file2 = set()
+
+    with sqlite3.connect(file1_db) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT UserMarkGuid FROM UserMark")
+        guids_file1 = {row[0] for row in cursor.fetchall()}
+
+    with sqlite3.connect(file2_db) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT UserMarkGuid FROM UserMark")
+        guids_file2 = {row[0] for row in cursor.fetchall()}
+
+    return guids_file1 & guids_file2
+
+
 def create_note_mapping(merged_db_path, file1_db, file2_db):
     """Crée un mapping (source_db_path, old_note_id) -> new_note_id en se basant sur les GUID."""
     mapping = {}
@@ -1945,13 +1963,41 @@ def merge_data():
         # ❌ NE PAS appeler merge_playlist_items ici
         # item_id_map = merge_playlist_items(...)
 
+        common_guids = check_duplicate_guids_between_sources(file1_db, file2_db)
+        if common_guids:
+            print(f"⚠️ Attention: {len(common_guids)} GUIDs en commun entre les deux sources")
+            # Afficher les 5 premiers pour le debug
+            for guid in list(common_guids)[:5]:
+                print(f"- {guid}")
+        else:
+            print("✅ Aucun GUID en commun entre les deux sources")
+
         try:
             usermark_guid_map = merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_map)
+
         except Exception as e:
             import traceback
             print(f"❌ Erreur dans merge_usermark_from_sources : {e}")
             traceback.print_exc()
             raise
+
+        # Après le bloc try/except de merge_usermark_from_sources
+        with sqlite3.connect(merged_db_path) as conn:
+            cursor = conn.cursor()
+            # Vérifier les doublons potentiels
+            cursor.execute("""
+                SELECT UserMarkGuid, COUNT(*) as cnt 
+                FROM UserMark 
+                GROUP BY UserMarkGuid 
+                HAVING cnt > 1
+            """)
+            duplicates = cursor.fetchall()
+            if duplicates:
+                print("⚠️ Attention: GUIDs dupliqués détectés après fusion:")
+                for guid, count in duplicates:
+                    print(f"- {guid}: {count} occurrences")
+            else:
+                print("✅ Aucun GUID dupliqué détecté après fusion")
 
         # Gestion spécifique de LastModified
         conn = sqlite3.connect(merged_db_path)
