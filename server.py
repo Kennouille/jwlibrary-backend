@@ -2671,9 +2671,9 @@ def handle_exception(e):
     return response, 500
 
 
-@app.route('/')
-def home():
-    return jsonify({"message": "Le serveur Flask fonctionne 🎉"})
+@app.route("/")
+def index():
+    return jsonify(message="Le serveur Flask fonctionne 🎉"), 200
 
 
 if __name__ == '__main__':
