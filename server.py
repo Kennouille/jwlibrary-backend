@@ -1860,6 +1860,29 @@ def create_note_mapping(merged_db_path, file1_db, file2_db):
     return mapping or {}
 
 
+def merge_android_metadata(merged_db_path, db1_path, db2_path):
+    print("🔧 Fusion de android_metadata")
+    locales = set()
+
+    for db_path in [db1_path, db2_path]:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT locale FROM android_metadata")
+                for row in cursor.fetchall():
+                    locales.add(row[0])
+            except Exception as e:
+                print(f"⚠️ Erreur lecture android_metadata depuis {db_path}: {e}")
+
+    with sqlite3.connect(merged_db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM android_metadata")
+        for loc in locales:
+            print(f"✅ INSERT android_metadata.locale = {loc}")
+            cursor.execute("INSERT INTO android_metadata (locale) VALUES (?)", (loc,))
+        conn.commit()
+
+
 @app.route('/merge', methods=['POST'])
 def merge_data():
     start_time = time.time()
@@ -2231,7 +2254,7 @@ def merge_data():
                 exclude_tables=[
                     'Note', 'UserMark', 'Location', 'BlockRange',
                     'LastModified', 'Tag', 'TagMap', 'PlaylistItem',
-                    'InputField', 'Bookmark'
+                    'InputField', 'Bookmark', 'android_metadata'
                 ]
             )
         except Exception as e:
@@ -2239,6 +2262,8 @@ def merge_data():
             print(f"❌ Erreur dans merge_other_tables : {e}")
             traceback.print_exc()
             raise
+
+        merge_android_metadata(merged_db_path, file1_db, file2_db)
 
         # ─── Après merge_other_tables ───────────────────────────────────────────
         print("\n--- COMPTES APRÈS merge_other_tables ---")
