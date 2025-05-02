@@ -2671,9 +2671,18 @@ def handle_exception(e):
     return response, 500
 
 
+import json
+from flask import Response
+
+
 @app.route("/")
 def index():
-    return jsonify(message="Le serveur Flask fonctionne 🎉"), 200
+    message = {"message": "Le serveur Flask fonctionne 🎉"}
+    return Response(
+        response=json.dumps(message, ensure_ascii=False),
+        status=200,
+        mimetype='application/json'
+    )
 
 
 if __name__ == '__main__':
