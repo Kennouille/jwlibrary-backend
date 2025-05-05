@@ -1901,45 +1901,40 @@ def merge_grdb_migrations(merged_db_path, db1_path, db2_path):
     print("🔧 Fusion de grdb_migrations")
     identifiers = set()
 
-    # Récupérer tous les identifiers des deux bases
+    # 1. Lire les identifiants depuis les deux bases (en mode lecture seule)
     for db_path in [db1_path, db2_path]:
-        conn = None
         try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT identifier FROM grdb_migrations")
-            for row in cursor.fetchall():
-                identifiers.add(row[0])
-        except sqlite3.OperationalError:
-            print(f"ℹ️ Table grdb_migrations absente de {db_path}")
+            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=15) as conn:  # Mode lecture seule
+                cursor = conn.cursor()
+                try:
+                    cursor.execute("SELECT identifier FROM grdb_migrations")
+                    identifiers.update(row[0] for row in cursor.fetchall())
+                except sqlite3.OperationalError:
+                    print(f"ℹ️ Table grdb_migrations absente de {db_path}")
         except Exception as e:
-            print(f"⚠️ Erreur lecture grdb_migrations depuis {db_path}: {e}")
-        finally:
-            if conn:
-                conn.close()
+            print(f"⚠️ Erreur lecture depuis {db_path}: {e}")
 
     if not identifiers:
         print("⏭️ Aucune donnée grdb_migrations à fusionner.")
         return
 
-    # Créer la table si elle n'existe pas, puis insérer les données uniques
-    conn = None
+    # 2. Écrire dans la base fusionnée (avec timeout + WAL)
     try:
-        conn = sqlite3.connect(merged_db_path)
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS grdb_migrations (
-                identifier TEXT NOT NULL PRIMARY KEY
-            )
-        """)
-        cursor.execute("DELETE FROM grdb_migrations")
-        for ident in sorted(identifiers):
-            print(f"✅ INSERT grdb_migrations.identifier = {ident}")
-            cursor.execute("INSERT INTO grdb_migrations (identifier) VALUES (?)", (ident,))
-        conn.commit()
-    finally:
-        if conn:
-            conn.close()
+        with sqlite3.connect(merged_db_path, timeout=20) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")  # Mode WAL pour éviter les locks
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS grdb_migrations (
+                    identifier TEXT NOT NULL PRIMARY KEY
+                )
+            """)
+            for ident in sorted(identifiers):
+                print(f"✅ INSERT OR IGNORE grdb_migrations.identifier = {ident}")
+                cursor.execute("INSERT OR IGNORE INTO grdb_migrations (identifier) VALUES (?)", (ident,))
+            conn.commit()  # Valider les changements
+    except Exception as e:
+        print(f"❌ Erreur écriture dans la base fusionnée: {e}")
+        raise  # Relancer l'erreur pour la tracer
 
 
 @app.route('/merge', methods=['POST'])
@@ -2323,7 +2318,7 @@ def merge_data():
             raise
 
         merge_android_metadata(merged_db_path, file1_db, file2_db)
-        # merge_grdb_migrations(merged_db_path, file1_db, file2_db)
+        merge_grdb_migrations(merged_db_path, file1_db, file2_db)
 
         # ─── Après merge_other_tables ───────────────────────────────────────────
         print("\n--- COMPTES APRÈS merge_other_tables ---")
