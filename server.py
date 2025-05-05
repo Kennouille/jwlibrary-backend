@@ -2286,21 +2286,22 @@ def merge_data():
         with sqlite3.connect(merged_db_path) as dbg_conn:
             dbg_cur = dbg_conn.cursor()
             for tbl in tables_to_check:
-                # compte dans la base fusionnée
                 dbg_cur.execute(f"SELECT COUNT(*) FROM {tbl}")
                 cnt_merged = dbg_cur.fetchone()[0]
-                # compte dans file1
+
                 dbg_cur.execute(f"ATTACH DATABASE ? AS src1", (file1_db,))
                 dbg_cur.execute(f"SELECT COUNT(*) FROM src1.{tbl}")
                 cnt1 = dbg_cur.fetchone()[0]
                 dbg_cur.execute("DETACH DATABASE src1")
-                # compte dans file2
+
                 dbg_cur.execute(f"ATTACH DATABASE ? AS src2", (file2_db,))
                 dbg_cur.execute(f"SELECT COUNT(*) FROM src2.{tbl}")
                 cnt2 = dbg_cur.fetchone()[0]
                 dbg_cur.execute("DETACH DATABASE src2")
+
                 print(f"[AVANT ] {tbl}: merged={cnt_merged}, file1={cnt1}, file2={cnt2}")
 
+        # Fermer toutes les connexions avant les appels suivants
         try:
             merge_other_tables(
                 merged_db_path,
@@ -2318,8 +2319,8 @@ def merge_data():
             traceback.print_exc()
             raise
 
+        # Ces deux fonctions n'ont aucune dépendance ouverte maintenant
         merge_android_metadata(merged_db_path, file1_db, file2_db)
-        time.sleep(1)  # Pause d'une seconde
         merge_grdb_migrations(merged_db_path, file1_db, file2_db)
 
         # ─── Après merge_other_tables ───────────────────────────────────────────
@@ -2329,14 +2330,17 @@ def merge_data():
             for tbl in tables_to_check:
                 dbg_cur.execute(f"SELECT COUNT(*) FROM {tbl}")
                 cnt_merged = dbg_cur.fetchone()[0]
+
                 dbg_cur.execute(f"ATTACH DATABASE ? AS src1", (file1_db,))
                 dbg_cur.execute(f"SELECT COUNT(*) FROM src1.{tbl}")
                 cnt1 = dbg_cur.fetchone()[0]
                 dbg_cur.execute("DETACH DATABASE src1")
+
                 dbg_cur.execute(f"ATTACH DATABASE ? AS src2", (file2_db,))
                 dbg_cur.execute(f"SELECT COUNT(*) FROM src2.{tbl}")
                 cnt2 = dbg_cur.fetchone()[0]
                 dbg_cur.execute("DETACH DATABASE src2")
+
                 print(f"[APRÈS] {tbl}: merged={cnt_merged}, file1={cnt1}, file2={cnt2}")
 
         # 8. Vérification finale des thumbnails
