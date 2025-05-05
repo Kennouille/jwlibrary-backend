@@ -1864,14 +1864,13 @@ def merge_android_metadata(merged_db_path, db1_path, db2_path):
     print("🔧 Fusion de android_metadata")
     locales = set()
 
-    # Collecte des locales si la table existe
+    # Collecter les locales si la table existe
     for db_path in [db1_path, db2_path]:
         try:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT locale FROM android_metadata")
-                for row in cursor.fetchall():
-                    locales.add(row[0])
+                locales.update(row[0] for row in cursor.fetchall())
         except sqlite3.OperationalError:
             print(f"ℹ️ Table android_metadata absente de {db_path}")
         except Exception as e:
@@ -1882,35 +1881,33 @@ def merge_android_metadata(merged_db_path, db1_path, db2_path):
         return
 
     try:
-        conn = sqlite3.connect(merged_db_path)
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS android_metadata (
-                locale TEXT
-            )
-        """)
-        cursor.execute("DELETE FROM android_metadata")
-        for loc in sorted(locales):
-            print(f"✅ INSERT android_metadata.locale = {loc}")
-            cursor.execute("INSERT INTO android_metadata (locale) VALUES (?)", (loc,))
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
+        with sqlite3.connect(merged_db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS android_metadata (
+                    locale TEXT
+                )
+            """)
+            cursor.execute("DELETE FROM android_metadata")
+            for loc in locales:
+                print(f"✅ INSERT android_metadata.locale = {loc}")
+                cursor.execute("INSERT INTO android_metadata (locale) VALUES (?)", (loc,))
+            conn.commit()
+    except Exception as e:
+        print(f"❌ Erreur dans merge_android_metadata : {e}")
 
 
 def merge_grdb_migrations(merged_db_path, db1_path, db2_path):
     print("🔧 Fusion de grdb_migrations")
     identifiers = set()
 
-    # Récupérer tous les identifiers des deux bases (si la table existe)
+    # Collecter les identifiers
     for db_path in [db1_path, db2_path]:
         try:
             with sqlite3.connect(db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("SELECT identifier FROM grdb_migrations")
-                for row in cursor.fetchall():
-                    identifiers.add(row[0])
+                identifiers.update(row[0] for row in cursor.fetchall())
         except sqlite3.OperationalError:
             print(f"ℹ️ Table grdb_migrations absente de {db_path}")
         except Exception as e:
@@ -1921,21 +1918,20 @@ def merge_grdb_migrations(merged_db_path, db1_path, db2_path):
         return
 
     try:
-        conn = sqlite3.connect(merged_db_path)
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS grdb_migrations (
-                identifier TEXT NOT NULL PRIMARY KEY
-            )
-        """)
-        cursor.execute("DELETE FROM grdb_migrations")
-        for ident in sorted(identifiers):
-            print(f"✅ INSERT grdb_migrations.identifier = {ident}")
-            cursor.execute("INSERT INTO grdb_migrations (identifier) VALUES (?)", (ident,))
-        conn.commit()
-    finally:
-        cursor.close()
-        conn.close()
+        with sqlite3.connect(merged_db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS grdb_migrations (
+                    identifier TEXT NOT NULL PRIMARY KEY
+                )
+            """)
+            cursor.execute("DELETE FROM grdb_migrations")
+            for ident in sorted(identifiers):
+                print(f"✅ INSERT grdb_migrations.identifier = {ident}")
+                cursor.execute("INSERT INTO grdb_migrations (identifier) VALUES (?)", (ident,))
+            conn.commit()
+    except Exception as e:
+        print(f"❌ Erreur dans merge_grdb_migrations : {e}")
 
 
 @app.route('/merge', methods=['POST'])
