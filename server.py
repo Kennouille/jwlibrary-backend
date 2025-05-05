@@ -2315,9 +2315,7 @@ def merge_data():
             traceback.print_exc()
             raise
 
-        # Ces deux fonctions n'ont aucune dépendance ouverte maintenant
         merge_android_metadata(merged_db_path, file1_db, file2_db)
-        merge_grdb_migrations(merged_db_path, file1_db, file2_db)
 
         # ─── Après merge_other_tables ───────────────────────────────────────────
         print("\n--- COMPTES APRÈS merge_other_tables ---")
@@ -2338,6 +2336,8 @@ def merge_data():
                 dbg_cur.execute("DETACH DATABASE src2")
 
                 print(f"[APRÈS] {tbl}: merged={cnt_merged}, file1={cnt1}, file2={cnt2}")
+
+        merge_grdb_migrations(merged_db_path, file1_db, file2_db)
 
         # 8. Vérification finale des thumbnails
         print("\n[VÉRIFICATION THUMBNAILS ORPHELINS]")
