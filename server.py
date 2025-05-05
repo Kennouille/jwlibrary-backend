@@ -1860,10 +1860,11 @@ def create_note_mapping(merged_db_path, file1_db, file2_db):
     return mapping or {}
 
 
-def merge_android_metadata_safe(merged_db_path, db1_path, db2_path):
+def merge_android_metadata(merged_db_path, db1_path, db2_path):
     print("🔧 Fusion de android_metadata")
     locales = set()
 
+    # Collecte
     for db_path in [db1_path, db2_path]:
         try:
             with sqlite3.connect(db_path) as conn:
@@ -1880,17 +1881,22 @@ def merge_android_metadata_safe(merged_db_path, db1_path, db2_path):
         print("⏭️ Aucune donnée android_metadata à fusionner.")
         return
 
-    with sqlite3.connect(merged_db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("CREATE TABLE IF NOT EXISTS android_metadata (locale TEXT)")
-        cursor.execute("DELETE FROM android_metadata")
-        for loc in sorted(locales):
-            print(f"✅ INSERT android_metadata.locale = {loc}")
-            cursor.execute("INSERT INTO android_metadata (locale) VALUES (?)", (loc,))
-        conn.commit()
+    # Écriture (dans une transaction indépendante)
+    try:
+        with sqlite3.connect(merged_db_path, timeout=10) as conn:
+            cursor = conn.cursor()
+            cursor.execute("CREATE TABLE IF NOT EXISTS android_metadata (locale TEXT)")
+            cursor.execute("DELETE FROM android_metadata")
+            for loc in sorted(locales):
+                print(f"✅ INSERT android_metadata.locale = {loc}")
+                cursor.execute("INSERT INTO android_metadata (locale) VALUES (?)", (loc,))
+            conn.commit()
+    except Exception as e:
+        print(f"❌ Erreur d’écriture dans android_metadata : {e}")
+        raise
 
 
-def merge_grdb_migrations_safe(merged_db_path, db1_path, db2_path):
+def merge_grdb_migrations(merged_db_path, db1_path, db2_path):
     print("🔧 Fusion de grdb_migrations")
     identifiers = set()
 
@@ -1910,18 +1916,22 @@ def merge_grdb_migrations_safe(merged_db_path, db1_path, db2_path):
         print("⏭️ Aucune donnée grdb_migrations à fusionner.")
         return
 
-    with sqlite3.connect(merged_db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS grdb_migrations (
-                identifier TEXT NOT NULL PRIMARY KEY
-            )
-        """)
-        cursor.execute("DELETE FROM grdb_migrations")
-        for ident in sorted(identifiers):
-            print(f"✅ INSERT grdb_migrations.identifier = {ident}")
-            cursor.execute("INSERT INTO grdb_migrations (identifier) VALUES (?)", (ident,))
-        conn.commit()
+    try:
+        with sqlite3.connect(merged_db_path, timeout=10) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS grdb_migrations (
+                    identifier TEXT NOT NULL PRIMARY KEY
+                )
+            """)
+            cursor.execute("DELETE FROM grdb_migrations")
+            for ident in sorted(identifiers):
+                print(f"✅ INSERT grdb_migrations.identifier = {ident}")
+                cursor.execute("INSERT INTO grdb_migrations (identifier) VALUES (?)", (ident,))
+            conn.commit()
+    except Exception as e:
+        print(f"❌ Erreur d’écriture dans grdb_migrations : {e}")
+        raise
 
 
 @app.route('/merge', methods=['POST'])
@@ -2170,6 +2180,14 @@ def merge_data():
         print("\n=== PRÊT POUR FUSION ===\n")
 
         try:
+            merge_grdb_migrations(merged_db_path, file1_db, file2_db)
+        except Exception as e:
+            import traceback
+            print(f"❌ Erreur dans merge_grdb_migrations : {e}")
+            traceback.print_exc()
+            raise
+
+        try:
             merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map)
         except Exception as e:
             import traceback
@@ -2305,8 +2323,7 @@ def merge_data():
             traceback.print_exc()
             raise
 
-        merge_android_metadata_safe(merged_db_path, file1_db, file2_db)
-        merge_grdb_migrations_safe(merged_db_path, file1_db, file2_db)
+        merge_android_metadata(merged_db_path, file1_db, file2_db)
 
         # ─── Après merge_other_tables ───────────────────────────────────────────
         print("\n--- COMPTES APRÈS merge_other_tables ---")
