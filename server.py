@@ -1860,40 +1860,67 @@ def create_note_mapping(merged_db_path, file1_db, file2_db):
     return mapping or {}
 
 
-def merge_android_metadata(merged_db_path, db1_path, db2_path):
+def merge_android_metadata_safe(merged_db_path, db1_path, db2_path):
     print("🔧 Fusion de android_metadata")
     locales = set()
 
-    # Collecter les locales si la table existe
     for db_path in [db1_path, db2_path]:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            try:
+        try:
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.cursor()
                 cursor.execute("SELECT locale FROM android_metadata")
                 for row in cursor.fetchall():
                     locales.add(row[0])
-            except sqlite3.OperationalError:
-                print(f"ℹ️ Table android_metadata absente de {db_path}")
-            except Exception as e:
-                print(f"⚠️ Erreur lecture android_metadata depuis {db_path}: {e}")
+        except sqlite3.OperationalError:
+            print(f"ℹ️ Table android_metadata absente de {db_path}")
+        except Exception as e:
+            print(f"⚠️ Erreur lecture android_metadata depuis {db_path}: {e}")
 
-    # Si aucune locale trouvée, on ne fait rien
     if not locales:
         print("⏭️ Aucune donnée android_metadata à fusionner.")
         return
 
-    # Vérifier si la table existe dans la base fusionnée, sinon la créer
+    with sqlite3.connect(merged_db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("CREATE TABLE IF NOT EXISTS android_metadata (locale TEXT)")
+        cursor.execute("DELETE FROM android_metadata")
+        for loc in sorted(locales):
+            print(f"✅ INSERT android_metadata.locale = {loc}")
+            cursor.execute("INSERT INTO android_metadata (locale) VALUES (?)")
+        conn.commit()
+
+
+def merge_grdb_migrations_safe(merged_db_path, db1_path, db2_path):
+    print("🔧 Fusion de grdb_migrations")
+    identifiers = set()
+
+    for db_path in [db1_path, db2_path]:
+        try:
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT identifier FROM grdb_migrations")
+                for row in cursor.fetchall():
+                    identifiers.add(row[0])
+        except sqlite3.OperationalError:
+            print(f"ℹ️ Table grdb_migrations absente de {db_path}")
+        except Exception as e:
+            print(f"⚠️ Erreur lecture grdb_migrations depuis {db_path}: {e}")
+
+    if not identifiers:
+        print("⏭️ Aucune donnée grdb_migrations à fusionner.")
+        return
+
     with sqlite3.connect(merged_db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS android_metadata (
-                locale TEXT
+            CREATE TABLE IF NOT EXISTS grdb_migrations (
+                identifier TEXT NOT NULL PRIMARY KEY
             )
         """)
-        cursor.execute("DELETE FROM android_metadata")
-        for loc in locales:
-            print(f"✅ INSERT android_metadata.locale = {loc}")
-            cursor.execute("INSERT INTO android_metadata (locale) VALUES (?)", (loc,))
+        cursor.execute("DELETE FROM grdb_migrations")
+        for ident in sorted(identifiers):
+            print(f"✅ INSERT grdb_migrations.identifier = {ident}")
+            cursor.execute("INSERT INTO grdb_migrations (identifier) VALUES (?)", (ident,))
         conn.commit()
 
 
@@ -2245,21 +2272,22 @@ def merge_data():
         with sqlite3.connect(merged_db_path) as dbg_conn:
             dbg_cur = dbg_conn.cursor()
             for tbl in tables_to_check:
-                # compte dans la base fusionnée
                 dbg_cur.execute(f"SELECT COUNT(*) FROM {tbl}")
                 cnt_merged = dbg_cur.fetchone()[0]
-                # compte dans file1
+
                 dbg_cur.execute(f"ATTACH DATABASE ? AS src1", (file1_db,))
                 dbg_cur.execute(f"SELECT COUNT(*) FROM src1.{tbl}")
                 cnt1 = dbg_cur.fetchone()[0]
                 dbg_cur.execute("DETACH DATABASE src1")
-                # compte dans file2
+
                 dbg_cur.execute(f"ATTACH DATABASE ? AS src2", (file2_db,))
                 dbg_cur.execute(f"SELECT COUNT(*) FROM src2.{tbl}")
                 cnt2 = dbg_cur.fetchone()[0]
                 dbg_cur.execute("DETACH DATABASE src2")
+
                 print(f"[AVANT ] {tbl}: merged={cnt_merged}, file1={cnt1}, file2={cnt2}")
 
+        # Fermer toutes les connexions avant les appels suivants
         try:
             merge_other_tables(
                 merged_db_path,
@@ -2268,7 +2296,7 @@ def merge_data():
                 exclude_tables=[
                     'Note', 'UserMark', 'Location', 'BlockRange',
                     'LastModified', 'Tag', 'TagMap', 'PlaylistItem',
-                    'InputField', 'Bookmark', 'android_metadata'
+                    'InputField', 'Bookmark', 'android_metadata', 'grdb_migrations'
                 ]
             )
         except Exception as e:
@@ -2277,7 +2305,8 @@ def merge_data():
             traceback.print_exc()
             raise
 
-        merge_android_metadata(merged_db_path, file1_db, file2_db)
+        merge_android_metadata_safe(merged_db_path, file1_db, file2_db)
+        merge_grdb_migrations_safe(merged_db_path, file1_db, file2_db)
 
         # ─── Après merge_other_tables ───────────────────────────────────────────
         print("\n--- COMPTES APRÈS merge_other_tables ---")
@@ -2286,14 +2315,17 @@ def merge_data():
             for tbl in tables_to_check:
                 dbg_cur.execute(f"SELECT COUNT(*) FROM {tbl}")
                 cnt_merged = dbg_cur.fetchone()[0]
+
                 dbg_cur.execute(f"ATTACH DATABASE ? AS src1", (file1_db,))
                 dbg_cur.execute(f"SELECT COUNT(*) FROM src1.{tbl}")
                 cnt1 = dbg_cur.fetchone()[0]
                 dbg_cur.execute("DETACH DATABASE src1")
+
                 dbg_cur.execute(f"ATTACH DATABASE ? AS src2", (file2_db,))
                 dbg_cur.execute(f"SELECT COUNT(*) FROM src2.{tbl}")
                 cnt2 = dbg_cur.fetchone()[0]
                 dbg_cur.execute("DETACH DATABASE src2")
+
                 print(f"[APRÈS] {tbl}: merged={cnt_merged}, file1={cnt1}, file2={cnt2}")
 
         # 8. Vérification finale des thumbnails
