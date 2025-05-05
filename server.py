@@ -2323,7 +2323,7 @@ def merge_data():
             raise
 
         merge_android_metadata(merged_db_path, file1_db, file2_db)
-        merge_grdb_migrations(merged_db_path, file1_db, file2_db)
+        # merge_grdb_migrations(merged_db_path, file1_db, file2_db)
 
         # ─── Après merge_other_tables ───────────────────────────────────────────
         print("\n--- COMPTES APRÈS merge_other_tables ---")
