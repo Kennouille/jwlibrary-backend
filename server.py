@@ -1864,6 +1864,7 @@ def merge_android_metadata(merged_db_path, db1_path, db2_path):
     print("🔧 Fusion de android_metadata")
     locales = set()
 
+    # Collecter les locales si la table existe
     for db_path in [db1_path, db2_path]:
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
@@ -1871,11 +1872,24 @@ def merge_android_metadata(merged_db_path, db1_path, db2_path):
                 cursor.execute("SELECT locale FROM android_metadata")
                 for row in cursor.fetchall():
                     locales.add(row[0])
+            except sqlite3.OperationalError:
+                print(f"ℹ️ Table android_metadata absente de {db_path}")
             except Exception as e:
                 print(f"⚠️ Erreur lecture android_metadata depuis {db_path}: {e}")
 
+    # Si aucune locale trouvée, on ne fait rien
+    if not locales:
+        print("⏭️ Aucune donnée android_metadata à fusionner.")
+        return
+
+    # Vérifier si la table existe dans la base fusionnée, sinon la créer
     with sqlite3.connect(merged_db_path) as conn:
         cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS android_metadata (
+                locale TEXT
+            )
+        """)
         cursor.execute("DELETE FROM android_metadata")
         for loc in locales:
             print(f"✅ INSERT android_metadata.locale = {loc}")

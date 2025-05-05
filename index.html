@@ -260,6 +260,13 @@
 <body>
 <div class="container">
   <h2>Fusionner des fichiers JW Library</h2>
+  <div style="text-align: right; margin-bottom: 20px;">
+    <img src="https://flagcdn.com/fr.svg" width="24" alt="fr" onclick="switchLanguage('fr')" style="cursor:pointer; margin-left: 5px;">
+    <img src="https://flagcdn.com/es.svg" width="24" alt="es" onclick="switchLanguage('es')" style="cursor:pointer; margin-left: 5px;">
+    <img src="https://flagcdn.com/gb.svg" width="24" alt="en" onclick="switchLanguage('en')" style="cursor:pointer; margin-left: 5px;">
+    <img src="https://flagcdn.com/it.svg" width="24" alt="it" onclick="switchLanguage('it')" style="cursor:pointer; margin-left: 5px;">
+    <img src="https://flagcdn.com/br.svg" width="24" alt="pt" onclick="switchLanguage('pt')" style="cursor:pointer; margin-left: 5px;">
+  </div>
 
   <label for="file1">Sélectionner le premier fichier (.jwlibrary) :</label>
   <input type="file" id="file1" accept=".jwlibrary">
@@ -320,7 +327,31 @@
     </p>
   </div>
 </div>
-
+<div id="errorDisplayWrapper" style="
+  max-width: 800px;
+  margin: 30px auto 0;
+  display: none;
+  text-align: center;
+">
+  <div id="errorDisplay" style="
+    color: #e74c3c;
+    font-weight: bold;
+    padding: 15px;
+    border: 1px solid #e74c3c;
+    border-radius: 5px;
+    background-color: #fdecea;
+    white-space: pre-wrap;
+    margin-bottom: 10px;
+  "></div>
+  <button onclick="copyError()" style="
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 5px;
+    cursor: pointer;
+  ">📋 Copier le message</button>
+</div>
 
 <script>
   const BASE_URL = "https://web-production-a18d.up.railway.app/";
@@ -351,6 +382,20 @@
       };
 
       requestAnimationFrame(animate);
+    });
+  }
+
+  function showError(message) {
+    const wrapper = document.getElementById("errorDisplayWrapper");
+    const el = document.getElementById("errorDisplay");
+    el.textContent = message;
+    wrapper.style.display = "block";
+  }
+
+  function copyError() {
+    const text = document.getElementById("errorDisplay").textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      alert("Message copié !");
     });
   }
 
@@ -439,13 +484,13 @@
       const file2 = document.getElementById('file2').files[0];
       const localDatetime = document.getElementById('local_datetime').value;
 
-      if (!file1 || !file2) throw new Error("Veuillez sélectionner deux fichiers .jwlibrary");
-      if (!file1.name.endsWith('.jwlibrary') || !file2.name.endsWith('.jwlibrary')) {
-        throw new Error("Les deux fichiers doivent avoir l'extension .jwlibrary");
-      }
-      if (!localDatetime) {
-        throw new Error("Veuillez indiquer la date et l'heure locales actuelles");
-      }
+      if (!file1 || !file2)
+        throw new Error(translations[window.currentLang].errors.selectFiles);
+      if (!file1.name.endsWith('.jwlibrary') || !file2.name.endsWith('.jwlibrary'))
+        throw new Error(translations[window.currentLang].errors.extension);
+      if (!localDatetime)
+        throw new Error(translations[window.currentLang].errors.missingDate);
+
 
       const mergeButton = document.getElementById('mergeButton');
       mergeButton.disabled = true;
@@ -528,7 +573,11 @@
         body: JSON.stringify({ local_datetime: localDatetime })
       });
 
-      if (!response.ok) throw new Error("Échec de la fusion");
+      if (!response.ok) {
+        const errorText = await response.text();
+        showError(errorText || translations[window.currentLang].errors.mergeFailed);
+        throw new Error("Erreur backend : " + errorText);
+      }
 
       const result = await response.json();
 
@@ -566,6 +615,7 @@
       document.getElementById("progressDetails").textContent = "✅ Téléchargement terminé ou en cours.";
     } catch (error) {
       console.error("Erreur:", error);
+      showError(error.message);
       await updateProgress(currentProgress, `Erreur: ${error.message}`);
       document.getElementById('mergeButton').disabled = false;
     }
@@ -579,7 +629,7 @@
 
       const fetchFile = async (name) => {
         const res = await fetch(`${BASE_URL}/download/${name}?ngrok-skip-browser-warning=true`);
-        if (!res.ok) throw new Error(`Erreur lors du téléchargement de ${name}`);
+        if (!res.ok) throw new Error(`${translations[window.currentLang].errors.fetchError} ${name}`);
         return await res.blob();
       };
 
@@ -626,8 +676,132 @@
     }
   }
 
+  const translations = {
+    fr: {
+      title: "Fusionner des fichiers JW Library",
+      file1: "Sélectionner le premier fichier (.jwlibrary) :",
+      file2: "Sélectionner le deuxième fichier (.jwlibrary) :",
+      datetime: "Date et heure locales actuelles :",
+      steps: ["Chargement", "Extraction", "Analyse", "Détection", "Prêt..."],
+      mergeButton: "Charger, Extraire & Analyser",
+      summary: `La fusion est terminée. Les données identiques (notes, surlignages, marques-pages, playlists, etc.) ont été conservées.
+  Les éléments uniques de chaque fichier ont été ajoutés.<br><br>
+  <strong>💡 Une fois le téléchargement automatique effectué, tous les fichiers sont immédiatement effacés. Si le téléchargement ne s'est pas bien passé, actualise la page et renouvelle l'opération en entier.</strong>`,
+      progressReady: "Prêt à commencer...",
+      final: "✅ Téléchargement terminé ou en cours.",
+      errors: {
+        selectFiles: "Veuillez sélectionner deux fichiers .jwlibrary",
+        extension: "Les deux fichiers doivent avoir l'extension .jwlibrary",
+        missingDate: "Veuillez indiquer la date et l'heure locales actuelles",
+        mergeFailed: "La fusion n’a pas été finalisée correctement.",
+        fetchError: "Erreur lors du téléchargement de"
+      }
+    },
+    es: {
+      title: "Fusionar archivos de JW Library",
+      file1: "Selecciona el primer archivo (.jwlibrary):",
+      file2: "Selecciona el segundo archivo (.jwlibrary):",
+      datetime: "Fecha y hora local actual:",
+      steps: ["Carga", "Extracción", "Análisis", "Detección", "Listo..."],
+      mergeButton: "Cargar, Extraer y Analizar",
+      summary: `La fusión ha finalizado. Los datos idénticos (notas, resaltados, marcadores, listas de reproducción, etc.) se conservaron.
+  Los elementos únicos de cada archivo se han añadido.<br><br>
+  <strong>💡 Una vez completada la descarga automática, todos los archivos se eliminan inmediatamente. Si la descarga falla, actualiza la página y repite el proceso completo.</strong>`,
+      progressReady: "Listo para comenzar...",
+      final: "✅ Descarga completada o en curso.",
+      errors: {
+        selectFiles: "Por favor selecciona dos archivos .jwlibrary",
+        extension: "Ambos archivos deben tener la extensión .jwlibrary",
+        missingDate: "Por favor indica la fecha y hora local actual",
+        mergeFailed: "La fusión no se completó correctamente.",
+        fetchError: "Error al descargar"
+      }
+    },
+    en: {
+      title: "Merge JW Library files",
+      file1: "Select the first file (.jwlibrary):",
+      file2: "Select the second file (.jwlibrary):",
+      datetime: "Current local date and time:",
+      steps: ["Loading", "Extracting", "Analyzing", "Detecting", "Ready..."],
+      mergeButton: "Load, Extract & Analyze",
+      summary: `Merge complete. Identical data (notes, highlights, bookmarks, playlists, etc.) has been preserved.
+  Unique elements from each file have been added.<br><br>
+  <strong>💡 Once the automatic download is complete, all files are immediately deleted. If the download fails, refresh the page and repeat the process.</strong>`,
+      progressReady: "Ready to start...",
+      final: "✅ Download complete or in progress.",
+      errors: {
+        selectFiles: "Please select two .jwlibrary files",
+        extension: "Both files must have the .jwlibrary extension",
+        missingDate: "Please provide the current local date and time",
+        mergeFailed: "The merge was not completed successfully.",
+        fetchError: "Error while downloading"
+      }
+    },
+    it: {
+      title: "Unisci file JW Library",
+      file1: "Seleziona il primo file (.jwlibrary):",
+      file2: "Seleziona il secondo file (.jwlibrary):",
+      datetime: "Data e ora locale attuali:",
+      steps: ["Caricamento", "Estrazione", "Analisi", "Rilevamento", "Pronto..."],
+      mergeButton: "Carica, Estrai e Analizza",
+      summary: `L'unione è completata. I dati identici (note, evidenziazioni, segnalibri, playlist, ecc.) sono stati conservati.
+  Gli elementi unici di ciascun file sono stati aggiunti.<br><br>
+  <strong>💡 Una volta completato il download automatico, tutti i file vengono immediatamente eliminati. Se il download fallisce, aggiorna la pagina e ripeti il processo.</strong>`,
+      progressReady: "Pronto per iniziare...",
+      final: "✅ Download completato o in corso.",
+      errors: {
+        selectFiles: "Seleziona due file .jwlibrary",
+        extension: "Entrambi i file devono avere l'estensione .jwlibrary",
+        missingDate: "Inserisci la data e ora locali attuali",
+        mergeFailed: "L'unione non è stata completata correttamente.",
+        fetchError: "Errore durante il download di"
+      }
+    },
+    pt: {
+      title: "Mesclar arquivos JW Library",
+      file1: "Selecione o primeiro arquivo (.jwlibrary):",
+      file2: "Selecione o segundo arquivo (.jwlibrary):",
+      datetime: "Data e hora local atual:",
+      steps: ["Carregando", "Extraindo", "Analisando", "Detectando", "Pronto..."],
+      mergeButton: "Carregar, Extrair e Analisar",
+      summary: `A mesclagem foi concluída. Os dados idênticos (notas, destaques, marcadores, listas de reprodução, etc.) foram preservados.
+  Os elementos únicos de cada arquivo foram adicionados.<br><br>
+  <strong>💡 Assim que o download automático for concluído, todos os arquivos serão imediatamente excluídos. Se o download falhar, atualize a página e repita o processo.</strong>`,
+      progressReady: "Pronto para começar...",
+      final: "✅ Download concluído ou em andamento.",
+      errors: {
+        selectFiles: "Por favor selecione dois arquivos .jwlibrary",
+        extension: "Ambos os arquivos devem ter a extensão .jwlibrary",
+        missingDate: "Por favor informe a data e hora local atual",
+        mergeFailed: "A mesclagem não foi concluída com sucesso.",
+        fetchError: "Erro ao baixar"
+      }
+    }
+  };
 
 
+
+  function switchLanguage(lang) {
+    const t = translations[lang];
+
+    if (!t) return;
+
+    document.querySelector("h2").textContent = t.title;
+    document.querySelector('label[for="file1"]').textContent = t.file1;
+    document.querySelector('label[for="file2"]').textContent = t.file2;
+    document.querySelector('label[for="local_datetime"]').textContent = t.datetime;
+
+    const steps = document.querySelectorAll(".step div:last-child");
+    steps.forEach((el, idx) => el.textContent = t.steps[idx]);
+
+    document.getElementById("mergeButton").textContent = t.mergeButton;
+
+    const summaryText = document.getElementById("summary-text");
+    if (summaryText) summaryText.innerHTML = t.summary;
+
+    const details = document.getElementById("progressDetails");
+    if (details) details.textContent = t.progressReady;
+  }
 
 
 
