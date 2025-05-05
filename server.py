@@ -1901,25 +1901,31 @@ def merge_grdb_migrations(merged_db_path, db1_path, db2_path):
     print("🔧 Fusion de grdb_migrations")
     identifiers = set()
 
-    # Récupérer tous les identifiers des deux bases (si la table existe)
+    # Récupérer tous les identifiers des deux bases
     for db_path in [db1_path, db2_path]:
-        with sqlite3.connect(db_path) as conn:
+        conn = None
+        try:
+            conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
-            try:
-                cursor.execute("SELECT identifier FROM grdb_migrations")
-                for row in cursor.fetchall():
-                    identifiers.add(row[0])
-            except sqlite3.OperationalError:
-                print(f"ℹ️ Table grdb_migrations absente de {db_path}")
-            except Exception as e:
-                print(f"⚠️ Erreur lecture grdb_migrations depuis {db_path}: {e}")
+            cursor.execute("SELECT identifier FROM grdb_migrations")
+            for row in cursor.fetchall():
+                identifiers.add(row[0])
+        except sqlite3.OperationalError:
+            print(f"ℹ️ Table grdb_migrations absente de {db_path}")
+        except Exception as e:
+            print(f"⚠️ Erreur lecture grdb_migrations depuis {db_path}: {e}")
+        finally:
+            if conn:
+                conn.close()
 
     if not identifiers:
         print("⏭️ Aucune donnée grdb_migrations à fusionner.")
         return
 
     # Créer la table si elle n'existe pas, puis insérer les données uniques
-    with sqlite3.connect(merged_db_path) as conn:
+    conn = None
+    try:
+        conn = sqlite3.connect(merged_db_path)
         cursor = conn.cursor()
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS grdb_migrations (
@@ -1927,10 +1933,13 @@ def merge_grdb_migrations(merged_db_path, db1_path, db2_path):
             )
         """)
         cursor.execute("DELETE FROM grdb_migrations")
-        for ident in sorted(identifiers):  # Optionnel : tri pour lisibilité
+        for ident in sorted(identifiers):
             print(f"✅ INSERT grdb_migrations.identifier = {ident}")
             cursor.execute("INSERT INTO grdb_migrations (identifier) VALUES (?)", (ident,))
         conn.commit()
+    finally:
+        if conn:
+            conn.close()
 
 
 @app.route('/merge', methods=['POST'])
