@@ -1886,7 +1886,7 @@ def merge_android_metadata_safe(merged_db_path, db1_path, db2_path):
         cursor.execute("DELETE FROM android_metadata")
         for loc in sorted(locales):
             print(f"✅ INSERT android_metadata.locale = {loc}")
-            cursor.execute("INSERT INTO android_metadata (locale) VALUES (?)")
+            cursor.execute("INSERT INTO android_metadata (locale) VALUES (?)", (loc,))
         conn.commit()
 
 
