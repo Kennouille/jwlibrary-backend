@@ -252,6 +252,47 @@
         100% { transform: translateX(100%); }
     }
 
+    .site-message {
+      max-width: 800px;
+      margin: 50px auto 20px;
+      font-size: 14px;
+      color: #555;
+      text-align: center;
+      padding: 0 15px;
+      line-height: 1.6;
+    }
+
+    .site-message a {
+      color: #2980b9;
+      text-decoration: none;
+    }
+
+    .site-message a:hover {
+      text-decoration: underline;
+    }
+
+    .footer {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 15px;
+      flex-wrap: wrap;
+      border-top: 1px solid #ccc;
+      padding: 15px;
+      max-width: 800px;
+      margin: 0 auto 30px;
+    }
+
+    .footer-logo {
+      height: 40px;
+    }
+
+    .footer-text {
+      font-size: 13px;
+      color: #888;
+    }
+
+
 
   </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -352,6 +393,15 @@
     cursor: pointer;
   ">📋 Copier le message</button>
 </div>
+<div id="footer-message" class="site-message"></div>
+
+<footer class="footer">
+  <a href="https://wa.me/528118594482" target="_blank" title="Me contacter par WhatsApp">
+    <img src="images/Logo KM.png" alt="Logo KM" class="footer-logo">
+  </a>
+  <span id="footer-copy" class="footer-text"></span>
+</footer>
+
 
 <script>
   const BASE_URL = "https://web-production-a18d.up.railway.app/";
@@ -695,6 +745,13 @@
         missingDate: "Veuillez indiquer la date et l'heure locales actuelles",
         mergeFailed: "La fusion n’a pas été finalisée correctement.",
         fetchError: "Erreur lors du téléchargement de"
+      },
+      footer: {
+        message: `Ce site est complètement gratuit comme tout ce que fait l'organisation de Jéhovah.<br>
+      Si tu es content de son utilisation, n'hésite pas à faire un don sur <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
+      Tu peux aussi aider aux quelques frais de développement et du serveur en m'envoyant un message. Clique sur le logo et tu seras redirigé vers mon numéro de portable.
+      `,
+        copyright: "© 2025 — Tous droits réservés"
       }
     },
     es: {
@@ -715,6 +772,13 @@
         missingDate: "Por favor indica la fecha y hora local actual",
         mergeFailed: "La fusión no se completó correctamente.",
         fetchError: "Error al descargar"
+      },
+      footer: {
+        message: `Este sitio es completamente gratuito, como todo lo que hace la organización de Jehová.<br>
+      Si estás contento con su uso, no dudes en hacer una donación en <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
+      También puedes ayudar con algunos gastos de desarrollo y del servidor enviándome un mensaje. Haz clic en el logo y serás redirigido a mi número de celular.
+      `,
+        copyright: "© 2025 — Todos los derechos reservados"
       }
     },
     en: {
@@ -735,6 +799,13 @@
         missingDate: "Please provide the current local date and time",
         mergeFailed: "The merge was not completed successfully.",
         fetchError: "Error while downloading"
+      },
+      footer: {
+        message: `This site is completely free, just like everything from Jehovah's organization.<br>
+      If you find it useful, feel free to donate at <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
+      You can also help with some development and server costs by sending me a message. Click on the logo to be redirected to my phone number.
+      `,
+        copyright: "© 2025 — All rights reserved"
       }
     },
     it: {
@@ -755,6 +826,13 @@
         missingDate: "Inserisci la data e ora locali attuali",
         mergeFailed: "L'unione non è stata completata correttamente.",
         fetchError: "Errore durante il download di"
+      },
+      footer: {
+        message: `Questo sito è completamente gratuito, proprio come tutto ciò che fa l'organizzazione di Geova.<br>
+      Se lo trovi utile, non esitare a fare una donazione su <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
+      Puoi anche contribuire con alcune spese di sviluppo e del server inviandomi un messaggio. Clicca sul logo e verrai reindirizzato al mio numero di telefono.
+      `,
+        copyright: "© 2025 — Tutti i diritti riservati"
       }
     },
     pt: {
@@ -775,6 +853,13 @@
         missingDate: "Por favor informe a data e hora local atual",
         mergeFailed: "A mesclagem não foi concluída com sucesso.",
         fetchError: "Erro ao baixar"
+      },
+      footer: {
+        message: `Este site é totalmente gratuito, assim como tudo o que a organização de Jeová faz.<br>
+      Se você gostou de usá-lo, sinta-se à vontade para fazer uma doação em <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
+      Você também pode ajudar com alguns custos de desenvolvimento e servidor me enviando uma mensagem. Clique no logo e será redirecionado para o meu número de telefone.
+      `,
+        copyright: "© 2025 — Todos os direitos reservados"
       }
     }
   };
@@ -801,8 +886,20 @@
 
     const details = document.getElementById("progressDetails");
     if (details) details.textContent = t.progressReady;
+
+    document.getElementById("footer-message").innerHTML = t.footer.message;
+    document.getElementById("footer-copy").textContent = t.footer.copyright;
+
+    localStorage.setItem('preferredLang', lang);
+    window.currentLang = lang;
+
+
   }
 
+window.addEventListener("DOMContentLoaded", () => {
+  const savedLang = localStorage.getItem('preferredLang') || 'fr';
+  switchLanguage(savedLang);
+});
 
 
 </script>

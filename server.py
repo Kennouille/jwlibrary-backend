@@ -1897,6 +1897,42 @@ def merge_android_metadata(merged_db_path, db1_path, db2_path):
         conn.commit()
 
 
+def merge_grdb_migrations(merged_db_path, db1_path, db2_path):
+    print("🔧 Fusion de grdb_migrations")
+    identifiers = set()
+
+    # Récupérer tous les identifiers des deux bases (si la table existe)
+    for db_path in [db1_path, db2_path]:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT identifier FROM grdb_migrations")
+                for row in cursor.fetchall():
+                    identifiers.add(row[0])
+            except sqlite3.OperationalError:
+                print(f"ℹ️ Table grdb_migrations absente de {db_path}")
+            except Exception as e:
+                print(f"⚠️ Erreur lecture grdb_migrations depuis {db_path}: {e}")
+
+    if not identifiers:
+        print("⏭️ Aucune donnée grdb_migrations à fusionner.")
+        return
+
+    # Créer la table si elle n'existe pas, puis insérer les données uniques
+    with sqlite3.connect(merged_db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS grdb_migrations (
+                identifier TEXT NOT NULL PRIMARY KEY
+            )
+        """)
+        cursor.execute("DELETE FROM grdb_migrations")
+        for ident in sorted(identifiers):  # Optionnel : tri pour lisibilité
+            print(f"✅ INSERT grdb_migrations.identifier = {ident}")
+            cursor.execute("INSERT INTO grdb_migrations (identifier) VALUES (?)", (ident,))
+        conn.commit()
+
+
 @app.route('/merge', methods=['POST'])
 def merge_data():
     start_time = time.time()
@@ -2268,7 +2304,7 @@ def merge_data():
                 exclude_tables=[
                     'Note', 'UserMark', 'Location', 'BlockRange',
                     'LastModified', 'Tag', 'TagMap', 'PlaylistItem',
-                    'InputField', 'Bookmark', 'android_metadata'
+                    'InputField', 'Bookmark', 'android_metadata', 'grdb_migrations'
                 ]
             )
         except Exception as e:
@@ -2278,6 +2314,7 @@ def merge_data():
             raise
 
         merge_android_metadata(merged_db_path, file1_db, file2_db)
+        merge_grdb_migrations(merged_db_path, file1_db, file2_db)
 
         # ─── Après merge_other_tables ───────────────────────────────────────────
         print("\n--- COMPTES APRÈS merge_other_tables ---")
