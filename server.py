@@ -1864,37 +1864,37 @@ def merge_android_metadata(merged_db_path, db1_path, db2_path):
     print("🔧 Fusion de android_metadata")
     locales = set()
 
-    # Collecter les locales si la table existe
     for db_path in [db1_path, db2_path]:
-        with sqlite3.connect(db_path) as conn:
-            cursor = conn.cursor()
-            try:
-                cursor.execute("SELECT locale FROM android_metadata")
-                for row in cursor.fetchall():
-                    locales.add(row[0])
-            except sqlite3.OperationalError:
-                print(f"ℹ️ Table android_metadata absente de {db_path}")
-            except Exception as e:
-                print(f"⚠️ Erreur lecture android_metadata depuis {db_path}: {e}")
+        try:
+            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=15) as conn:
+                cursor = conn.cursor()
+                try:
+                    cursor.execute("SELECT locale FROM android_metadata")
+                    locales.update(row[0] for row in cursor.fetchall())
+                except sqlite3.OperationalError:
+                    print(f"ℹ️ Table android_metadata absente de {db_path}")
+        except Exception as e:
+            print(f"⚠️ Erreur lecture depuis {db_path}: {e}")
 
-    # Si aucune locale trouvée, on ne fait rien
     if not locales:
         print("⏭️ Aucune donnée android_metadata à fusionner.")
         return
 
-    # Vérifier si la table existe dans la base fusionnée, sinon la créer
-    with sqlite3.connect(merged_db_path) as conn:
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS android_metadata (
-                locale TEXT
-            )
-        """)
-        cursor.execute("DELETE FROM android_metadata")
-        for loc in locales:
-            print(f"✅ INSERT android_metadata.locale = {loc}")
-            cursor.execute("INSERT INTO android_metadata (locale) VALUES (?)", (loc,))
-        conn.commit()
+    try:
+        with sqlite3.connect(merged_db_path, timeout=20) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS android_metadata (locale TEXT)
+            """)
+            cursor.execute("DELETE FROM android_metadata")
+            for loc in locales:
+                print(f"✅ INSERT android_metadata.locale = {loc}")
+                cursor.execute("INSERT INTO android_metadata (locale) VALUES (?)", (loc,))
+            conn.commit()
+    except Exception as e:
+        print(f"❌ Erreur écriture android_metadata: {e}")
+        raise
 
 
 def merge_grdb_migrations(merged_db_path, db1_path, db2_path):
@@ -2318,6 +2318,7 @@ def merge_data():
             raise
 
         merge_android_metadata(merged_db_path, file1_db, file2_db)
+        time.sleep(1)  # Pause d'une seconde
         merge_grdb_migrations(merged_db_path, file1_db, file2_db)
 
         # ─── Après merge_other_tables ───────────────────────────────────────────
