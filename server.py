@@ -1857,114 +1857,55 @@ def create_note_mapping(merged_db_path, file1_db, file2_db):
     return mapping or {}
 
 
-import sqlite3
-import os
-import shutil
-
-def merge_android_metadata(merged_db_path, db1_path, db2_path):
-    print("🔧 Fusion de android_metadata")
+def merge_platform_metadata(merged_db_path, db1_path, db2_path):
+    print("🔧 Fusion combinée android_metadata + grdb_migrations")
     locales = set()
+    identifiers = set()
 
     for db_path in [db1_path, db2_path]:
-        try:
-            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=15) as conn:
-                cursor = conn.cursor()
-                try:
-                    cursor.execute("SELECT locale FROM android_metadata")
-                    locales.update(row[0] for row in cursor.fetchall())
-                except sqlite3.OperationalError:  # Correction: OperationalError au lieu de OperationalError
-                    print(f"ℹ️ Table android_metadata absente de {db_path}")
-        except Exception as e:
-            print(f"⚠️ Erreur lecture depuis {db_path}: {e}")
+        with sqlite3.connect(db_path) as src:
+            cursor = src.cursor()
+            try:
+                cursor.execute("SELECT locale FROM android_metadata")
+                locales.update(row[0] for row in cursor.fetchall())
+            except sqlite3.OperationalError:
+                print(f"ℹ️ Table android_metadata absente de {db_path}")
+            except Exception as e:
+                print(f"⚠️ Erreur lecture android_metadata depuis {db_path}: {e}")
 
-    if not locales:
-        print("⏭️ Aucune donnée android_metadata à fusionner.")
-        return
+            try:
+                cursor.execute("SELECT identifier FROM grdb_migrations")
+                identifiers.update(row[0] for row in cursor.fetchall())
+            except sqlite3.OperationalError:
+                print(f"ℹ️ Table grdb_migrations absente de {db_path}")
+            except Exception as e:
+                print(f"⚠️ Erreur lecture grdb_migrations depuis {db_path}: {e}")
 
-    try:
-        with sqlite3.connect(merged_db_path, timeout=20) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            cursor = conn.cursor()
+    # Une seule connexion d’écriture pour les deux insertions
+    with sqlite3.connect(merged_db_path, timeout=15) as conn:
+        cursor = conn.cursor()
+
+        if locales:
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS android_metadata (locale TEXT)
+                CREATE TABLE IF NOT EXISTS android_metadata (
+                    locale TEXT
+                )
             """)
             cursor.execute("DELETE FROM android_metadata")
             for loc in locales:
                 print(f"✅ INSERT android_metadata.locale = {loc}")
                 cursor.execute("INSERT INTO android_metadata (locale) VALUES (?)", (loc,))
-            conn.commit()
-    except Exception as e:
-        print(f"❌ Erreur écriture android_metadata: {e}")
-        raise
 
-
-def merge_grdb_migrations(merged_db_path, db1_path, db2_path):
-    print("🔧 Fusion de grdb_migrations")
-    identifiers = set()
-
-    for db_path in [db1_path, db2_path]:
-        try:
-            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=15) as conn:
-                cursor = conn.cursor()
-                try:
-                    cursor.execute("SELECT identifier FROM grdb_migrations")
-                    identifiers.update(row[0] for row in cursor.fetchall())
-                except sqlite3.OperationalError:
-                    print(f"ℹ️ Table grdb_migrations absente de {db_path}")
-        except Exception as e:
-            print(f"⚠️ Erreur lecture depuis {db_path}: {e}")
-
-    if not identifiers:
-        print("⏭️ Aucune donnée grdb_migrations à fusionner.")
-        return
-
-    try:
-        with sqlite3.connect(merged_db_path, timeout=20) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            cursor = conn.cursor()
+        if identifiers:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS grdb_migrations (
                     identifier TEXT NOT NULL PRIMARY KEY
                 )
             """)
+            cursor.execute("DELETE FROM grdb_migrations")
             for ident in sorted(identifiers):
-                print(f"✅ INSERT OR IGNORE grdb_migrations.identifier = {ident}")
-                cursor.execute("INSERT OR IGNORE INTO grdb_migrations (identifier) VALUES (?)", (ident,))
-            conn.commit()
-    except Exception as e:
-        print(f"❌ Erreur écriture dans la base fusionnée: {e}")
-        raise
-
-
-def merge_databases_safely(merged_db_path, file1_db, file2_db):
-    temp_db_path = merged_db_path + ".tmp"
-
-    try:
-        # Vérification préalable
-        if not os.access(os.path.dirname(merged_db_path), os.W_OK):
-            raise PermissionError("Pas d'accès en écriture au dossier")
-
-        # Création en mode sécurisé
-        with sqlite3.connect(temp_db_path) as conn:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA temp_store=MEMORY")  # Utilise la RAM pour les temporaires
-
-        # Fusion
-        merge_android_metadata(temp_db_path, file1_db, file2_db)
-        merge_grdb_migrations(temp_db_path, file1_db, file2_db)
-
-        # Remplacement atomique
-        if os.path.exists(merged_db_path):
-            os.unlink(merged_db_path)  # Meilleur que os.remove() pour les erreurs NFS
-        shutil.move(temp_db_path, merged_db_path)
-
-    except Exception as e:
-        if os.path.exists(temp_db_path):
-            try:
-                os.remove(temp_db_path)
-            except:
-                pass
-        raise IOError(f"Erreur disque: {str(e)}") from e
+                print(f"✅ INSERT grdb_migrations.identifier = {ident}")
+                cursor.execute("INSERT INTO grdb_migrations (identifier) VALUES (?)", (ident,))
 
 
 @app.route('/merge', methods=['POST'])
@@ -2348,7 +2289,7 @@ def merge_data():
             traceback.print_exc()
             raise
 
-        merge_databases_safely(merged_db_path, file1_db, file2_db)
+        merge_platform_metadata(merged_db_path, file1_db, file2_db)
 
         # ─── Après merge_other_tables ───────────────────────────────────────────
         print("\n--- COMPTES APRÈS merge_other_tables ---")
