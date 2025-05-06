@@ -1937,37 +1937,34 @@ def merge_grdb_migrations(merged_db_path, db1_path, db2_path):
 
 
 def merge_databases_safely(merged_db_path, file1_db, file2_db):
-    print("🔧 Début de la fusion avec méthode sécurisée")
-
-    # 1. Créer une copie temporaire
     temp_db_path = merged_db_path + ".tmp"
-    if os.path.exists(temp_db_path):
-        os.remove(temp_db_path)
 
-    # 2. Fusionner dans le fichier temporaire
     try:
-        # Créer une nouvelle base vide
-        with sqlite3.connect(temp_db_path) as conn:  # Correction: sqlite3 -> sqlite3
-            conn.execute("PRAGMA journal_mode=WAL")  # Correction: PRAGMA
+        # Vérification préalable
+        if not os.access(os.path.dirname(merged_db_path), os.W_OK):
+            raise PermissionError("Pas d'accès en écriture au dossier")
 
-        # Fusionner android_metadata
+        # Création en mode sécurisé
+        with sqlite3.connect(temp_db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA temp_store=MEMORY")  # Utilise la RAM pour les temporaires
+
+        # Fusion
         merge_android_metadata(temp_db_path, file1_db, file2_db)
-
-        # Fusionner grdb_migrations
         merge_grdb_migrations(temp_db_path, file1_db, file2_db)
 
-        # 3. Remplacer atomiquement l'ancien fichier
+        # Remplacement atomique
         if os.path.exists(merged_db_path):
-            os.remove(merged_db_path)
+            os.unlink(merged_db_path)  # Meilleur que os.remove() pour les erreurs NFS
         shutil.move(temp_db_path, merged_db_path)
 
-        print("✅ Fusion réussie avec remplacement atomique")
-
     except Exception as e:
-        print(f"❌ Échec de la fusion: {e}")
         if os.path.exists(temp_db_path):
-            os.remove(temp_db_path)
-        raise
+            try:
+                os.remove(temp_db_path)
+            except:
+                pass
+        raise IOError(f"Erreur disque: {str(e)}") from e
 
 
 @app.route('/merge', methods=['POST'])
