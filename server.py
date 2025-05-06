@@ -2303,7 +2303,13 @@ def merge_data():
             traceback.print_exc()
             raise
 
-        merge_all_data(merged_db_path, file1_db, file2_db)
+        try:
+            merge_all_data(merged_db_path, file1_db, file2_db)
+        except Exception as e:
+            import traceback
+            print(f"❌ Erreur dans merge_all_data : {e}")
+            traceback.print_exc()
+            raise
 
         # ─── Après merge_other_tables ───────────────────────────────────────────
         print("\n--- COMPTES APRÈS merge_other_tables ---")
