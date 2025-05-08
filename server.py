@@ -11,6 +11,7 @@ import sys
 import gc
 import io
 import traceback
+import threading
 
 
 app = Flask(__name__)
@@ -2783,6 +2784,47 @@ def index():
         status=200,
         mimetype='application/json'
     )
+
+# Fichier local pour stocker les stats
+MERGE_STATS_FILE = "merge_stats.json"
+STATS_LOCK = threading.Lock()
+
+import json
+import os
+
+def load_merge_stats():
+    if not os.path.exists(MERGE_STATS_FILE):
+        return {"success": 0, "error": 0}
+    with open(MERGE_STATS_FILE, "r") as f:
+        return json.load(f)
+
+def save_merge_stats(stats):
+    with open(MERGE_STATS_FILE, "w") as f:
+        json.dump(stats, f)
+
+@app.route("/track-merge", methods=["POST"])
+def track_merge():
+    try:
+        data = request.get_json()
+        status = data.get("status")
+        if status not in ("success", "error"):
+            return jsonify({"error": "Invalid status"}), 400
+
+        with STATS_LOCK:
+            stats = load_merge_stats()
+            stats[status] += 1
+            save_merge_stats(stats)
+
+        return jsonify({"message": f"{status} count updated"}), 200
+    except Exception as e:
+        print("❌ Erreur dans /track-merge :", e)
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/get-merge-stats", methods=["GET"])
+def get_merge_stats():
+    with STATS_LOCK:
+        stats = load_merge_stats()
+    return jsonify(stats)
 
 
 if __name__ == '__main__':

@@ -292,6 +292,41 @@
       color: #888;
     }
 
+    .security-box {
+      background-color: #eaeaea; /* plus foncé */
+      border-radius: 12px;
+      padding: 25px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      margin-bottom: 30px;
+      font-size: 13.5px; /* légèrement plus petit */
+      color: #2c2c2c; /* texte un peu plus sombre */
+    }
+
+
+    .security-columns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      margin-top: 15px;
+    }
+
+    .security-block p {
+      margin: 0 0 10px;
+    }
+
+    .security-block ul {
+      padding-left: 20px;
+      margin: 0;
+    }
+
+    .security-block ul li {
+      margin-bottom: 8px;
+    }
+
+    .security-box {
+      border: 1px solid #ccc;
+    }
+
 
 
   </style>
@@ -308,6 +343,12 @@
     <img src="https://flagcdn.com/it.svg" width="24" alt="it" onclick="switchLanguage('it')" style="cursor:pointer; margin-left: 5px;">
     <img src="https://flagcdn.com/br.svg" width="24" alt="pt" onclick="switchLanguage('pt')" style="cursor:pointer; margin-left: 5px;">
   </div>
+  <div id="footer-security-fr" class="footer-security-box" style="display: none">...</div>
+  <div id="footer-security-en" class="footer-security-box" style="display: none">...</div>
+  <div id="footer-security-es" class="footer-security-box" style="display: none">...</div>
+  <div id="footer-security-it" class="footer-security-box" style="display: none">...</div>
+  <div id="footer-security-pt" class="footer-security-box" style="display: none">...</div>
+
 
   <label for="file1">Sélectionner le premier fichier (.jwlibrary) :</label>
   <input type="file" id="file1" accept=".jwlibrary">
@@ -353,7 +394,7 @@
           <!-- Les blocs seront ajoutés par JavaScript -->
       </div>
       <div class="construction-text">
-          Ce process peut durer jusqu'à 4 minutes <span class="construction-dots"></span>
+          Ce process peut durer jusqu'à 4 minutes pour des gros fichiers<span class="construction-dots"></span>
       </div>
   </div>
 
@@ -407,7 +448,7 @@
   const BASE_URL = "https://web-production-a18d.up.railway.app/";
   let currentProgress = 0;
 
-  async function updateProgress(targetPercent, message, step) {
+   async function updateProgress(targetPercent, message, step) {
     return new Promise(resolve => {
       const startPercent = currentProgress;
       const duration = 500;
@@ -644,6 +685,8 @@
       console.log("🚀 rebuildFinalZip() va être appelé");
 
       await rebuildFinalZip();
+      trackMerge("success");
+
 
       await updateProgress(100, "Fichier prêt", 5);
       progressBar.classList.remove('progress-bar-animated');
@@ -666,10 +709,24 @@
     } catch (error) {
       console.error("Erreur:", error);
       showError(error.message);
+      trackMerge("error");
       await updateProgress(currentProgress, `Erreur: ${error.message}`);
       document.getElementById('mergeButton').disabled = false;
     }
   }
+
+  function trackMerge(status) {
+    fetch(`${BASE_URL}/track-merge`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status })
+    }).then(res => {
+      if (!res.ok) console.warn("❌ Erreur d'envoi des stats de fusion");
+    }).catch(err => {
+      console.warn("❌ Erreur réseau pour les stats :", err);
+    });
+  }
+
 
 
 
@@ -714,7 +771,10 @@
       const zipUrl = URL.createObjectURL(finalZip);
       const link = document.createElement("a");
       link.href = zipUrl;
-      link.download = "merged.jwlibrary";
+      const now = new Date();
+      const dateStr = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth()+1).toString().padStart(2, '0')}.${now.getFullYear()}`;
+      const timeStr = `${now.getHours().toString().padStart(2, '0')}h${now.getMinutes().toString().padStart(2, '0')}`;
+      link.download = `UserdataBackup_merged(${dateStr}_${timeStr}).jwlibrary`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -748,38 +808,34 @@
       },
       footer: {
         message: `Ce site est complètement gratuit comme tout ce que fait l'organisation de Jéhovah.<br>
-      Si tu es content de son utilisation, n'hésite pas à faire un don sur <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
-      Tu peux aussi aider aux quelques frais de développement et du serveur en m'envoyant un message. Clique sur le logo et tu seras redirigé vers mon numéro de portable.
-      `,
+  Si tu es content de son utilisation, n'hésite pas à faire un don sur <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
+  Tu peux aussi aider aux quelques frais de développement et du serveur en m'envoyant un message. Clique sur le logo et tu seras redirigé vers mon numéro de portable.`,
         copyright: "© 2025 — Tous droits réservés"
-      }
-    },
-    es: {
-      title: "Fusionar archivos de JW Library",
-      file1: "Selecciona el primer archivo (.jwlibrary):",
-      file2: "Selecciona el segundo archivo (.jwlibrary):",
-      datetime: "Fecha y hora local actual:",
-      steps: ["Carga", "Extracción", "Análisis", "Detección", "Listo..."],
-      mergeButton: "Cargar, Extraer y Analizar",
-      summary: `La fusión ha finalizado. Los datos idénticos (notas, resaltados, marcadores, listas de reproducción, etc.) se conservaron.
-  Los elementos únicos de cada archivo se han añadido.<br><br>
-  <strong>💡 Una vez completada la descarga automática, todos los archivos se eliminan inmediatamente. Si la descarga falla, actualiza la página y repite el proceso completo.</strong>`,
-      progressReady: "Listo para comenzar...",
-      final: "✅ Descarga completada o en curso.",
-      errors: {
-        selectFiles: "Por favor selecciona dos archivos .jwlibrary",
-        extension: "Ambos archivos deben tener la extensión .jwlibrary",
-        missingDate: "Por favor indica la fecha y hora local actual",
-        mergeFailed: "La fusión no se completó correctamente.",
-        fetchError: "Error al descargar"
       },
-      footer: {
-        message: `Este sitio es completamente gratuito, como todo lo que hace la organización de Jehová.<br>
-      Si estás contento con su uso, no dudes en hacer una donación en <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
-      También puedes ayudar con algunos gastos de desarrollo y del servidor enviándome un mensaje. Haz clic en el logo y serás redirigido a mi número de celular.
-      `,
-        copyright: "© 2025 — Todos los derechos reservados"
-      }
+      footerSecurity: `
+        <div class="security-box">
+          <h3>🔐 <strong>AVANT DE COMMENCER :</strong> Sécurité & Confidentialité des Fichiers</h3>
+          <div class="security-columns">
+            <div class="security-block">
+              <p>✅ Ce site ne stocke <strong>aucun fichier de manière permanente</strong>.</p>
+              <ul>
+                <li>Fichiers traités en mémoire ou temporairement</li>
+                <li>Supprimés après la fusion</li>
+                <li>Fichier final renvoyé via HTTPS</li>
+              </ul>
+            </div>
+            <div class="security-block">
+              <p>⚠️ Le serveur est <strong>stateless</strong> :</p>
+              <ul>
+                <li>Sessions indépendantes</li>
+                <li>Personne ne peut accéder à tes fichiers</li>
+                <li>Aucun lien sauvegardé</li>
+              </ul>
+              <p>🌸 Données effacées après inactivité ou redémarrage</p>
+            </div>
+          </div>
+        </div>
+      `
     },
     en: {
       title: "Merge JW Library files",
@@ -802,11 +858,84 @@
       },
       footer: {
         message: `This site is completely free, just like everything from Jehovah's organization.<br>
-      If you find it useful, feel free to donate at <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
-      You can also help with some development and server costs by sending me a message. Click on the logo to be redirected to my phone number.
-      `,
+  If you find it useful, feel free to donate at <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
+  You can also help with some development and server costs by sending me a message. Click on the logo to be redirected to my phone number.`,
         copyright: "© 2025 — All rights reserved"
-      }
+      },
+      footerSecurity: `
+        <div class="security-box">
+          <h3>🔐 <strong>BEFORE YOU START:</strong> File Security & Privacy</h3>
+          <div class="security-columns">
+            <div class="security-block">
+              <p>✅ This site does <strong>not store any file permanently</strong>.</p>
+              <ul>
+                <li>Files handled in memory or temporarily</li>
+                <li>Deleted after merge</li>
+                <li>Final file sent via HTTPS</li>
+              </ul>
+            </div>
+            <div class="security-block">
+              <p>⚠️ The server is <strong>stateless</strong>:</p>
+              <ul>
+                <li>Each session is independent</li>
+                <li>No one can access your files</li>
+                <li>No links are saved</li>
+              </ul>
+              <p>🌸 Data erased after inactivity or restart</p>
+            </div>
+          </div>
+        </div>
+      `
+    },
+    es: {
+      title: "Fusionar archivos de JW Library",
+      file1: "Selecciona el primer archivo (.jwlibrary):",
+      file2: "Selecciona el segundo archivo (.jwlibrary):",
+      datetime: "Fecha y hora local actual:",
+      steps: ["Carga", "Extracción", "Análisis", "Detección", "Listo..."],
+      mergeButton: "Cargar, Extraer y Analizar",
+      summary: `La fusión ha finalizado. Los datos idénticos (notas, resaltados, marcadores, listas de reproducción, etc.) se conservaron.
+  Los elementos únicos de cada archivo se han añadido.<br><br>
+  <strong>💡 Una vez completada la descarga automática, todos los archivos se eliminan inmediatamente. Si la descarga falla, actualiza la página y repite el proceso completo.</strong>`,
+      progressReady: "Listo para comenzar...",
+      final: "✅ Descarga completada o en curso.",
+      errors: {
+        selectFiles: "Por favor selecciona dos archivos .jwlibrary",
+        extension: "Ambos archivos deben tener la extensión .jwlibrary",
+        missingDate: "Por favor indica la fecha y hora local actual",
+        mergeFailed: "La fusión no se completó correctamente.",
+        fetchError: "Error al descargar"
+      },
+      footer: {
+        message: `Este sitio es completamente gratuito, como todo lo que hace la organización de Jehová.<br>
+  Si estás contento con su uso, no dudes en hacer una donación en <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
+  También puedes ayudar con algunos gastos de desarrollo y del servidor enviándome un mensaje. Haz clic en el logo y serás redirigido a mi número de celular.`,
+        copyright: "© 2025 — Todos los derechos reservados"
+      },
+      footerSecurity: `
+        <div class="security-box">
+          <h3>🔐 <strong>ANTES DE EMPEZAR:</strong> Seguridad y Confidencialidad de los Archivos</h3>
+          <div class="security-columns">
+            <div class="security-block">
+              <p>✅ Este sitio <strong>no guarda ningún archivo de forma permanente</strong>.</p>
+              <ul>
+                <li>Procesados en memoria o temporalmente</li>
+                <li>Eliminados tras la fusión</li>
+                <li>Archivo final enviado por HTTPS</li>
+              </ul>
+            </div>
+            <div class="security-block">
+              <p>⚠️ El servidor es <strong>stateless</strong>:</p>
+              <ul>
+                <li>Cada sesión es aislada</li>
+                <li>Nadie puede acceder a tus archivos</li>
+                <li>No se guarda ningún enlace</li>
+              </ul>
+              <p>🌸 Datos eliminados tras inactividad o reinicio</p>
+            </div>
+          </div>
+        </div>
+      `
     },
     it: {
       title: "Unisci file JW Library",
@@ -829,11 +958,34 @@
       },
       footer: {
         message: `Questo sito è completamente gratuito, proprio come tutto ciò che fa l'organizzazione di Geova.<br>
-      Se lo trovi utile, non esitare a fare una donazione su <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
-      Puoi anche contribuire con alcune spese di sviluppo e del server inviandomi un messaggio. Clicca sul logo e verrai reindirizzato al mio numero di telefono.
-      `,
+  Se lo trovi utile, non esitare a fare una donazione su <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
+  Puoi anche contribuire con alcune spese di sviluppo e del server inviandomi un messaggio. Clicca sul logo e verrai reindirizzato al mio numero di telefono.`,
         copyright: "© 2025 — Tutti i diritti riservati"
-      }
+      },
+      footerSecurity: `
+        <div class="security-box">
+          <h3>🔐 <strong>PRIMA DI INIZIARE:</strong> Sicurezza e Riservatezza dei File</h3>
+          <div class="security-columns">
+            <div class="security-block">
+              <p>✅ Questo sito <strong>non conserva file in modo permanente</strong>.</p>
+              <ul>
+                <li>Elaborati in memoria o temporanei</li>
+                <li>Eliminati dopo la fusione</li>
+                <li>File finale inviato via HTTPS</li>
+              </ul>
+            </div>
+            <div class="security-block">
+              <p>⚠️ Il server è <strong>stateless</strong>:</p>
+              <ul>
+                <li>Sessioni isolate</li>
+                <li>Nessuno può accedere ai tuoi file</li>
+                <li>Nessun link salvato</li>
+              </ul>
+              <p>🌸 Dati cancellati dopo inattività o riavvio</p>
+            </div>
+          </div>
+        </div>
+      `
     },
     pt: {
       title: "Mesclar arquivos JW Library",
@@ -856,11 +1008,34 @@
       },
       footer: {
         message: `Este site é totalmente gratuito, assim como tudo o que a organização de Jeová faz.<br>
-      Se você gostou de usá-lo, sinta-se à vontade para fazer uma doação em <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
-      Você também pode ajudar com alguns custos de desenvolvimento e servidor me enviando uma mensagem. Clique no logo e será redirecionado para o meu número de telefone.
-      `,
+  Se você gostou de usá-lo, sinta-se à vontade para fazer uma doação em <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
+  Você também pode ajudar com alguns custos de desenvolvimento e servidor me enviando uma mensagem. Clique no logo e será redirecionado para o meu número de telefone.`,
         copyright: "© 2025 — Todos os direitos reservados"
-      }
+      },
+      footerSecurity: `
+        <div class="security-box">
+          <h3>🔐 <strong>ANTES DE COMEÇAR:</strong> Segurança e Privacidade dos Arquivos</h3>
+          <div class="security-columns">
+            <div class="security-block">
+              <p>✅ Este site <strong>não armazena arquivos permanentemente</strong>.</p>
+              <ul>
+                <li>Processados em memória ou temporários</li>
+                <li>Apagados após a fusão</li>
+                <li>Arquivo final enviado por HTTPS</li>
+              </ul>
+            </div>
+            <div class="security-block">
+              <p>⚠️ O servidor é <strong>stateless</strong>:</p>
+              <ul>
+                <li>Cada sessão é isolada</li>
+                <li>Ninguém pode acessar seus arquivos</li>
+                <li>Nenhum link é salvo</li>
+              </ul>
+              <p>🌸 Dados apagados após inatividade ou reinício</p>
+            </div>
+          </div>
+        </div>
+      `
     }
   };
 
@@ -868,7 +1043,6 @@
 
   function switchLanguage(lang) {
     const t = translations[lang];
-
     if (!t) return;
 
     document.querySelector("h2").textContent = t.title;
@@ -890,16 +1064,37 @@
     document.getElementById("footer-message").innerHTML = t.footer.message;
     document.getElementById("footer-copy").textContent = t.footer.copyright;
 
+    // 🔁 Affiche uniquement le bloc de sécurité correspondant à la langue
+    const allLangBlocks = document.querySelectorAll('[id^="footer-security-"]');
+    allLangBlocks.forEach(el => el.style.display = 'none');
+
+    const langBox = document.getElementById(`footer-security-${lang}`);
+    if (langBox) {
+      langBox.innerHTML = t.footerSecurity;
+      langBox.style.display = 'grid';
+    }
+
     localStorage.setItem('preferredLang', lang);
     window.currentLang = lang;
-
-
   }
 
-window.addEventListener("DOMContentLoaded", () => {
-  const savedLang = localStorage.getItem('preferredLang') || 'fr';
-  switchLanguage(savedLang);
-});
+  window.addEventListener("DOMContentLoaded", () => {
+    const savedLang = localStorage.getItem('preferredLang') || 'fr';
+    switchLanguage(savedLang);
+  });
+
+  function trackMerge(status) {
+    const key = status === "success" ? "merge_success_count" : "merge_error_count";
+    const current = parseInt(localStorage.getItem(key) || "0", 10);
+    localStorage.setItem(key, current + 1);
+  }
+
+  function logMergeStats() {
+    const success = localStorage.getItem("merge_success_count") || 0;
+    const error = localStorage.getItem("merge_error_count") || 0;
+    console.log(`🔍 MERGE STATS — ✅ Succès: ${success} | ❌ Erreurs: ${error}`);
+  }
+
 
 
 </script>

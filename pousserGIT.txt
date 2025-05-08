@@ -43,3 +43,9 @@ Modifier CSS	            ❌ Non	                ✅ Oui
 
 
 https://jwlibrary-backend.onrender.com/download/debug
+
+
+POUR LES STATS
+logMergeStats();
+
+dans la console directement
