@@ -1083,18 +1083,6 @@
     switchLanguage(savedLang);
   });
 
-  function trackMerge(status) {
-    const key = status === "success" ? "merge_success_count" : "merge_error_count";
-    const current = parseInt(localStorage.getItem(key) || "0", 10);
-    localStorage.setItem(key, current + 1);
-  }
-
-  function logMergeStats() {
-    const success = localStorage.getItem("merge_success_count") || 0;
-    const error = localStorage.getItem("merge_error_count") || 0;
-    console.log(`🔍 MERGE STATS — ✅ Succès: ${success} | ❌ Erreurs: ${error}`);
-  }
-
 
 
 </script>

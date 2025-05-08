@@ -46,6 +46,7 @@ https://jwlibrary-backend.onrender.com/download/debug
 
 
 POUR LES STATS
-logMergeStats();
+https://web-production-a18d.up.railway.app/get-merge-stats
+
 
 dans la console directement

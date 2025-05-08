@@ -2785,12 +2785,15 @@ def index():
         mimetype='application/json'
     )
 
+
 # Fichier local pour stocker les stats
 MERGE_STATS_FILE = "merge_stats.json"
 STATS_LOCK = threading.Lock()
 
+
 import json
 import os
+
 
 def load_merge_stats():
     if not os.path.exists(MERGE_STATS_FILE):
@@ -2798,9 +2801,11 @@ def load_merge_stats():
     with open(MERGE_STATS_FILE, "r") as f:
         return json.load(f)
 
+
 def save_merge_stats(stats):
     with open(MERGE_STATS_FILE, "w") as f:
         json.dump(stats, f)
+
 
 @app.route("/track-merge", methods=["POST"])
 def track_merge():
@@ -2819,6 +2824,7 @@ def track_merge():
     except Exception as e:
         print("❌ Erreur dans /track-merge :", e)
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/get-merge-stats", methods=["GET"])
 def get_merge_stats():
