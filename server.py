@@ -2839,10 +2839,6 @@ def get_merge_stats():
     with STATS_LOCK:
         stats = load_merge_stats()
 
-    # Si des erreurs sont présentes, les formatter proprement
-    if "errors" in stats:
-        stats["errors"] = "\n".join(stats["errors"])
-
     return Response(
         response=json.dumps(stats, ensure_ascii=False, indent=2),
         status=200,
