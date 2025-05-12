@@ -327,6 +327,11 @@
       border: 1px solid #ccc;
     }
 
+    .hidden {
+      display: none;
+    }
+
+
 
 
   </style>
@@ -408,6 +413,9 @@
       Les éléments uniques de chaque fichier ont été ajoutés automatiquement.
     </p>
   </div>
+  <button id="manualDownloadBtn" class="btn btn-primary hidden">
+    📥 Télécharger manuellement le fichier
+  </button>
 </div>
 <div id="errorDisplayWrapper" style="
   max-width: 800px;
@@ -709,25 +717,28 @@
     } catch (error) {
       console.error("Erreur:", error);
       showError(error.message);
-      trackMerge("error");
+      trackMerge("error", error.message);
       await updateProgress(currentProgress, `Erreur: ${error.message}`);
       document.getElementById('mergeButton').disabled = false;
     }
   }
 
-  function trackMerge(status) {
+  function trackMerge(status, message = null) {
+    const payload = { status };
+    if (status === "error" && message) {
+      payload.message = message;
+    }
+
     fetch(`${BASE_URL}/track-merge`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status })
+      body: JSON.stringify(payload)
     }).then(res => {
       if (!res.ok) console.warn("❌ Erreur d'envoi des stats de fusion");
     }).catch(err => {
       console.warn("❌ Erreur réseau pour les stats :", err);
     });
   }
-
-
 
 
   async function rebuildFinalZip() {
@@ -747,13 +758,10 @@
       console.log("✅ Fichiers .db, .shm, .wal téléchargés");
 
       const zip = new JSZip();
-
-      // 🎯 Ajout des fichiers de base renommés
       zip.file("userData.db", debugBlob, { binary: true, compression: "DEFLATE" });
       zip.file("userData.db-shm", shmBlob, { binary: true, compression: "DEFLATE" });
       zip.file("userData.db-wal", walBlob, { binary: true, compression: "DEFLATE" });
 
-      // 🎯 Ajout des fichiers médias (jpg, png, mp4, etc.)
       if (window.mediaToInclude?.length) {
         for (const media of window.mediaToInclude) {
           zip.file(media.name, media.file, { binary: true, compression: "DEFLATE" });
@@ -770,21 +778,49 @@
 
       const zipUrl = URL.createObjectURL(finalZip);
       const link = document.createElement("a");
-      link.href = zipUrl;
       const now = new Date();
-      const dateStr = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth()+1).toString().padStart(2, '0')}.${now.getFullYear()}`;
+      const dateStr = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
       const timeStr = `${now.getHours().toString().padStart(2, '0')}h${now.getMinutes().toString().padStart(2, '0')}`;
-      link.download = `UserdataBackup_merged(${dateStr}_${timeStr}).jwlibrary`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(zipUrl);
+      const filename = `UserdataBackup_merged(${dateStr}_${timeStr}).jwlibrary`;
 
-      console.log("🎯 Téléchargement de merged.jwlibrary terminé !");
+      link.href = zipUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+
+      // ✅ Tentative de téléchargement automatique
+      let downloadStarted = false;
+      setTimeout(() => {
+        try {
+          link.click();
+          downloadStarted = true;
+          console.log("🎯 Téléchargement automatique déclenché");
+        } catch (e) {
+          console.warn("⚠️ Téléchargement automatique bloqué");
+        } finally {
+          document.body.removeChild(link);
+          URL.revokeObjectURL(zipUrl);
+        }
+
+        // ✅ Si rien ne se passe, affiche le bouton manuel
+        if (!downloadStarted) {
+          const manualBtn = document.getElementById("manualDownloadBtn");
+          manualBtn.classList.remove("hidden");
+          manualBtn.onclick = () => {
+            const manualLink = document.createElement("a");
+            manualLink.href = zipUrl;
+            manualLink.download = filename;
+            document.body.appendChild(manualLink);
+            manualLink.click();
+            document.body.removeChild(manualLink);
+            manualBtn.classList.add("hidden");
+          };
+        }
+      }, 0);
     } catch (error) {
       console.error("❌ Erreur dans rebuildFinalZip:", error);
     }
   }
+
 
   const translations = {
     fr: {

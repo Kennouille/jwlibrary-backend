@@ -2817,7 +2817,13 @@ def track_merge():
 
         with STATS_LOCK:
             stats = load_merge_stats()
-            stats[status] += 1
+            if status == "error":
+                error_message = data.get("message", "Erreur inconnue")
+                if "errors" not in stats:
+                    stats["errors"] = []
+                stats["errors"].append(error_message)
+            else:
+                stats["success"] += 1
             save_merge_stats(stats)
 
         return jsonify({"message": f"{status} count updated"}), 200
