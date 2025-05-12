@@ -1513,6 +1513,9 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
 
+    # 🧹 On vide la table avant de la reconstruire proprement
+    cursor.execute("DELETE FROM PlaylistItemIndependentMediaMap")
+
     inserted = 0
     skipped = 0
 
