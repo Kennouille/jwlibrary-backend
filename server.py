@@ -1440,12 +1440,14 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
 
-    # Étape 1: Vider complètement la table avant de la reconstruire
-    # (plus sûr que de supprimer sélectivement)
+    # Étape 1: Vider complètement la table
     cursor.execute("DELETE FROM PlaylistItemLocationMap")
     print("🗑️ Table PlaylistItemLocationMap vidée avant reconstruction")
 
-    # Étape 2: insertion des lignes fusionnées (issues des mappings)
+    total_inserted = 0
+    total_skipped = 0
+
+    # Étape 2: Reconstruction avec mapping
     for db_path in [file1_db, file2_db]:
         normalized_db = os.path.normpath(db_path)
         with sqlite3.connect(db_path) as src_conn:
@@ -1462,33 +1464,28 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
                 new_loc_id = location_id_map.get((normalized_db, old_loc_id))
 
                 if new_item_id is None or new_loc_id is None:
-                    print(f"⚠️ Ignoré: item_id={old_item_id} ou location_id={old_loc_id} non mappé")
+                    print(f"⚠️ Ignoré: PlaylistItemId={old_item_id} ou LocationId={old_loc_id} non mappé (source: {os.path.basename(db_path)})")
+                    total_skipped += 1
                     continue
 
-                # Vérifie doublon exact (redondant maintenant qu'on a vidé la table)
-                cursor.execute("""
-                    SELECT 1 FROM PlaylistItemLocationMap
-                    WHERE PlaylistItemId = ? AND LocationId = ?
-                """, (new_item_id, new_loc_id))
-                exists = cursor.fetchone()
-                if exists:
-                    print(f"⚠️ Doublon détecté: Item {new_item_id}, Location {new_loc_id}")
-                    continue
-
-                # Insertion sûre
-                cursor.execute("""
-                    INSERT INTO PlaylistItemLocationMap
-                    (PlaylistItemId, LocationId, MajorMultimediaType, BaseDurationTicks)
-                    VALUES (?, ?, ?, ?)
-                """, (new_item_id, new_loc_id, mm_type, duration))
-                print(f"✅ Insertion: Item {new_item_id}, Location {new_loc_id}")
+                try:
+                    cursor.execute("""
+                        INSERT INTO PlaylistItemLocationMap
+                        (PlaylistItemId, LocationId, MajorMultimediaType, BaseDurationTicks)
+                        VALUES (?, ?, ?, ?)
+                    """, (new_item_id, new_loc_id, mm_type, duration))
+                    print(f"✅ Insertion: PlaylistItemId={new_item_id}, LocationId={new_loc_id}")
+                    total_inserted += 1
+                except sqlite3.IntegrityError as e:
+                    print(f"⚠️ Doublon ignoré: {e}")
+                    total_skipped += 1
 
     conn.commit()
 
-    # Vérification finale
+    print(f"📊 Résultat: {total_inserted} lignes insérées, {total_skipped} ignorées")
     cursor.execute("SELECT COUNT(*) FROM PlaylistItemLocationMap")
     count = cursor.fetchone()[0]
-    print(f"🔍 Total après fusion: {count} lignes")
+    print(f"🔍 Total final dans PlaylistItemLocationMap: {count} lignes")
 
     conn.close()
 
