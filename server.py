@@ -987,19 +987,19 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
                 location_id_map[(db_source, old_loc_id)] = new_id
                 continue
 
-            # Recherche d'une correspondance exacte (même contenu)
+            # Recherche d'une correspondance exacte (même contenu) avec gestion des NULL
             cur.execute("""
                 SELECT LocationId FROM Location
                 WHERE 
-                    IFNULL(BookNumber, '') = IFNULL(?, '') AND
-                    IFNULL(ChapterNumber, '') = IFNULL(?, '') AND
-                    IFNULL(DocumentId, '') = IFNULL(?, '') AND
-                    IFNULL(Track, '') = IFNULL(?, '') AND
-                    IFNULL(IssueTagNumber, '') = IFNULL(?, '') AND
-                    IFNULL(KeySymbol, '') = IFNULL(?, '') AND
-                    IFNULL(MepsLanguage, '') = IFNULL(?, '') AND
-                    IFNULL(Type, '') = IFNULL(?, '') AND
-                    IFNULL(Title, '') = IFNULL(?, '')
+                    (BookNumber IS NULL OR BookNumber = ?) AND
+                    (ChapterNumber IS NULL OR ChapterNumber = ?) AND
+                    (DocumentId IS NULL OR DocumentId = ?) AND
+                    (Track IS NULL OR Track = ?) AND
+                    (IssueTagNumber IS NULL OR IssueTagNumber = ?) AND
+                    (KeySymbol IS NULL OR KeySymbol = ?) AND
+                    (MepsLanguage IS NULL OR MepsLanguage = ?) AND
+                    (Type IS NULL OR Type = ?) AND
+                    (Title IS NULL OR Title = ?)
             """, (book_num, chap_num, doc_id, track, issue, key_sym, meps_lang, loc_type, title))
 
             existing = cur.fetchone()
@@ -1036,6 +1036,7 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
 
     print("✔ Fusion Location terminée.")
     return location_id_map
+
 
 
 @app.route('/upload', methods=['GET', 'POST'])
