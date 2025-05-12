@@ -991,15 +991,15 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
             cur.execute("""
                 SELECT LocationId FROM Location
                 WHERE 
-                    (BookNumber IS NULL OR BookNumber = ?) AND
-                    (ChapterNumber IS NULL OR ChapterNumber = ?) AND
-                    (DocumentId IS NULL OR DocumentId = ?) AND
-                    (Track IS NULL OR Track = ?) AND
-                    (IssueTagNumber IS NULL OR IssueTagNumber = ?) AND
-                    (KeySymbol IS NULL OR KeySymbol = ?) AND
-                    (MepsLanguage IS NULL OR MepsLanguage = ?) AND
-                    (Type IS NULL OR Type = ?) AND
-                    (Title IS NULL OR Title = ?)
+                    BookNumber IS ? AND
+                    ChapterNumber IS ? AND
+                    DocumentId IS ? AND
+                    Track IS ? AND
+                    IssueTagNumber = ? AND
+                    KeySymbol IS ? AND
+                    MepsLanguage IS ? AND
+                    Type = ? AND
+                    Title IS ?
             """, (book_num, chap_num, doc_id, track, issue, key_sym, meps_lang, loc_type, title))
 
             existing = cur.fetchone()
