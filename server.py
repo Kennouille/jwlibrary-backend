@@ -1505,13 +1505,16 @@ def cleanup_playlist_item_location_map(conn):
     print("🧹 Nettoyage post-merge : PlaylistItemLocationMap nettoyée.")
 
 
-def merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map):
+def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map):
     """
-    Fusionne PlaylistItemIndependentMediaMap en PlaylistItemMediaMap avec adaptation du mapping.
+    Fusionne PlaylistItemIndependentMediaMap avec adaptation du mapping.
     """
-    print("\n[FUSION PLAYLISTITEMMEDIA MAP]")
+    print("\n[FUSION PlaylistItemIndependentMediaMap]")
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
+
+    inserted = 0
+    skipped = 0
 
     for db_path in [file1_db, file2_db]:
         normalized_db = os.path.normpath(db_path)
@@ -1528,30 +1531,25 @@ def merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_ma
                 new_item_id = item_id_map.get((normalized_db, old_item_id))
                 new_media_id = independent_media_map.get((normalized_db, old_media_id))
 
-                order_idx = duration_ticks
-
-                if new_item_id and new_media_id:
-                    cursor.execute("""
-                        SELECT 1 FROM PlaylistItemMediaMap
-                        WHERE PlaylistItemId = ? AND MediaFileId = ?
-                    """, (new_item_id, new_media_id))
-                    if cursor.fetchone():
-                        print(f"⏩ Déjà présent : (PlaylistItemId={new_item_id}, MediaFileId={new_media_id})")
-                        continue
-
-                    try:
-                        cursor.execute("""
-                            INSERT INTO PlaylistItemMediaMap
-                            (PlaylistItemId, MediaFileId, OrderIndex)
-                            VALUES (?, ?, ?)
-                        """, (new_item_id, new_media_id, order_idx))
-                    except sqlite3.IntegrityError as e:
-                        print(f"🚫 Erreur PlaylistItemMediaMap: {e}")
-                else:
+                if new_item_id is None or new_media_id is None:
                     print(f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, IndependentMediaId={old_media_id} (source: {normalized_db})")
+                    skipped += 1
+                    continue
+
+                try:
+                    cursor.execute("""
+                        INSERT INTO PlaylistItemIndependentMediaMap
+                        (PlaylistItemId, IndependentMediaId, DurationTicks)
+                        VALUES (?, ?, ?)
+                    """, (new_item_id, new_media_id, duration_ticks))
+                    inserted += 1
+                except sqlite3.IntegrityError as e:
+                    print(f"🚫 Doublon ignoré : {e}")
+                    skipped += 1
 
     conn.commit()
     conn.close()
+    print(f"✅ PlaylistItemIndependentMediaMap : {inserted} insérés, {skipped} ignorés.")
 
 
 def merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map):
@@ -1720,9 +1718,9 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
         print("--> MarkerMaps fusionnées.")
 
         # 5. Fusion de PlaylistItemIndependentMediaMap
-        # Fusion de PlaylistItemMediaMap (basée sur PlaylistItemIndependentMediaMap)
-        merge_playlist_item_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map)
-        print("--> PlaylistItemMediaMap fusionnée.")
+        # Fusion de PlaylistItemIndependentMediaMap (basée sur PlaylistItemIndependentMediaMap)
+        merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map)
+        print("--> PlaylistItemIndependentMediaMap fusionnée.")
 
         # 6. Fusion PlaylistItemLocationMap
         merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map)
