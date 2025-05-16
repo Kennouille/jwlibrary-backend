@@ -723,6 +723,7 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
     print(f"❌ LocationId manquants : {missing_count}")
 
 
+
 def update_location_references(merged_db_path, location_replacements):
     conn = sqlite3.connect(merged_db_path)
     cursor = conn.cursor()
