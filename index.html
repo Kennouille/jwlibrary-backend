@@ -331,6 +331,25 @@
       display: none;
     }
 
+    #manualDownloadMessage {
+      margin-bottom: 10px;
+      white-space: pre-wrap;
+      font-family: system-ui;
+    }
+
+    .btn-primary {
+      background-color: #007bff;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-primary:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
 
 
 
@@ -347,12 +366,15 @@
     <img src="https://flagcdn.com/gb.svg" width="24" alt="en" onclick="switchLanguage('en')" style="cursor:pointer; margin-left: 5px;">
     <img src="https://flagcdn.com/it.svg" width="24" alt="it" onclick="switchLanguage('it')" style="cursor:pointer; margin-left: 5px;">
     <img src="https://flagcdn.com/br.svg" width="24" alt="pt" onclick="switchLanguage('pt')" style="cursor:pointer; margin-left: 5px;">
+    <img src="https://flagcdn.com/de.svg" width="24" alt="de" onclick="switchLanguage('de')" style="cursor:pointer; margin-left: 5px;">
   </div>
   <div id="footer-security-fr" class="footer-security-box" style="display: none">...</div>
   <div id="footer-security-en" class="footer-security-box" style="display: none">...</div>
   <div id="footer-security-es" class="footer-security-box" style="display: none">...</div>
   <div id="footer-security-it" class="footer-security-box" style="display: none">...</div>
   <div id="footer-security-pt" class="footer-security-box" style="display: none">...</div>
+  <div id="footer-security-de" class="footer-security-box" style="display: none">...</div>
+
 
 
   <label for="file1">Sélectionner le premier fichier (.jwlibrary) :</label>
@@ -413,9 +435,10 @@
       Les éléments uniques de chaque fichier ont été ajoutés automatiquement.
     </p>
   </div>
-  <button id="manualDownloadBtn" class="btn btn-primary hidden">
-    📥 Télécharger manuellement le fichier
-  </button>
+  <div id="manualDownloadContainer" class="hidden" style="margin-top: 20px;">
+    <p id="manualDownloadMessage"></p>
+    <button id="manualDownloadBtn" class="btn btn-primary"></button>
+  </div>
 </div>
 <div id="errorDisplayWrapper" style="
   max-width: 800px;
@@ -452,7 +475,11 @@
 </footer>
 
 
-<script>
+<script type="module">
+  import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm";
+
+  const supabase = createClient("https://mngggybayjooqkzbhvqy.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1uZ2dneWJheWpvb3FremJodnF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjY2MTU3NDgsImV4cCI6MjA0MjE5MTc0OH0.lnOqnq1AwN41g4xJ5O9oNIPBQqXYJkSrRhJ3osXtcsk");
+
   const BASE_URL = "https://web-production-a18d.up.railway.app/";
   let currentProgress = 0;
 
@@ -575,6 +602,41 @@
       return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
+  async function logMergeToSupabase(status, message = "") {
+    let country = "unknown";
+    let city = "unknown";
+
+    try {
+      const res = await fetch("https://ipapi.co/json/");
+      if (res.ok) {
+        const json = await res.json();
+        country = json.country || "unknown"; // Exemple: "FR"
+        city = json.city || "unknown";       // Exemple: "Lyon"
+      }
+    } catch (e) {
+      console.warn("🌐 Impossible de récupérer la localisation :", e.message);
+    }
+
+    const logEntry = {
+      status,
+      message,
+      lang: window.currentLang || "unknown",
+      platform: navigator.platform || "unknown",
+      browser: navigator.userAgent || "unknown",
+      country,
+      city
+    };
+
+    const { data, error } = await supabase
+      .from("merge_logs")
+      .insert([logEntry]);
+
+    if (error) {
+      console.warn("❌ Supabase log failed:", error.message);
+    } else {
+      console.log("✅ Supabase log enregistré:", data);
+    }
+  }
 
 
   async function startMerge() {
@@ -694,7 +756,7 @@
 
       await rebuildFinalZip();
       trackMerge("success");
-
+      await logMergeToSupabase("success");
 
       await updateProgress(100, "Fichier prêt", 5);
       progressBar.classList.remove('progress-bar-animated');
@@ -718,6 +780,8 @@
       console.error("Erreur:", error);
       showError(error.message);
       trackMerge("error", error.message);
+      await logMergeToSupabase("error", error.message);
+
       await updateProgress(currentProgress, `Erreur: ${error.message}`);
       document.getElementById('mergeButton').disabled = false;
     }
@@ -743,7 +807,18 @@
 
   async function rebuildFinalZip() {
     try {
-      console.log("📥 Téléchargement des fichiers .db, .shm, .wal...");
+      console.log("📥 " + translations[window.currentLang].messages.downloadingFiles);
+
+      const isAppleDevice = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      if (isAppleDevice) {
+        const manualContainer = document.getElementById("manualDownloadContainer");
+        const manualMessage = document.getElementById("manualDownloadMessage");
+        const manualBtn = document.getElementById("manualDownloadBtn");
+
+        manualContainer.classList.remove("hidden");
+        manualMessage.textContent = translations[window.currentLang].messages.preparingDownload;
+        manualBtn.textContent = translations[window.currentLang].actions.manualDownload;
+      }
 
       const fetchFile = async (name) => {
         const res = await fetch(`${BASE_URL}/download/${name}?ngrok-skip-browser-warning=true`);
@@ -751,11 +826,13 @@
         return await res.blob();
       };
 
-      const debugBlob = await fetchFile("debug_cleaned_before_copy.db");
-      const shmBlob = await fetchFile("debug_cleaned_before_copy.db-shm");
-      const walBlob = await fetchFile("debug_cleaned_before_copy.db-wal");
+      const [debugBlob, shmBlob, walBlob] = await Promise.all([
+        fetchFile("debug_cleaned_before_copy.db"),
+        fetchFile("debug_cleaned_before_copy.db-shm"),
+        fetchFile("debug_cleaned_before_copy.db-wal")
+      ]);
 
-      console.log("✅ Fichiers .db, .shm, .wal téléchargés");
+      console.log("✅ " + translations[window.currentLang].messages.filesDownloaded);
 
       const zip = new JSZip();
       zip.file("userData.db", debugBlob, { binary: true, compression: "DEFLATE" });
@@ -768,59 +845,65 @@
         }
       }
 
-      console.log("📦 Création de l'archive .jwlibrary avec JSZip...");
+      console.log("📦 " + translations[window.currentLang].messages.creatingArchive);
 
       const finalZip = await zip.generateAsync({
         type: "blob",
         compression: "DEFLATE",
-        compressionOptions: { level: 9 }
+        compressionOptions: { level: isAppleDevice ? 6 : 9 }
       });
 
-      const zipUrl = URL.createObjectURL(finalZip);
-      const link = document.createElement("a");
       const now = new Date();
-      const dateStr = `${now.getDate().toString().padStart(2, '0')}.${(now.getMonth() + 1).toString().padStart(2, '0')}.${now.getFullYear()}`;
-      const timeStr = `${now.getHours().toString().padStart(2, '0')}h${now.getMinutes().toString().padStart(2, '0')}`;
-      const filename = `UserdataBackup_merged(${dateStr}_${timeStr}).jwlibrary`;
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      const filename = `UserdataBackup_${yyyy}-${mm}-${dd}_merged.jwlibrary`;
 
-      link.href = zipUrl;
-      link.download = filename;
-      document.body.appendChild(link);
+      window.generatedZipBlob = finalZip;
+      window.generatedFilename = filename;
 
-      // ✅ Tentative de téléchargement automatique
-      let downloadStarted = false;
-      setTimeout(() => {
-        try {
-          link.click();
-          downloadStarted = true;
-          console.log("🎯 Téléchargement automatique déclenché");
-        } catch (e) {
-          console.warn("⚠️ Téléchargement automatique bloqué");
-        } finally {
+      if (!isAppleDevice) {
+        // Téléchargement automatique pour les autres plateformes
+        const zipUrl = URL.createObjectURL(finalZip);
+        const link = document.createElement("a");
+        link.href = zipUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        setTimeout(() => {
           document.body.removeChild(link);
           URL.revokeObjectURL(zipUrl);
-        }
-
-        // ✅ Si rien ne se passe, affiche le bouton manuel
-        if (!downloadStarted) {
-          const manualBtn = document.getElementById("manualDownloadBtn");
-          manualBtn.classList.remove("hidden");
-          manualBtn.onclick = () => {
-            const manualLink = document.createElement("a");
-            manualLink.href = zipUrl;
-            manualLink.download = filename;
-            document.body.appendChild(manualLink);
-            manualLink.click();
+        }, 100);
+        console.log("🎯 " + translations[window.currentLang].messages.autoDownloadStarted);
+      } else {
+        // Pour iOS, on s'assure que le bouton manuel est configuré
+        const manualBtn = document.getElementById("manualDownloadBtn");
+        manualBtn.onclick = () => {
+          const manualUrl = URL.createObjectURL(finalZip);
+          const manualLink = document.createElement("a");
+          manualLink.href = manualUrl;
+          manualLink.download = filename;
+          document.body.appendChild(manualLink);
+          manualLink.click();
+          setTimeout(() => {
             document.body.removeChild(manualLink);
-            manualBtn.classList.add("hidden");
-          };
-        }
-      }, 0);
+            URL.revokeObjectURL(manualUrl);
+          }, 3000);
+        };
+      }
+
     } catch (error) {
-      console.error("❌ Erreur dans rebuildFinalZip:", error);
+      console.error("❌ " + translations[window.currentLang].errors.operationFailed, error);
+
+      if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+        const manualMessage = document.getElementById("manualDownloadMessage");
+        if (manualMessage) {
+          manualMessage.textContent = `${translations[window.currentLang].errors.operationFailed}: ${error.message}`;
+          manualMessage.style.color = "#f44336";
+        }
+      }
     }
   }
-
 
   const translations = {
     fr: {
@@ -847,6 +930,20 @@
   Si tu es content de son utilisation, n'hésite pas à faire un don sur <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
   Tu peux aussi aider aux quelques frais de développement et du serveur en m'envoyant un message. Clique sur le logo et tu seras redirigé vers mon numéro de portable.`,
         copyright: "© 2025 — Tous droits réservés"
+      },
+      manualDownload: {
+        message: "💡 Si le téléchargement ne s'est pas effectué, appuie sur le bouton ci-dessous.",
+        button: "📥 Télécharger manuellement le fichier"
+      },
+      messages: {
+        downloadingFiles: "Téléchargement des fichiers .db, .shm, .wal...",
+        filesDownloaded: "Fichiers téléchargés avec succès",
+        creatingArchive: "Création de l'archive finale...",
+        autoDownloadStarted: "Téléchargement automatique déclenché",
+        preparingDownload: "Préparation du téléchargement manuel..."
+      },
+      actions: {
+        manualDownload: "📥 Télécharger manuellement le fichier"
       },
       footerSecurity: `
         <div class="security-box">
@@ -898,6 +995,20 @@
   You can also help with some development and server costs by sending me a message. Click on the logo to be redirected to my phone number.`,
         copyright: "© 2025 — All rights reserved"
       },
+      manualDownload: {
+        message: "💡 If the download didn’t start, click the button below.",
+        button: "📥 Download the file manually"
+      },
+      messages: {
+        downloadingFiles: "Téléchargement des fichiers .db, .shm, .wal...",
+        filesDownloaded: "Fichiers téléchargés avec succès",
+        creatingArchive: "Création de l'archive finale...",
+        autoDownloadStarted: "Téléchargement automatique déclenché",
+        preparingDownload: "Préparation du téléchargement manuel..."
+      },
+      actions: {
+        manualDownload: "📥 Télécharger manuellement le fichier"
+      },
       footerSecurity: `
         <div class="security-box">
           <h3>🔐 <strong>BEFORE YOU START:</strong> File Security & Privacy</h3>
@@ -947,6 +1058,20 @@
   Si estás contento con su uso, no dudes en hacer una donación en <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a>.<br>
   También puedes ayudar con algunos gastos de desarrollo y del servidor enviándome un mensaje. Haz clic en el logo y serás redirigido a mi número de celular.`,
         copyright: "© 2025 — Todos los derechos reservados"
+      },
+      manualDownload: {
+        message: "💡 Si la descarga no se realizó, haz clic en el botón de abajo.",
+        button: "📥 Descargar el archivo manualmente"
+      },
+      messages: {
+        downloadingFiles: "Descargando archivos .db, .shm, .wal...",
+        filesDownloaded: "Archivos descargados correctamente",
+        creatingArchive: "Creando el archivo final...",
+        autoDownloadStarted: "Descarga automática iniciada",
+        preparingDownload: "Preparando descarga manual..."
+      },
+      actions: {
+        manualDownload: "📥 Descargar el archivo manualmente"
       },
       footerSecurity: `
         <div class="security-box">
@@ -998,6 +1123,20 @@
   Puoi anche contribuire con alcune spese di sviluppo e del server inviandomi un messaggio. Clicca sul logo e verrai reindirizzato al mio numero di telefono.`,
         copyright: "© 2025 — Tutti i diritti riservati"
       },
+      manualDownload: {
+        message: "💡 Se il download non è iniziato, fai clic sul pulsante qui sotto.",
+        button: "📥 Scarica il file manualmente"
+      },
+      messages: {
+        downloadingFiles: "Download dei file .db, .shm, .wal in corso...",
+        filesDownloaded: "File scaricati con successo",
+        creatingArchive: "Creazione dell’archivio finale...",
+        autoDownloadStarted: "Download automatico avviato",
+        preparingDownload: "Preparazione del download manuale..."
+      },
+      actions: {
+        manualDownload: "📥 Scarica il file manualmente"
+      },
       footerSecurity: `
         <div class="security-box">
           <h3>🔐 <strong>PRIMA DI INIZIARE:</strong> Sicurezza e Riservatezza dei File</h3>
@@ -1048,6 +1187,20 @@
   Você também pode ajudar com alguns custos de desenvolvimento e servidor me enviando uma mensagem. Clique no logo e será redirecionado para o meu número de telefone.`,
         copyright: "© 2025 — Todos os direitos reservados"
       },
+      manualDownload: {
+        message: "💡 Se o download não foi iniciado, clique no botão abaixo.",
+        button: "📥 Baixar o arquivo manualmente"
+      },
+      messages: {
+        downloadingFiles: "Baixando arquivos .db, .shm, .wal...",
+        filesDownloaded: "Arquivos baixados com sucesso",
+        creatingArchive: "Criando o arquivo final...",
+        autoDownloadStarted: "Download automático iniciado",
+        preparingDownload: "Preparando o download manual..."
+      },
+      actions: {
+        manualDownload: "📥 Baixar o arquivo manualmente"
+      },
       footerSecurity: `
         <div class="security-box">
           <h3>🔐 <strong>ANTES DE COMEÇAR:</strong> Segurança e Privacidade dos Arquivos</h3>
@@ -1068,6 +1221,70 @@
                 <li>Nenhum link é salvo</li>
               </ul>
               <p>🌸 Dados apagados após inatividade ou reinício</p>
+            </div>
+          </div>
+        </div>
+      `
+    },
+    de: {
+      title: "JW Library-Dateien zusammenführen",
+      file1: "Erste Datei auswählen (.jwlibrary):",
+      file2: "Zweite Datei auswählen (.jwlibrary):",
+      datetime: "Aktuelles lokales Datum und Uhrzeit:",
+      steps: ["Laden", "Entpacken", "Analysieren", "Abgleichen", "Bereit..."],
+      mergeButton: "Laden, Entpacken & Analysieren",
+      summary: `Die Zusammenführung ist abgeschlossen. Identische Daten (Notizen, Hervorhebungen, Lesezeichen, Playlists usw.) wurden beibehalten.
+    Einzigartige Elemente aus beiden Dateien wurden hinzugefügt.<br><br>
+    <strong>💡 Nach dem automatischen Herunterladen werden alle Dateien sofort gelöscht. Falls das Herunterladen nicht funktioniert hat, lade die Seite neu und starte den Vorgang erneut.</strong>`,
+      progressReady: "Bereit zum Starten...",
+      final: "✅ Herunterladen abgeschlossen oder läuft.",
+      errors: {
+        selectFiles: "Bitte wähle zwei .jwlibrary-Dateien aus",
+        extension: "Beide Dateien müssen die Endung .jwlibrary haben",
+        missingDate: "Bitte gib das aktuelle lokale Datum und die Uhrzeit an",
+        mergeFailed: "Die Zusammenführung wurde nicht korrekt abgeschlossen.",
+        fetchError: "Fehler beim Herunterladen von"
+      },
+      manualDownload: {
+        message: "💡 Falls der Download nicht gestartet wurde, klicke auf den Button unten.",
+        button: "📥 Datei manuell herunterladen"
+      },
+      footer: {
+        message: `Diese Seite ist vollständig kostenlos, wie alles, was Jehovas Organisation bereitstellt.<br>
+    Wenn dir diese Seite gefällt, kannst du eine Spende auf <a href="https://donate.jw.org" target="_blank">DONATE.JW.ORG</a> machen.<br>
+    Du kannst auch bei den kleinen Entwicklungs- und Serverkosten helfen, indem du mir eine Nachricht schickst. Klicke auf das Logo, um zu meiner Telefonnummer weitergeleitet zu werden.`,
+        copyright: "© 2025 — Alle Rechte vorbehalten"
+      },
+      messages: {
+        downloadingFiles: "Lade .db-, .shm- und .wal-Dateien herunter...",
+        filesDownloaded: "Dateien erfolgreich heruntergeladen",
+        creatingArchive: "Erstelle das endgültige Archiv...",
+        autoDownloadStarted: "Automatischer Download gestartet",
+        preparingDownload: "Manueller Download wird vorbereitet..."
+      },
+      actions: {
+        manualDownload: "📥 Datei manuell herunterladen"
+      },
+      footerSecurity: `
+        <div class="security-box">
+          <h3>🔐 <strong>BEVOR DU BEGINNST:</strong> Sicherheit & Datenschutz</h3>
+          <div class="security-columns">
+            <div class="security-block">
+              <p>✅ Diese Seite speichert <strong>keine Dateien dauerhaft</strong>.</p>
+              <ul>
+                <li>Dateien werden nur im Arbeitsspeicher oder temporär verarbeitet</li>
+                <li>Nach dem Zusammenführen gelöscht</li>
+                <li>Finale Datei wird per HTTPS gesendet</li>
+              </ul>
+            </div>
+            <div class="security-block">
+              <p>⚠️ Der Server ist <strong>zustandslos</strong>:</p>
+              <ul>
+                <li>Sitzungen sind unabhängig</li>
+                <li>Niemand hat Zugriff auf deine Dateien</li>
+                <li>Keine Links werden gespeichert</li>
+              </ul>
+              <p>🌸 Daten werden bei Inaktivität oder Neustart gelöscht</p>
             </div>
           </div>
         </div>
@@ -1110,6 +1327,14 @@
       langBox.style.display = 'grid';
     }
 
+    // 📥 Texte du bouton et message de téléchargement manuel
+    const manualMessage = document.getElementById("manualDownloadMessage");
+    if (manualMessage) manualMessage.textContent = t.manualDownload.message;
+
+    const manualBtn = document.getElementById("manualDownloadBtn");
+    if (manualBtn) manualBtn.textContent = t.manualDownload.button;
+
+
     localStorage.setItem('preferredLang', lang);
     window.currentLang = lang;
   }
@@ -1118,6 +1343,12 @@
     const savedLang = localStorage.getItem('preferredLang') || 'fr';
     switchLanguage(savedLang);
   });
+
+   window.startMerge = startMerge;  // 👈 expose la fonction pour le HTML
+   window.switchLanguage = switchLanguage;
+   window.copyError = copyError;
+
+
 
 
 

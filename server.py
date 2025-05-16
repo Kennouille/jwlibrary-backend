@@ -643,6 +643,21 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
     skipped_count = 0
     missing_count = 0
 
+    # Étape 1 : lire toutes les données dans une liste
+    all_rows = []  # [(source_db, old_loc_id, tag, value), ...]
+
+    for db_path in [file1_db, file2_db]:
+        try:
+            with sqlite3.connect(db_path) as src_conn:
+                src_cursor = src_conn.cursor()
+                src_cursor.execute("SELECT LocationId, TextTag, Value FROM InputField")
+                for loc_id, tag, value in src_cursor.fetchall():
+                    all_rows.append((db_path, loc_id, tag, value))
+        except Exception as e:
+            print(f"⚠️ Erreur lecture InputField depuis {db_path}: {e}")
+            continue
+
+    # Étape 2 : ouvrir la base fusionnée et insérer les données
     with sqlite3.connect(merged_db_path, timeout=10, check_same_thread=False) as conn:
         cursor = conn.cursor()
 
@@ -656,59 +671,49 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
             )
         """)
 
-        for db_path in [file1_db, file2_db]:
-            with sqlite3.connect(db_path) as src_conn:
-                src_cursor = src_conn.cursor()
-                try:
-                    src_cursor.execute("SELECT LocationId, TextTag, Value FROM InputField")
-                    rows = src_cursor.fetchall()
-                except Exception as e:
-                    print(f"⚠️ Erreur lecture InputField depuis {db_path}: {e}")
-                    continue
+        for db_path, loc_id, tag, value in all_rows:
+            mapped_loc = location_id_map.get((db_path, loc_id))
+            if mapped_loc is None:
+                print(f"❌ LocationId {loc_id} (depuis {db_path}) non mappé — ligne ignorée")
+                missing_count += 1
+                continue
 
-                for loc_id, tag, value in rows:
-                    mapped_loc = location_id_map.get((db_path, loc_id))
-                    if mapped_loc is None:
-                        print(f"❌ LocationId {loc_id} (depuis {db_path}) non mappé — ligne ignorée")
-                        missing_count += 1
-                        continue
+            cursor.execute("""
+                SELECT 1 FROM MergeMapping_InputField 
+                WHERE SourceDb = ? AND OldLocationId = ? AND TextTag = ?
+            """, (db_path, loc_id, tag))
+            if cursor.fetchone():
+                print(f"⏩ Déjà fusionnée : Source={db_path}, OldLocId={loc_id}, Tag={tag}")
+                skipped_count += 1
+                continue
 
-                    cursor.execute("""
-                        SELECT 1 FROM MergeMapping_InputField 
-                        WHERE SourceDb = ? AND OldLocationId = ? AND TextTag = ?
-                    """, (db_path, loc_id, tag))
-                    if cursor.fetchone():
-                        print(f"⏩ Déjà fusionnée : Source={db_path}, OldLocId={loc_id}, Tag={tag}")
-                        skipped_count += 1
-                        continue
+            cursor.execute("""
+                SELECT 1 FROM InputField
+                WHERE LocationId = ? AND TextTag = ? AND Value = ?
+            """, (mapped_loc, tag, value))
+            if cursor.fetchone():
+                print(f"⏩ Doublon détecté (ajout mapping)")
+                cursor.execute("""
+                    INSERT OR IGNORE INTO MergeMapping_InputField (SourceDb, OldLocationId, TextTag, Value)
+                    VALUES (?, ?, ?, ?)
+                """, (db_path, loc_id, tag, value))
+                skipped_count += 1
+                continue
 
-                    cursor.execute("""
-                        SELECT 1 FROM InputField
-                        WHERE LocationId = ? AND TextTag = ? AND Value = ?
-                    """, (mapped_loc, tag, value))
-                    if cursor.fetchone():
-                        print(f"⏩ Doublon détecté (ajout mapping)")
-                        cursor.execute("""
-                            INSERT OR IGNORE INTO MergeMapping_InputField (SourceDb, OldLocationId, TextTag, Value)
-                            VALUES (?, ?, ?, ?)
-                        """, (db_path, loc_id, tag, value))
-                        skipped_count += 1
-                        continue
+            try:
+                cursor.execute("""
+                    INSERT INTO InputField (LocationId, TextTag, Value)
+                    VALUES (?, ?, ?)
+                """, (mapped_loc, tag, value))
+                inserted_count += 1
+                print(f"✅ Insert : Loc={mapped_loc}, Tag={tag}")
 
-                    try:
-                        cursor.execute("""
-                            INSERT INTO InputField (LocationId, TextTag, Value)
-                            VALUES (?, ?, ?)
-                        """, (mapped_loc, tag, value))
-                        inserted_count += 1
-                        print(f"✅ Insert : Loc={mapped_loc}, Tag={tag}")
-
-                        cursor.execute("""
-                            INSERT INTO MergeMapping_InputField (SourceDb, OldLocationId, TextTag, Value)
-                            VALUES (?, ?, ?, ?)
-                        """, (db_path, loc_id, tag, value))
-                    except Exception as e:
-                        print(f"❌ Erreur insertion InputField (Loc={mapped_loc}, Tag={tag}): {e}")
+                cursor.execute("""
+                    INSERT INTO MergeMapping_InputField (SourceDb, OldLocationId, TextTag, Value)
+                    VALUES (?, ?, ?, ?)
+                """, (db_path, loc_id, tag, value))
+            except Exception as e:
+                print(f"❌ Erreur insertion InputField (Loc={mapped_loc}, Tag={tag}): {e}")
 
         conn.commit()
 
