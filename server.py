@@ -641,12 +641,12 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
 
 
 def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
-    print("\n[FUSION INPUTFIELD - IDÉMPOTENTE]")
+    print("\n[FUSION INPUTFIELD - IDÉMPOTENTE + MISE À JOUR SI NÉCESSAIRE]")
     inserted_count = 0
     skipped_count = 0
+    updated_count = 0
     missing_count = 0
 
-    # Étape 1 : lire toutes les données dans une liste
     all_rows = []  # [(source_db, old_loc_id, tag, value), ...]
 
     for db_path in [file1_db, file2_db]:
@@ -660,7 +660,6 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
             print(f"⚠️ Erreur lecture InputField depuis {db_path}: {e}")
             continue
 
-    # Étape 2 : ouvrir la base fusionnée et insérer les données
     with sqlite3.connect(merged_db_path, timeout=10, check_same_thread=False) as conn:
         cursor = conn.cursor()
 
@@ -681,6 +680,7 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
                 missing_count += 1
                 continue
 
+            # Si déjà mappé, ignorer
             cursor.execute("""
                 SELECT 1 FROM MergeMapping_InputField 
                 WHERE SourceDb = ? AND OldLocationId = ? AND TextTag = ?
@@ -690,19 +690,33 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
                 skipped_count += 1
                 continue
 
+            # Vérifier si même clé existe déjà (LocationId, TextTag)
             cursor.execute("""
-                SELECT 1 FROM InputField
-                WHERE LocationId = ? AND TextTag = ? AND Value = ?
-            """, (mapped_loc, tag, value))
-            if cursor.fetchone():
-                print(f"⏩ Doublon détecté (ajout mapping)")
+                SELECT Value FROM InputField
+                WHERE LocationId = ? AND TextTag = ?
+            """, (mapped_loc, tag))
+            existing = cursor.fetchone()
+
+            if existing:
+                if existing[0] != value:
+                    print(f"🔁 Mise à jour : Loc={mapped_loc}, Tag={tag}, Ancienne='{existing[0]}', Nouvelle='{value}'")
+                    cursor.execute("""
+                        UPDATE InputField
+                        SET Value = ?
+                        WHERE LocationId = ? AND TextTag = ?
+                    """, (value, mapped_loc, tag))
+                    updated_count += 1
+                else:
+                    print(f"⏩ Identique, rien à faire : Loc={mapped_loc}, Tag={tag}")
+                    skipped_count += 1
+
                 cursor.execute("""
                     INSERT OR IGNORE INTO MergeMapping_InputField (SourceDb, OldLocationId, TextTag, Value)
                     VALUES (?, ?, ?, ?)
                 """, (db_path, loc_id, tag, value))
-                skipped_count += 1
                 continue
 
+            # Sinon, insertion normale
             try:
                 cursor.execute("""
                     INSERT INTO InputField (LocationId, TextTag, Value)
@@ -722,7 +736,8 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
 
     print("\n=== STATISTIQUES INPUTFIELD ===")
     print(f"✅ Lignes insérées     : {inserted_count}")
-    print(f"⏩ Doublons ignorés    : {skipped_count}")
+    print(f"🔁 Lignes mises à jour : {updated_count}")
+    print(f"⏩ Lignes ignorées     : {skipped_count}")
     print(f"❌ LocationId manquants : {missing_count}")
 
 
