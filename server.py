@@ -369,11 +369,14 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
                 cursor.execute("""
                     SELECT BookmarkId FROM Bookmark
                     WHERE LocationId = ?
+                    AND PublicationLocationId = ?
+                    AND Slot = ?
                     AND Title = ?
                     AND IFNULL(Snippet, '') = IFNULL(?, '')
                     AND BlockType = ?
                     AND IFNULL(BlockIdentifier, -1) = IFNULL(?, -1)
-                """, (new_loc_id, title, snippet, block_type, block_id))
+                """, (new_loc_id, new_pub_loc_id, slot, title, snippet, block_type, block_id))
+
                 existing = cursor.fetchone()
 
                 if existing:
