@@ -677,11 +677,8 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
         cursor.execute("""
             DELETE FROM InputField
             WHERE (LocationId, TextTag) IN (
-                SELECT DISTINCT m.LocationId, m.TextTag
-                FROM MergeMapping_InputField map
-                JOIN InputField m ON m.LocationId = (
-                    SELECT loc_id FROM Location WHERE LocationId = m.LocationId LIMIT 1
-                )
+                SELECT LocationId, TextTag
+                FROM MergeMapping_InputField
             )
         """)
         cursor.execute("DELETE FROM MergeMapping_InputField")
