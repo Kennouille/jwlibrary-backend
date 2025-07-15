@@ -1904,6 +1904,11 @@ def merge_platform_metadata(merged_db_path, db1_path, db2_path):
 @app.route('/merge', methods=['POST'])
 def merge_data():
     start_time = time.time()
+
+    # Générer un ID unique pour cette opération de fusion
+    unique_merge_id = str(uuid.uuid4())
+    print(f"🚀 Début de la fusion pour l'ID unique : {unique_merge_id}")
+
     # Au tout début du merge
     open(os.path.join(UPLOAD_FOLDER, "merge_in_progress"), "w").close()
 
@@ -1969,7 +1974,9 @@ def merge_data():
             return jsonify({"error": "Fichiers source manquants"}), 400
 
         # Création de la DB fusionnée
-        merged_db_path = os.path.join(UPLOAD_FOLDER, "merged_userData.db")
+        merged_db_filename = f"merged_userData_{unique_merge_id}.db"
+        merged_db_path = os.path.join(UPLOAD_FOLDER, merged_db_filename)
+
         if os.path.exists(merged_db_path):
             os.remove(merged_db_path)
         base_db_path = os.path.join(EXTRACT_FOLDER, "file1_extracted", "userData.db")
@@ -2571,25 +2578,29 @@ def merge_data():
             gc.collect()
             time.sleep(1.0)
 
-            with sqlite3.connect(merged_db_path) as conn:
-                conn.execute("DROP TABLE IF EXISTS PlaylistItemMediaMap")
+            with sqlite3.connect(merged_db_path) as conn_drop_table: # Renommé
+                conn_drop_table.execute("DROP TABLE IF EXISTS PlaylistItemMediaMap")
                 print("🗑️ Table PlaylistItemMediaMap supprimée avant VACUUM.")
 
             # 6️⃣ Création d’une DB propre avec VACUUM INTO
-            clean_filename = f"cleaned_{uuid.uuid4().hex}.db"
+            # --- DÉBUT DE L'ÉTAPE 4 ---
+            # MISE À JOUR : Le fichier nettoyé sera créé avec un nom unique
+            clean_filename = f"cleaned_merged_db_{unique_merge_id}.db" # Utilise l'UUID de la fusion
             clean_path = os.path.join(UPLOAD_FOLDER, clean_filename)
+            # --- FIN DE L'ÉTAPE 4 ---
 
             print("🧹 VACUUM INTO pour générer une base nettoyée...")
-            with sqlite3.connect(merged_db_path) as conn:
-                conn.execute(f"VACUUM INTO '{clean_path}'")
+            with sqlite3.connect(merged_db_path) as conn_vacuum:
+                conn_vacuum.execute(f"VACUUM INTO '{clean_path}'")
             print(f"✅ Fichier nettoyé généré : {clean_path}")
 
+            # ... (votre code avant) ...
+
             # 🧪 Création d'une copie debug (juste pour toi)
-            debug_copy_path = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
+            # MISE À JOUR : Le nom de la copie debug inclura l'UUID
+            debug_copy_path = os.path.join(UPLOAD_FOLDER, f"debug_cleaned_before_copy_{unique_merge_id}.db")
             shutil.copy(clean_path, debug_copy_path)
             print(f"📤 Copie debug créée : {debug_copy_path}")
-
-
 
             # 7️⃣ Copie vers destination finale officielle pour le frontend
             # ⛔ final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
@@ -2597,10 +2608,10 @@ def merge_data():
             # ⛔ print(f"✅ Copie finale pour frontend : {final_db_dest}")
 
             # ✅ On force l’usage uniquement du fichier debug (3 lignes d'ajout pour n'envoyer que le fichier)
-            final_db_dest = os.path.join(UPLOAD_FOLDER, "debug_cleaned_before_copy.db")
-            print("🚫 Copie vers userData.db désactivée — envoi direct de debug_cleaned_before_copy.db")
-
-
+            # --- DÉBUT DE LA CORRECTION DE L'ÉTAPE 6 ---
+            final_db_dest = debug_copy_path  # <--- MODIFIEZ CETTE LIGNE
+            print(
+                f"🚫 Copie vers userData.db désactivée — envoi direct de {os.path.basename(final_db_dest)}")  # <--- MODIFIEZ AUSSI CE PRINT POUR REFLETER LE NOM UNIQUE
 
             # ✅ Forcer la génération des fichiers WAL et SHM sur userData.db
             try:
@@ -2652,11 +2663,36 @@ def merge_data():
             return jsonify({"error": f"Erreur dans merge_data: {str(e)}"}), 500
 
     finally:
+        # --- DÉBUT DE L'ÉTAPE 7 : NETTOYAGE DES FICHIERS TEMPORAIRES UNIQUES ---
+        # Supprimer le fichier fusionné principal (merged_userData_UUID.db)
+        if 'merged_db_path' in locals() and os.path.exists(merged_db_path):
+            try:
+                os.remove(merged_db_path)
+                print(f"🧹 Fichier intermédiaire supprimé : {merged_db_path}")
+            except Exception as e:
+                print(f"❌ Erreur lors de la suppression de '{merged_db_path}': {e}")
+
+        if 'clean_path' in locals() and os.path.exists(clean_path) and clean_path != final_db_dest:
+            try:
+                os.remove(clean_path)
+                print(f"🧹 Fichier nettoyé supprimé : {clean_path}")
+            except Exception as e:
+                print(f"❌ Erreur lors de la suppression de '{clean_path}': {e}")
+
+        if 'debug_copy_path' in locals() and os.path.exists(debug_copy_path) and debug_copy_path != final_db_dest:
+            try:
+                os.remove(debug_copy_path)
+                print(f"🧹 Fichier debug supprimé : {debug_copy_path}")
+            except Exception as e:
+                print(f"❌ Erreur lors de la suppression de '{debug_copy_path}': {e}")
+
         if conn:
             try:
                 conn.close()
-            except:
-                pass
+                print("❗ Connexion principale 'conn' fermée dans finally.")
+            except Exception as e:
+                print(f"❌ Erreur lors de la fermeture de la connexion 'conn' dans finally: {e}")
+
 
 
 # === 🔒 Ancienne méthode de génération ZIP backend (désactivée avec JSZip) ===
