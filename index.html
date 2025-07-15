@@ -754,7 +754,7 @@
       await updateProgress(95, "Reconstruction du fichier .jwlibrary...", 5);
       console.log("🚀 rebuildFinalZip() va être appelé");
 
-      await rebuildFinalZip();
+      await rebuildFinalZip(result.merged_file);
       trackMerge("success");
       await logMergeToSupabase("success");
 
@@ -826,10 +826,14 @@
         return await res.blob();
       };
 
+      // Construire les noms des fichiers auxiliaires à partir du nom unique principal
+      const shmFilename = `${uniqueMergedFilename}-shm`;
+      const walFilename = `${uniqueMergedFilename}-wal`;
+
       const [debugBlob, shmBlob, walBlob] = await Promise.all([
-        fetchFile("debug_cleaned_before_copy.db"),
-        fetchFile("debug_cleaned_before_copy.db-shm"),
-        fetchFile("debug_cleaned_before_copy.db-wal")
+        fetchFile(uniqueMergedFilename), // <--- MODIFIEZ CETTE LIGNE
+        fetchFile(shmFilename),         // <--- MODIFIEZ CETTE LIGNE
+        fetchFile(walFilename)          // <--- MODIFIEZ CETTE LIGNE
       ]);
 
       console.log("✅ " + translations[window.currentLang].messages.filesDownloaded);
