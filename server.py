@@ -520,6 +520,7 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
         raise # Re-lancer l'exception
 
 
+
 def merge_usermark_with_id_relabeling(merged_db_path, source_db_path, location_id_map):
     conn_merged = sqlite3.connect(merged_db_path)
     cur_merged = conn_merged.cursor()
