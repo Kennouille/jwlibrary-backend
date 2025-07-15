@@ -444,72 +444,80 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
     inserted = 0
     note_mapping = {}
 
-    conn = sqlite3.connect(merged_db_path)
-    cursor = conn.cursor()
+    # --- MODIFICATION ICI : Utilisation de 'with' pour la connexion principale ---
+    try:
+        with sqlite3.connect(merged_db_path, timeout=30) as conn: # Ajout de timeout
+            cursor = conn.cursor()
+            conn.execute("PRAGMA busy_timeout = 5000") # Ajout de busy_timeout
 
-    for db_path in [file1_db, file2_db]:
-        with sqlite3.connect(db_path) as src_conn:
-            src_cursor = src_conn.cursor()
-            src_cursor.execute("""
-                SELECT n.NoteId, n.Guid, um.UserMarkGuid, n.LocationId, n.Title, n.Content,
-                       n.LastModified, n.Created, n.BlockType, n.BlockIdentifier
-                FROM Note n
-                LEFT JOIN UserMark um ON n.UserMarkId = um.UserMarkId
-            """)
-            for (old_note_id, guid, usermark_guid, location_id, title, content,
-                 last_modified, created, block_type, block_identifier) in src_cursor.fetchall():
+            for db_path in [file1_db, file2_db]:
+                with sqlite3.connect(db_path, timeout=5) as src_conn: # Ajout de timeout
+                    src_cursor = src_conn.cursor()
+                    # Lire toutes les données de la source AVANT de quitter le bloc 'with'
+                    source_notes = src_cursor.execute("""
+                        SELECT n.NoteId, n.Guid, um.UserMarkGuid, n.LocationId, n.Title, n.Content,
+                               n.LastModified, n.Created, n.BlockType, n.BlockIdentifier
+                        FROM Note n
+                        LEFT JOIN UserMark um ON n.UserMarkId = um.UserMarkId
+                    """).fetchall()
 
-                normalized_key = (os.path.normpath(db_path), location_id)
-                normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
-                new_location_id = normalized_map.get(normalized_key) if location_id else None
-                new_usermark_id = usermark_guid_map.get(usermark_guid) if usermark_guid else None
+                for (old_note_id, guid, usermark_guid, location_id, title, content,
+                     last_modified, created, block_type, block_identifier) in source_notes: # Utilisation des données lues
+                    normalized_key = (os.path.normpath(db_path), location_id)
+                    normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
+                    new_location_id = normalized_map.get(normalized_key) if location_id else None
+                    new_usermark_id = usermark_guid_map.get(usermark_guid) if usermark_guid else None
 
-                if new_location_id is None:
-                    print(f"⚠️ LocationId introuvable pour Note guid={guid} (source: {db_path}), ignorée.")
-                    continue
-
-                # Vérifier si le GUID existe déjà
-                cursor.execute("SELECT NoteId, Title, Content FROM Note WHERE Guid = ?", (guid,))
-                existing = cursor.fetchone()
-
-                if existing:
-                    existing_note_id, existing_title, existing_content = existing
-                    if existing_title == title and existing_content == content:
-                        print(f"Note guid={guid} déjà présente et identique (source: {db_path}), aucune action.")
-                        note_mapping[(db_path, old_note_id)] = existing_note_id
+                    if new_location_id is None:
+                        print(f"⚠️ LocationId introuvable pour Note guid={guid} (source: {db_path}), ignorée.")
                         continue
+
+                    # Vérifier si le GUID existe déjà
+                    cursor.execute("SELECT NoteId, Title, Content FROM Note WHERE Guid = ?", (guid,))
+                    existing = cursor.fetchone()
+
+                    if existing:
+                        existing_note_id, existing_title, existing_content = existing
+                        if existing_title == title and existing_content == content:
+                            print(f"Note guid={guid} déjà présente et identique (source: {db_path}), aucune action.")
+                            note_mapping[(db_path, old_note_id)] = existing_note_id
+                            continue
+                        else:
+                            new_guid = str(uuid.uuid4())
+                            print(f"Conflit pour Note guid={guid} (source: {db_path}). "
+                                  f"Insertion d'une nouvelle note avec nouveau GUID {new_guid}.")
+                            guid_to_insert = new_guid
                     else:
-                        new_guid = str(uuid.uuid4())
-                        print(f"Conflit pour Note guid={guid} (source: {db_path}). "
-                              f"Insertion d'une nouvelle note avec nouveau GUID {new_guid}.")
-                        guid_to_insert = new_guid
-                else:
-                    guid_to_insert = guid
+                        guid_to_insert = guid
 
-                cursor.execute("""
-                    INSERT INTO Note
-                    (Guid, UserMarkId, LocationId, Title, Content,
-                     LastModified, Created, BlockType, BlockIdentifier)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    guid_to_insert,
-                    new_usermark_id,
-                    new_location_id,
-                    title,
-                    content,
-                    last_modified,
-                    created,
-                    block_type,
-                    block_identifier
-                ))
-                new_note_id = cursor.lastrowid
-                note_mapping[(db_path, old_note_id)] = new_note_id
-                inserted += 1
+                    cursor.execute("""
+                        INSERT INTO Note
+                        (Guid, UserMarkId, LocationId, Title, Content,
+                         LastModified, Created, BlockType, BlockIdentifier)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        guid_to_insert,
+                        new_usermark_id,
+                        new_location_id,
+                        title,
+                        content,
+                        last_modified,
+                        created,
+                        block_type,
+                        block_identifier
+                    ))
+                    new_note_id = cursor.lastrowid
+                    note_mapping[(db_path, old_note_id)] = new_note_id
+                    inserted += 1
 
-    conn.commit()
-    conn.close()
-    print(f"✅ Total notes insérées: {inserted}")
-    return note_mapping
+        conn.commit() # Le commit est maintenant à l'intérieur du bloc 'with conn:'
+        print(f"✅ Total notes insérées: {inserted}")
+        return note_mapping
+    except Exception as e:
+        print(f"❌ Erreur critique dans merge_notes: {e}")
+        import traceback
+        traceback.print_exc()
+        raise # Re-lancer l'exception
 
 
 def merge_usermark_with_id_relabeling(merged_db_path, source_db_path, location_id_map):
