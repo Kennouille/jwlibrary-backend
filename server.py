@@ -2643,7 +2643,7 @@ def merge_data():
 
             # 5️⃣ Retour JSON final
             final_result = {
-                "merged_file": "debug_cleaned_before_copy.db",
+                "merged_file": os.path.basename(final_db_dest),
                 "playlists": max_playlist_id,
                 "merge_status": "done",
                 "playlist_items": playlist_item_total,

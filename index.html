@@ -643,7 +643,7 @@
     try {
       const file1 = document.getElementById('file1').files[0];
       const file2 = document.getElementById('file2').files[0];
-      const localDatetime = document.getElementById('local_datetime').value;
+      let localDatetime = document.getElementById('local_datetime').value;
 
       if (!file1 || !file2)
         throw new Error(translations[window.currentLang].errors.selectFiles);
