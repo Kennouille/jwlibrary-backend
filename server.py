@@ -52,17 +52,20 @@ def list_tables(db_path):
     Retourne une liste des noms de tables présentes dans la base de données
     spécifiée par 'db_path', en excluant les tables système (commençant par 'sqlite_').
     """
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT name
-        FROM sqlite_master
-        WHERE type='table'
-          AND name NOT LIKE 'sqlite_%'
-    """)
-    tables = [row[0] for row in cursor.fetchall()]
-    conn.close()
-    return tables
+    try:
+        with sqlite3.connect(db_path, timeout=5) as conn: # Correction: Utilisation de 'with' avec timeout
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT name
+                FROM sqlite_master
+                WHERE type='table'
+                  AND name NOT LIKE 'sqlite_%'
+            """)
+            tables = [row[0] for row in cursor.fetchall()]
+        return tables
+    except Exception as e:
+        print(f"Erreur lors de la liste des tables de {db_path}: {e}")
+        return [] # Retourne une liste vide en cas d'erreur
 
 
 def merge_independent_media(merged_db_path, file1_db, file2_db):
@@ -164,75 +167,100 @@ def extract_file(file_path, extract_folder):
 
 
 def create_merged_schema(merged_db_path, base_db_path):
-    checkpoint_db(base_db_path)
-    src_conn = sqlite3.connect(base_db_path)
-    src_cursor = src_conn.cursor()
-    src_cursor.execute(
-        "SELECT type, name, sql FROM sqlite_master "
-        "WHERE type IN ('table', 'index', 'trigger', 'view') "
-        "AND name NOT LIKE 'sqlite_%'"
-    )
-    schema_items = src_cursor.fetchall()
-    src_conn.close()
+    # Assurez-vous que la fonction checkpoint_db est définie ou importée correctement
+    # Elle n'est pas incluse ici car vous voulez une seule fonction à la fois.
+    # Cependant, elle est nécessaire au fonctionnement de cette fonction.
+    # Pour le test, assurez-vous qu'elle est disponible dans votre environnement.
+    # def checkpoint_db(db_path): ... (définition de checkpoint_db)
 
-    merged_conn = sqlite3.connect(merged_db_path)
-    merged_cursor = merged_conn.cursor()
-    for obj_type, name, sql in schema_items:
-        # On exclut la table (et triggers associés) LastModified
-        if (obj_type == 'table' and name == "LastModified") or (obj_type == 'trigger' and "LastModified" in sql):
-            continue
-        if sql:
-            try:
-                merged_cursor.execute(sql)
-            except Exception as e:
-                print(f"Erreur lors de la création de {obj_type} '{name}': {e}")
-    merged_conn.commit()
+    # Appel à checkpoint_db (supposée définie/importée)
+    checkpoint_db(base_db_path)
 
     try:
-        merged_cursor.execute("DROP TABLE IF EXISTS LastModified")
-        merged_cursor.execute("CREATE TABLE LastModified (LastModified TEXT NOT NULL)")
-    except Exception as e:
-        print(f"Erreur lors de la création de la table LastModified: {e}")
-    merged_conn.commit()
-
-    # Création correcte de PlaylistItemMediaMap si elle n'existe pas
-    merged_cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='PlaylistItemMediaMap'"
-    )
-    if not merged_cursor.fetchone():
-        merged_cursor.execute("""
-            CREATE TABLE PlaylistItemMediaMap (
-                PlaylistItemId   INTEGER NOT NULL,
-                MediaFileId      INTEGER NOT NULL,
-                OrderIndex       INTEGER NOT NULL,
-                PRIMARY KEY (PlaylistItemId, MediaFileId),
-                FOREIGN KEY (PlaylistItemId) REFERENCES PlaylistItem(PlaylistItemId),
-                FOREIGN KEY (MediaFileId)  REFERENCES IndependentMedia(IndependentMediaId)
+        # Correction: Utilisation de 'with' pour src_conn
+        with sqlite3.connect(base_db_path, timeout=5) as src_conn:
+            src_cursor = src_conn.cursor()
+            src_cursor.execute(
+                "SELECT type, name, sql FROM sqlite_master "
+                "WHERE type IN ('table', 'index', 'trigger', 'view') "
+                "AND name NOT LIKE 'sqlite_%'"
             )
-        """)
-        print("PlaylistItemMediaMap (avec MediaFileId, OrderIndex) créée dans la base fusionnée.")
+            schema_items = src_cursor.fetchall()
+    except Exception as e:
+        print(f"Erreur lors de la lecture du schéma de {base_db_path}: {e}")
+        return  # Ou gérer l'erreur de manière appropriée
 
-    merged_conn.commit()
-    merged_conn.close()
+    try:
+        # Correction: Utilisation de 'with' pour merged_conn avec timeout et busy_timeout
+        with sqlite3.connect(merged_db_path, timeout=30) as merged_conn:
+            merged_conn.execute("PRAGMA busy_timeout = 5000")
+            merged_cursor = merged_conn.cursor()
+
+            for obj_type, name, sql in schema_items:
+                if (obj_type == 'table' and name == "LastModified") or \
+                        (obj_type == 'trigger' and "LastModified" in sql):
+                    continue
+                if sql:
+                    try:
+                        merged_cursor.execute(sql)
+                    except Exception as e:
+                        print(f"Erreur lors de la création de {obj_type} '{name}': {e}")
+            merged_conn.commit()
+
+            try:
+                merged_cursor.execute("DROP TABLE IF EXISTS LastModified")
+                merged_cursor.execute("CREATE TABLE LastModified (LastModified TEXT NOT NULL)")
+            except Exception as e:
+                print(f"Erreur lors de la création de la table LastModified: {e}")
+            merged_conn.commit()
+
+            merged_cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='PlaylistItemMediaMap'"
+            )
+            if not merged_cursor.fetchone():
+                merged_cursor.execute("""
+                    CREATE TABLE PlaylistItemMediaMap (
+                        PlaylistItemId   INTEGER NOT NULL,
+                        MediaFileId      INTEGER NOT NULL,
+                        OrderIndex       INTEGER NOT NULL,
+                        PRIMARY KEY (PlaylistItemId, MediaFileId),
+                        FOREIGN KEY (PlaylistItemId) REFERENCES PlaylistItem(PlaylistItemId),
+                        FOREIGN KEY (MediaFileId)  REFERENCES IndependentMedia(IndependentMediaId)
+                    )
+                """)
+                print("PlaylistItemMediaMap (avec MediaFileId, OrderIndex) créée dans la base fusionnée.")
+
+            merged_conn.commit()
+    except Exception as e:
+        print(f"Erreur critique lors de la création du schéma fusionné: {e}")
 
 
 def create_table_if_missing(merged_conn, source_db_paths, table):
+    # 'merged_conn' est passée en argument, sa gestion (ouverture/fermeture)
+    # est la responsabilité de la fonction appelante.
     cursor = merged_conn.cursor()
     cursor.execute(f"PRAGMA table_info({table})")
     if cursor.fetchone() is None:
         create_sql = None
         for db_path in source_db_paths:
             checkpoint_db(db_path)
-            src_conn = sqlite3.connect(db_path)
-            src_cursor = src_conn.cursor()
-            src_cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,))
-            row = src_cursor.fetchone()
-            src_conn.close()
-            if row and row[0]:
-                create_sql = row[0]
-                break
+            # Correction: Utilisation de 'with' pour src_conn
+            try:
+                with sqlite3.connect(db_path, timeout=5) as src_conn: # Ajout de timeout
+                    src_cursor = src_conn.cursor()
+                    src_cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,))
+                    row = src_cursor.fetchone()
+                    if row and row[0]:
+                        create_sql = row[0]
+                        break # Sortir de la boucle une fois le SQL trouvé
+            except Exception as e:
+                print(f"Erreur lors de la lecture du schéma de {table} depuis {db_path}: {e}")
+                # Continuer à essayer les autres bases sources en cas d'erreur
+                continue
+
         if create_sql:
             try:
+                # 'merged_conn' est utilisée ici, mais elle est gérée par l'appelant
                 merged_conn.execute(create_sql)
                 print(f"Table {table} créée dans la base fusionnée.")
             except Exception as e:
@@ -251,12 +279,11 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
     if exclude_tables is None:
         exclude_tables = ["Note", "UserMark", "Bookmark", "InputField"]
 
-    # On effectue un checkpoint pour s'assurer que les données sont bien synchronisées.
     checkpoint_db(db1_path)
     checkpoint_db(db2_path)
 
     def get_tables(path):
-        with sqlite3.connect(path) as conn:
+        with sqlite3.connect(path, timeout=5) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
             return {row[0] for row in cursor.fetchall()}
@@ -265,58 +292,60 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
     tables2 = get_tables(db2_path)
     all_tables = (tables1 | tables2) - set(exclude_tables)
 
-    merged_conn = sqlite3.connect(merged_db_path)
-    merged_cursor = merged_conn.cursor()
-    source_db_paths = [db1_path, db2_path]
+    try:
+        with sqlite3.connect(merged_db_path, timeout=30) as merged_conn:
+            merged_conn.execute("PRAGMA busy_timeout = 5000")
+            merged_cursor = merged_conn.cursor()
+            source_db_paths = [db1_path, db2_path]
 
-    for table in all_tables:
-        # Crée la table dans la DB fusionnée si elle est manquante
-        create_table_if_missing(merged_conn, source_db_paths, table)
-        merged_cursor.execute(f"PRAGMA table_info({table})")
-        columns_info = merged_cursor.fetchall()
-        if not columns_info:
-            print(f"❌ Table {table} introuvable dans la DB fusionnée.")
-            continue
+            for table in all_tables:
+                create_table_if_missing(merged_conn, source_db_paths, table)
 
-        # 🔵 Sécurisation forte : tout est string forcée
-        columns = [str(col[1]) for col in columns_info]
-        columns_joined = ", ".join(columns)
-        placeholders = ", ".join(["?"] * len(columns))
+                merged_cursor.execute(f"PRAGMA table_info({table})")
+                columns_info = merged_cursor.fetchall()
+                if not columns_info:
+                    print(f"❌ Table {table} introuvable dans la DB fusionnée.")
+                    continue
 
-        for source_path in source_db_paths:
-            with sqlite3.connect(source_path) as src_conn:
-                src_cursor = src_conn.cursor()
-                try:
-                    src_cursor.execute(f"SELECT * FROM {table}")
-                    rows = src_cursor.fetchall()
-                except Exception as e:
-                    print(f"⚠️ Erreur lecture de {table} depuis {source_path}: {e}")
-                    rows = []
+                columns = [str(col[1]) for col in columns_info]
+                columns_joined = ", ".join(columns)
+                placeholders = ", ".join(["?"] * len(columns))
 
-                for row in rows:
-                    if len(columns) > 1:
-                        where_clause = " AND ".join([f"{str(col)}=?" for col in columns[1:]])
-                        check_query = f"SELECT 1 FROM {table} WHERE {where_clause} LIMIT 1"
-                        merged_cursor.execute(check_query, row[1:])
-                        exists = merged_cursor.fetchone()
-                    else:
-                        # Cas spécial : table avec seulement clé primaire
-                        exists = None
+                for source_path in source_db_paths:
+                    with sqlite3.connect(source_path, timeout=5) as src_conn:
+                        src_cursor = src_conn.cursor()
+                        try:
+                            src_cursor.execute(f"SELECT * FROM {table}")
+                            rows = src_cursor.fetchall()
+                        except Exception as e:
+                            print(f"⚠️ Erreur lecture de {table} depuis {source_path}: {e}")
+                            rows = []
 
-                    if not exists:
-                        cur_max = merged_cursor.execute(f"SELECT MAX({str(columns[0])}) FROM {table}").fetchone()[
-                                      0] or 0
-                        new_id = int(cur_max) + 1
-                        new_row = (new_id,) + row[1:]
-                        print(f"✅ INSERT dans {table} depuis {source_path}: {new_row}")
-                        merged_cursor.execute(
-                            f"INSERT INTO {table} ({columns_joined}) VALUES ({placeholders})", new_row
-                        )
-                    else:
-                        print(f"⏩ Doublon ignoré dans {table} depuis {source_path}: {row[1:]}")
+                    for row in rows:
+                        if len(columns) > 1:
+                            where_clause = " AND ".join([f"{str(col)}=?" for col in columns[1:]])
+                            check_query = f"SELECT 1 FROM {table} WHERE {where_clause} LIMIT 1"
+                            merged_cursor.execute(check_query, row[1:])
+                            exists = merged_cursor.fetchone()
+                        else:
+                            exists = None
 
-    merged_conn.commit()
-    merged_conn.close()
+                        if not exists:
+                            cur_max = merged_cursor.execute(f"SELECT MAX({str(columns[0])}) FROM {table}").fetchone()[
+                                          0] or 0
+                            new_id = int(cur_max) + 1
+                            new_row = (new_id,) + row[1:]
+                            print(f"✅ INSERT dans {table} depuis {source_path}: {new_row}")
+                            merged_cursor.execute(
+                                f"INSERT INTO {table} ({columns_joined}) VALUES ({placeholders})", new_row
+                            )
+                        else:
+                            print(f"⏩ Doublon ignoré dans {table} depuis {source_path}: {row[1:]}")
+
+            merged_conn.commit()
+
+    except Exception as e:
+        print(f"❌ Erreur critique générale dans merge_other_tables : {e}")
 
 
 def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
@@ -518,7 +547,6 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
         import traceback
         traceback.print_exc()
         raise # Re-lancer l'exception
-
 
 
 def merge_usermark_with_id_relabeling(merged_db_path, source_db_path, location_id_map):
