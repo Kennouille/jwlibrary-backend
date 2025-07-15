@@ -2767,24 +2767,25 @@ def download_debug_copy():
     return send_file(path, as_attachment=True, download_name="debug_cleaned_before_copy.db")
 
 
-@app.route("/download/<filename>")
+from werkzeug.utils import secure_filename
+
+@app.route("/download/<path:filename>")
 def download_file(filename):
     if os.path.exists(os.path.join(UPLOAD_FOLDER, "merge_in_progress")):
         print("🛑 Tentative de téléchargement bloquée : merge encore en cours.")
         return jsonify({"error": "Le fichier est encore en cours de création"}), 503
 
-    # allowed_files = {"userData.db", "userData.db-shm", "userData.db-wal"}
-    allowed_files = {
-        "debug_cleaned_before_copy.db",
-        "debug_cleaned_before_copy.db-shm",
-        "debug_cleaned_before_copy.db-wal"
-    }
+    filename = secure_filename(filename)  # Évite les chemins du type ../../
 
-    if filename not in allowed_files:
+    # Autoriser uniquement les fichiers générés avec l'UUID
+    if not filename.startswith("debug_cleaned_before_copy_") or \
+       not (filename.endswith(".db") or filename.endswith(".db-shm") or filename.endswith(".db-wal")):
+        print(f"❌ Fichier refusé : {filename}")
         return jsonify({"error": "Fichier non autorisé"}), 400
 
     path = os.path.join(UPLOAD_FOLDER, filename)
     if not os.path.exists(path):
+        print(f"❌ Fichier introuvable : {path}")
         return jsonify({"error": "Fichier introuvable"}), 404
 
     print(f"📥 Envoi du fichier : {filename}")
