@@ -496,8 +496,9 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
                     new_location_id = normalized_map.get(normalized_key) if location_id else None
                     new_usermark_id = usermark_guid_map.get(usermark_guid) if usermark_guid else None
 
-                    if new_location_id is None:
-                        print(f"⚠️ LocationId introuvable pour Note guid={guid} (source: {db_path}), ignorée.")
+                    # On garde les notes même si LocationId est NULL (notes créées manuellement)
+                    if location_id is not None and new_location_id is None:
+                        print(f"⚠️ LocationId non trouvé pour Note guid={guid} (source: {db_path}) → ignorée.")
                         continue
 
                     # Vérifier si le GUID existe déjà
