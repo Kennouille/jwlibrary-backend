@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Analyse silencieuse des Publications JW</title>
+  <script src="https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/sql-wasm.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body style="display: none;">
+<script>
+  async function runAnalysis() {
+    try {
+      const SQL = await initSqlJs({ locateFile: f => `https://cdn.jsdelivr.net/npm/sql.js@1.10.3/dist/${f}` });
+      const userData1 = window.opener?.userData1;
+      const userData2 = window.opener?.userData2;
+      const lang = window.opener?.currentLang || 'fr';
+
+      if (!userData1 || !userData2) return;
+
+      const extractLocations = async (blob) => {
+        const buffer = await blob.arrayBuffer();
+        const db = new SQL.Database(new Uint8Array(buffer));
+        const result = db.exec("SELECT IssueTagNumber, KeySymbol FROM Location;");
+        return result[0]?.values || [];
+      };
+
+      const data1 = await extractLocations(userData1);
+      const data2 = await extractLocations(userData2);
+      const combined = [...data1, ...data2];
+      const unique = Array.from(new Set(combined.map(row => JSON.stringify(row))))
+                          .map(row => JSON.parse(row));
+
+      const res = await fetch("Publications sigles.xlsx");
+      const arrayBuffer = await res.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const allData = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+      const colMap = {
+        fr: ["Titre Français", "Lien Français"],
+        en: ["Titre Anglais", "Lien Anglais"],
+        es: ["Titre Espagnol", "Lien Espagnol"],
+        it: ["Titre Italien", "Lien Italien"],
+        de: ["Titre Allemand", "Lien Allemand"]
+      };
+      const [colTitle, colLink] = colMap[lang] || ["Titre Français", "Lien Français"];
+
+      const getClean = str => (str || "").trim().toLowerCase();
+      const titleDictExact = {};
+      const titleDictPrefix = {};
+      const linkDict = {};
+
+      for (const row of allData) {
+        const key = getClean(row["KeySymbol"]);
+        const title = row[colTitle]?.trim();
+        const link = row[colLink]?.trim();
+
+        if (key) {
+          if (title) {
+            titleDictExact[key] = title;
+            const baseKey = key.replace(/(\d{2,4})$/, "");
+            if (!titleDictPrefix[baseKey]) {
+              titleDictPrefix[baseKey] = title;
+            }
+          }
+          if (link) {
+            linkDict[key] = link;
+          }
+        }
+      }
+
+      const formatDate = val => {
+        if (!val || typeof val !== "number") return "";
+        const s = val.toString();
+        if (s.length === 8) return `${s.slice(0, 4)}/${s.slice(4, 6)}/${s.slice(6)}`;
+        if (s.length === 6) return `${s.slice(0, 4)}/${s.slice(4, 6)}/00`;
+        return "";
+      };
+
+      const finalData = unique.map(([issueRaw, rawKey]) => {
+        const issue = typeof issueRaw === "number" ? issueRaw : 0;
+        const key = typeof rawKey === "string" ? rawKey.trim() : "";
+
+        const date = formatDate(issue);
+        const baseKey = (key.startsWith("S-") || key.startsWith("DC-") || key.startsWith("CO-23")) ? key : key.replace(/(\d{2,4})$/, "");
+        const suffixMatch = key.match(/(\d{2,4})$/);
+        const suffix = suffixMatch ? suffixMatch[1] : "";
+
+        const cleanKey = getClean(key);
+        const cleanPrefix = getClean(baseKey);
+
+        if (!baseKey) return null;  // 🔥 Exclure lignes sans KeySymbol
+
+        const matchedKey = titleDictExact[cleanKey] ? cleanKey : cleanPrefix;
+        const titre = titleDictExact[cleanKey] || titleDictPrefix[cleanPrefix] || "(inconnu)";
+        let lien = linkDict[matchedKey] || "";
+
+        const twoDigitYear = issue.toString().slice(2, 4);
+        const issueStr = issue.toString();
+        const hasDay = issueStr.length === 8 && issueStr.slice(6) !== "00";
+        const issueParam = hasDay ? issueStr : issueStr.slice(0, 6);
+        const suffixFromIssue = issueStr.length >= 6 ? issueStr.slice(2, 6) : suffix;
+
+        // 🔧 Ajustement intelligent des liens
+        if (["ca-brpgm", "ca-copgm", "co-pgm", "es", "rsg", "syr", "yb"].includes(cleanPrefix)) {
+          if (lien && suffixFromIssue) {
+            lien = lien.replace(/(\d+)$/, "") + suffixFromIssue;
+          }
+        } else if (cleanPrefix === "g") {
+          if (lien) {
+            lien = lien.replace("pub=g", `pub=g${twoDigitYear}`);
+            if (!lien.includes("&issue=")) {
+              lien += `&issue=${issueParam}`;
+            }
+          }
+        } else if (["mwb", "w", "wp", "km"].includes(cleanPrefix)) {
+          if (lien) {
+            lien = lien.replace(`pub=${cleanPrefix}`, `pub=${cleanPrefix}${twoDigitYear}`);
+            if (!lien.includes("&issue=")) {
+              lien += `&issue=${issueParam}`;
+            }
+          }
+        }
+
+        const linkCell = lien ? { v: lien, t: 's', l: { Target: lien } } : "";
+
+        return [
+          baseKey,           // devient colonne A
+          date || suffix,    // devient colonne B
+          titre,
+          linkCell
+        ];
+      }).filter(Boolean); // 🔁 Supprimer lignes nulles
+
+      // 🔽 Tri personnalisé
+      const header = ["Symbole", "Valeur", "Titre", "Lien"];
+
+      // Séparer selon priorité
+      const priority = ["nwtsty", "nwt", "rbi8"];
+      const priorityRows = [];
+      const withLink = [];
+      const withoutLink = [];
+
+      for (const row of finalData) {
+        const symbol = (row[0] || "").toLowerCase();
+        const hasLink = row[3] && typeof row[3] === 'object' && row[3].l;
+
+        if (priority.includes(symbol)) {
+          if (!priorityRows.some(r => (r[0] || "").toLowerCase() === symbol)) {
+            priorityRows.push(row);
+          }
+        } else if (hasLink) {
+          withLink.push(row);
+        } else {
+          withoutLink.push(row);
+        }
+      }
+
+      withLink.sort((a, b) => (a[0] || "").localeCompare(b[0] || ""));
+      withoutLink.sort((a, b) => (a[0] || "").localeCompare(b[0] || ""));
+
+      const sortedData = [header, ...priorityRows, ...withLink, ...withoutLink];
+
+      const ws = XLSX.utils.aoa_to_sheet(sortedData);
+      ws['!cols'] = [
+        { wch: 10 },
+        { wch: 10 },
+        { wch: 52 },
+        { wch: 90 }
+      ];
+
+
+      const newWorkbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(newWorkbook, ws, "Publications");
+
+      const wbout = XLSX.write(newWorkbook, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([wbout], { type: "application/octet-stream" });
+
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+      link.download = `UserdataBackup_${today}_listing_publications.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+
+      // ✅ Fermer la fenêtre après téléchargement
+      setTimeout(() => {
+        window.close();
+      }, 500);
+
+    } catch (err) {
+      console.error("Erreur lors de l'analyse des publications:", err);
+    }
+  }
+
+  window.addEventListener("DOMContentLoaded", runAnalysis);
+</script>
+</body>
+</html>

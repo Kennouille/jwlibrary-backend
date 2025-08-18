@@ -491,8 +491,8 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
 
                 for (old_note_id, guid, usermark_guid, location_id, title, content,
                      last_modified, created, block_type, block_identifier) in source_notes: # Utilisation des données lues
-                    normalized_key = (os.path.normpath(db_path), location_id)
-                    normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
+                    normalized_key = (os.path.basename(db_path), location_id)
+                    normalized_map = {(k[0], k[1]): v for k, v in location_id_map.items()}
                     new_location_id = normalized_map.get(normalized_key) if location_id else None
                     new_usermark_id = usermark_guid_map.get(usermark_guid) if usermark_guid else None
 
@@ -1035,7 +1035,7 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
             if res:
                 new_id = res[0]
                 print(f"⏩ Location déjà fusionnée OldID={old_loc_id} → NewID={new_id} (Source: {db_source})")
-                location_id_map[(db_source, old_loc_id)] = new_id
+                location_id_map[(os.path.basename(db_source), old_loc_id)] = new_id
                 continue
 
             # Recherche d'une correspondance exacte (même contenu) avec gestion des NULL

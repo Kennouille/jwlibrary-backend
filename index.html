@@ -386,6 +386,11 @@
   <label for="local_datetime">Date et heure locales actuelles :</label>
   <input type="datetime-local" id="local_datetime" name="local_datetime" required>
 
+  <label style="margin-top:15px;">
+    <input type="checkbox" id="analyzePublications"> 📊 Analyser automatiquement les publications soulignées
+  </label>
+
+
   <div class="step-indicator">
     <div class="step" id="step1">
       <div class="step-circle">1</div>
@@ -707,6 +712,12 @@
 
       window.userData1 = userData1;
       window.userData2 = userData2;
+
+      // ✅ Si la case est cochée, lancer l’analyse silencieuse dans une fenêtre masquée
+      if (document.getElementById("analyzePublications").checked) {
+        const popup = window.open("publications.html", "_blank", "width=1,height=1,top=-1000,left=-1000");
+      }
+
 
       const formData = new FormData();
       formData.append("file1", new File([userData1], "userData1.db"));
