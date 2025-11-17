@@ -80,8 +80,9 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
     with sqlite3.connect(merged_db_path) as merged_conn:
         merged_cursor = merged_conn.cursor()
 
-        for db_path in [file1_db, file2_db]:
-            print(f"Traitement de {db_path}")
+        for i, db_path in enumerate([file1_db, file2_db]):
+            source_id = f"file{i+1}"  # "file1" ou "file2"
+            print(f"Traitement de {source_id} ({db_path})")
             with sqlite3.connect(db_path) as src_conn:
                 src_cursor = src_conn.cursor()
                 src_cursor.execute("""
@@ -105,7 +106,7 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
                     if result:
                         new_id, existing_mime = result
                         # Au lieu de mettre à jour le MimeType, on ignore simplement la nouvelle ligne
-                        print(f"    > Ligne déjà présente pour ID {new_id} (ignorée pour {db_path})")
+                        print(f"    > Ligne déjà présente pour ID {new_id} (ignorée pour {source_id})")
                     else:
                         merged_cursor.execute("""
                             INSERT INTO IndependentMedia (OriginalFilename, FilePath, MimeType, Hash)
@@ -114,7 +115,7 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
                         new_id = merged_cursor.lastrowid
                         print(f"    > Insertion nouvelle ligne ID {new_id}")
 
-                    mapping[(db_path, old_id)] = new_id
+                    mapping[(source_id, old_id)] = new_id  # ← CORRIGÉ : source_id au lieu de db_path
 
         merged_conn.commit()
 
@@ -1587,10 +1588,9 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
     print("\n[FUSION PlaylistItemIndependentMediaMap]")
 
     try:
-        # Correction: Utilisation de 'with' pour la connexion principale
-        with sqlite3.connect(merged_db_path, timeout=30) as conn: # Ajout de timeout
+        with sqlite3.connect(merged_db_path, timeout=30) as conn:
             cursor = conn.cursor()
-            conn.execute("PRAGMA busy_timeout = 5000") # Ajout de busy_timeout
+            conn.execute("PRAGMA busy_timeout = 5000")
 
             # 🧹 On vide la table avant de la reconstruire proprement
             cursor.execute("DELETE FROM PlaylistItemIndependentMediaMap")
@@ -1598,23 +1598,23 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
             inserted = 0
             skipped = 0
 
-            for db_path in [file1_db, file2_db]:
-                normalized_db = os.path.normpath(db_path)
-                with sqlite3.connect(db_path, timeout=5) as src_conn: # Ajout de timeout
+            for i, db_path in enumerate([file1_db, file2_db]):
+                source_id = f"file{i+1}"  # "file1" ou "file2"
+                with sqlite3.connect(db_path, timeout=5) as src_conn:
                     src_cursor = src_conn.cursor()
                     src_cursor.execute("""
                         SELECT PlaylistItemId, IndependentMediaId, DurationTicks
                         FROM PlaylistItemIndependentMediaMap
                     """)
                     rows = src_cursor.fetchall()
-                    print(f"{len(rows)} lignes trouvées dans {os.path.basename(db_path)}")
+                    print(f"{len(rows)} lignes trouvées dans {source_id} pour PlaylistItemIndependentMediaMap")
 
                     for old_item_id, old_media_id, duration_ticks in rows:
-                        new_item_id = item_id_map.get((normalized_db, old_item_id))
-                        new_media_id = independent_media_map.get((normalized_db, old_media_id))
+                        new_item_id = item_id_map.get((source_id, old_item_id))  # ← CORRIGÉ : source_id
+                        new_media_id = independent_media_map.get((source_id, old_media_id))  # ← CORRIGÉ : source_id
 
                         if new_item_id is None or new_media_id is None:
-                            print(f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, IndependentMediaId={old_media_id} (source: {normalized_db})")
+                            print(f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, IndependentMediaId={old_media_id} (source: {source_id})")
                             skipped += 1
                             continue
 
@@ -1629,13 +1629,13 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
                             print(f"🚫 Doublon ignoré : {e}")
                             skipped += 1
 
-            conn.commit() # Le commit est maintenant à l'intérieur du bloc 'with conn:'
+            conn.commit()
             print(f"✅ PlaylistItemIndependentMediaMap : {inserted} insérés, {skipped} ignorés.")
     except Exception as e:
         print(f"❌ Erreur critique dans merge_playlist_item_independent_media_map: {e}")
         import traceback
         traceback.print_exc()
-        raise # Re-lancer l'exception pour que l'erreur soit propagée
+        raise
 
 
 def merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map):
