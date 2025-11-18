@@ -280,6 +280,11 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
     if exclude_tables is None:
         exclude_tables = ["Note", "UserMark", "Bookmark", "InputField"]
 
+    playlist_tables = ["PlaylistItem", "PlaylistItemLocationMap", "PlaylistItemIndependentMediaMap",
+                       "PlaylistItemMarker", "PlaylistItemMarkerBibleVerseMap", "PlaylistItemMarkerParagraphMap",
+                       "PlaylistItemAccuracy"]
+    exclude_tables.extend(playlist_tables)
+
     checkpoint_db(db1_path)
     checkpoint_db(db2_path)
 
@@ -1599,38 +1604,54 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
             skipped = 0
 
             for i, db_path in enumerate([file1_db, file2_db]):
-                source_id = f"file{i+1}"  # "file1" ou "file2"
+                # CORRECTION : Utiliser le chemin normalisé pour la cohérence
+                normalized_db = os.path.normpath(db_path)
+                source_id = f"file{i + 1}"  # "file1" ou "file2"
+
                 with sqlite3.connect(db_path, timeout=5) as src_conn:
                     src_cursor = src_conn.cursor()
                     src_cursor.execute("""
                         SELECT PlaylistItemId, IndependentMediaId, DurationTicks
                         FROM PlaylistItemIndependentMediaMap
+                        ORDER BY PlaylistItemId, IndependentMediaId  -- CORRECTION : tri pour cohérence
                     """)
                     rows = src_cursor.fetchall()
                     print(f"{len(rows)} lignes trouvées dans {source_id} pour PlaylistItemIndependentMediaMap")
 
                     for old_item_id, old_media_id, duration_ticks in rows:
-                        new_item_id = item_id_map.get((source_id, old_item_id))  # ← CORRIGÉ : source_id
-                        new_media_id = independent_media_map.get((source_id, old_media_id))  # ← CORRIGÉ : source_id
+                        # CORRECTION : Utiliser normalized_db au lieu de source_id pour la cohérence
+                        new_item_id = item_id_map.get((normalized_db, old_item_id))
+                        new_media_id = independent_media_map.get((normalized_db, old_media_id))
 
-                        if new_item_id is None or new_media_id is None:
-                            print(f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id}, IndependentMediaId={old_media_id} (source: {source_id})")
+                        if new_item_id is None:
+                            print(f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id} (source: {source_id})")
+                            skipped += 1
+                            continue
+
+                        if new_media_id is None:
+                            print(f"⚠️ Mapping manquant pour IndependentMediaId={old_media_id} (source: {source_id})")
                             skipped += 1
                             continue
 
                         try:
                             cursor.execute("""
-                                INSERT INTO PlaylistItemIndependentMediaMap
+                                INSERT OR REPLACE INTO PlaylistItemIndependentMediaMap
                                 (PlaylistItemId, IndependentMediaId, DurationTicks)
                                 VALUES (?, ?, ?)
                             """, (new_item_id, new_media_id, duration_ticks))
                             inserted += 1
                         except sqlite3.IntegrityError as e:
-                            print(f"🚫 Doublon ignoré : {e}")
+                            print(f"🚫 Erreur intégrité : {e}")
                             skipped += 1
 
+            # VÉRIFICATION POST-INSERTION
+            cursor.execute("SELECT COUNT(*) FROM PlaylistItemIndependentMediaMap")
+            final_count = cursor.fetchone()[0]
+            print(
+                f"✅ PlaylistItemIndependentMediaMap : {inserted} insérés, {skipped} ignorés, total final: {final_count}")
+
             conn.commit()
-            print(f"✅ PlaylistItemIndependentMediaMap : {inserted} insérés, {skipped} ignorés.")
+
     except Exception as e:
         print(f"❌ Erreur critique dans merge_playlist_item_independent_media_map: {e}")
         import traceback
@@ -1780,15 +1801,14 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
     file1_db = os.path.normpath(file1_db)
     file2_db = os.path.normpath(file2_db)
 
-    # Variables pour les résultats finaux, initialisées en dehors du try pour être accessibles partout
+    # Variables pour les résultats finaux
     max_media_id = 0
     max_playlist_id = 0
     orphaned_deleted = 0
-    integrity_result = "error" # Valeur par défaut en cas d'erreur
-    final_item_id_map = {} # Renommé pour éviter la confusion avec le paramètre d'entrée
+    integrity_result = "error"
+    final_item_id_map = {}
 
     try:
-        # **Correction Majeure ici : Utilisation d'un seul bloc 'with' pour la connexion principale**
         with sqlite3.connect(merged_db_path, timeout=30) as conn:
             conn.execute("PRAGMA busy_timeout = 10000")
             cursor = conn.cursor()
@@ -1798,89 +1818,78 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
             print(f"Source 1: {file1_db}")
             print(f"Source 2: {file2_db}")
             print(f"Location IDs mappés: {len(location_id_map)}")
+            print(f"Independent Media mappés: {len(independent_media_map)}")
 
-            # 1. Fusion de PlaylistItem (cette fonction doit gérer sa propre connexion interne)
-            # Nous appelons ici la version corrigée de merge_playlist_items qui utilise 'with' en interne.
+            # CORRECTION : Ordre CRITIQUE de fusion
+            # 1. Fusion de PlaylistItem d'abord
             final_item_id_map = merge_playlist_items(
                 merged_db_path, file1_db, file2_db, independent_media_map
             )
-            print(f"Mapping PlaylistItems: {len(final_item_id_map)} entrées")
+            print(f"✅ Mapping PlaylistItems: {len(final_item_id_map)} entrées")
 
-            # 2. Fusion de PlaylistItemAccuracy (cette fonction doit gérer sa propre connexion interne)
+            # DEBUG : Afficher quelques mappings pour vérification
+            print("\n🔍 ÉCHANTILLON Item ID Map:")
+            sample_items = list(final_item_id_map.items())[:5]
+            for (src, old_id), new_id in sample_items:
+                print(f"  {os.path.basename(src)} — {old_id} → {new_id}")
+
+            # 2. Fusion PlaylistItemIndependentMediaMap MAINTENANT
+            # CORRECTION : Cette table doit être fusionnée APRÈS PlaylistItems mais AVANT les markers
+            merge_playlist_item_independent_media_map(
+                merged_db_path, file1_db, file2_db, final_item_id_map, independent_media_map
+            )
+            print("✅ PlaylistItemIndependentMediaMap fusionnée.")
+
+            # 3. Fusion de PlaylistItemAccuracy
             max_acc_id = merge_playlist_item_accuracy(merged_db_path, file1_db, file2_db)
-            print(f"--> PlaylistItemAccuracy fusionnée, max ID final: {max_acc_id}")
+            print(f"✅ PlaylistItemAccuracy fusionnée, max ID final: {max_acc_id}")
 
-            # 3. Fusion PlaylistItemMarker et récupération du mapping des markers (gère sa propre connexion)
-            marker_id_map = merge_playlist_item_marker(merged_db_path, file1_db, file2_db, final_item_id_map)
-            print(f"--> PlaylistItemMarker fusionnée, markers mappés: {len(marker_id_map)}")
+            # 4. Fusion PlaylistItemMarker (dépend des items et media)
+            marker_id_map = merge_playlist_item_marker(
+                merged_db_path, file1_db, file2_db, final_item_id_map
+            )
+            print(f"✅ PlaylistItemMarker fusionnée, markers mappés: {len(marker_id_map)}")
 
-            # 4. Fusion des MarkerMaps (BibleVerse, Paragraph, etc.) (gère sa propre connexion)
-            print("\n[FUSION MARKER MAPS]")
+            # 5. Fusion des MarkerMaps (dépend des markers)
             merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map)
-            print("--> MarkerMaps fusionnées.")
+            print("✅ MarkerMaps fusionnées.")
 
-            # 5. Fusion de PlaylistItemIndependentMediaMap (gère sa propre connexion)
-            merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db, final_item_id_map, independent_media_map)
-            print("--> PlaylistItemIndependentMediaMap fusionnée.")
+            # 6. Fusion PlaylistItemLocationMap
+            merge_playlist_item_location_map(
+                merged_db_path, file1_db, file2_db, final_item_id_map, location_id_map
+            )
+            print("✅ PlaylistItemLocationMap fusionnée.")
 
-            # 6. Fusion PlaylistItemLocationMap (gère sa propre connexion)
-            merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, final_item_id_map, location_id_map)
-            print("--> PlaylistItemLocationMap fusionnée.")
-
-            # Nettoyage : retirer les mappings avec des PlaylistItemId fantômes
-            # **Correction : Utilisation de la connexion 'conn' déjà ouverte, pas de nouvelle connexion ici**
+            # Nettoyage
             cleanup_playlist_item_location_map(conn)
-            # Note: Si cleanup_playlist_item_location_map avait besoin d'un commit spécifique, il devrait le faire.
-            # Sinon, le commit final de merge_playlists gérera tout.
 
-            # Définition ou mise à jour de max_media_id si votre fusion IndependentMedia le retourne
-            # (si IndependentMedia est fusionnée dans une fonction auxiliaire qui retourne un max_id)
-            # Par exemple: max_media_id = merge_independent_media(merged_db_path, ...)
+            # VÉRIFICATION FINALE
+            print("\n🔍 VÉRIFICATION FINALE DES MAPPINGS:")
 
-            # 7. Vérification finale des thumbnails orphelins
-            print("\n[VÉRIFICATION THUMBNAILS ORPHELINS]")
+            # Vérifier PlaylistItemIndependentMediaMap
             cursor.execute("""
-                SELECT p.PlaylistItemId, p.ThumbnailFilePath
-                FROM PlaylistItem p
-                WHERE p.ThumbnailFilePath IS NOT NULL
-                  AND NOT EXISTS (
-                      SELECT 1 FROM IndependentMedia m
-                      WHERE m.FilePath = p.ThumbnailFilePath
-                  )
+                SELECT COUNT(*) FROM PlaylistItemIndependentMediaMap
             """)
-            orphaned_thumbnails = cursor.fetchall()
-            if orphaned_thumbnails:
-                print(f"Avertissement : {len(orphaned_thumbnails)} thumbnails sans média associé")
+            media_map_count = cursor.fetchone()[0]
+            print(f"  PlaylistItemIndependentMediaMap: {media_map_count} entrées")
 
-            # Le commit final pour toutes les opérations faites via 'cursor'
-            # C'est important que ce soit après toutes les écritures.
-            # Le 'with' block déclenchera un commit automatique si aucune exception n'est levée.
-            # Cependant, un commit explicite ici est bon pour la clarté et si vous avez besoin de rollback.
+            # Vérifier l'intégrité des mappings
+            cursor.execute("""
+                SELECT pim.PlaylistItemId, pim.IndependentMediaId
+                FROM PlaylistItemIndependentMediaMap pim
+                LEFT JOIN PlaylistItem pi ON pim.PlaylistItemId = pi.PlaylistItemId
+                LEFT JOIN IndependentMedia im ON pim.IndependentMediaId = im.IndependentMediaId
+                WHERE pi.PlaylistItemId IS NULL OR im.IndependentMediaId IS NULL
+            """)
+            orphaned_mappings = cursor.fetchall()
+            if orphaned_mappings:
+                print(f"⚠️  {len(orphaned_mappings)} mappings orphelins détectés")
+            else:
+                print("✅ Tous les mappings sont valides")
+
             conn.commit()
 
-            print("\n=== FUSION PLAYLISTS TERMINÉE ===")
-            playlist_results = {
-                'item_id_map': final_item_id_map,
-                'marker_id_map': marker_id_map,
-                'media_status': {
-                    'total_media': max_media_id,
-                    'orphaned_thumbnails': len(orphaned_thumbnails)
-                }
-            }
-            print(f"Résumé intermédiaire: {playlist_results}")
-
-            # 8. Finalisation et vérification d'intégrité
-            print("\n🧪 DEBUG FINAL DANS merge_playlists")
-            print("Item ID Map complet:")
-            for (src, old_id), new_id in final_item_id_map.items():
-                print(f"  {src} — {old_id} → {new_id}")
-
-            # Effectuer PRAGMA quick_check sur la connexion principale avant de la retourner/fermer
-            cursor.execute("PRAGMA quick_check")
-            integrity_result = cursor.fetchone()[0]
-
-            # Les valeurs pour max_playlist_id et orphaned_deleted doivent être déterminées par votre logique
-            # Si elles ne sont pas calculées ailleurs, elles resteront à leurs valeurs d'initialisation.
+            print("\n=== FUSION PLAYLISTS TERMINÉE AVEC SUCCÈS ===")
 
             return (
                 max_playlist_id,
@@ -1894,18 +1903,15 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
     except Exception as e:
         import traceback
         traceback.print_exc()
-        print(f"ERREUR CRITIQUE dans merge_playlists: {str(e)}")
-        # En cas d'erreur critique, nous retournons les valeurs par défaut définies au début du try
+        print(f"❌ ERREUR CRITIQUE dans merge_playlists: {str(e)}")
         return (
             max_playlist_id,
-            len(final_item_id_map), # item_id_map peut être partiellement rempli même en cas d'erreur
+            len(final_item_id_map),
             max_media_id,
             orphaned_deleted,
-            "error", # Indique qu'une erreur s'est produite
+            "error",
             final_item_id_map
         )
-    # Le bloc 'finally' n'est plus nécessaire pour conn.close()
-    # car le 'with sqlite3.connect(...) as conn:' gère la fermeture automatique de la connexion 'conn'.
 
 
 def check_duplicate_guids_between_sources(file1_db, file2_db):
@@ -2345,9 +2351,32 @@ def merge_data():
             traceback.print_exc()
             return jsonify({"error": "Erreur lors de la vérification des tags"}), 500
 
-        print("\n▶️ Début de la fusion des éléments liés aux playlists...")
+        print("\n🎵 DÉBUT FUSION PLAYLISTS AVEC MAPPING SPÉCIALISÉ")
 
-        print("\n▶️ Fusion des éléments liés aux playlists terminée.")
+        # Fusion des playlists avec mapping correct
+        try:
+            result = merge_playlists(
+                merged_db_path,
+                file1_db,
+                file2_db,
+                location_id_map,
+                independent_media_map,
+                {}  # item_id_map vide au départ
+            )
+
+            # Récupérer les résultats
+            (max_playlist_id, playlist_item_total, max_media_id,
+             orphaned_deleted, integrity_result, item_id_map) = result
+
+            print(f"✅ Playlists fusionnées: {playlist_item_total} items")
+
+        except Exception as e:
+            print(f"❌ Erreur dans merge_playlists: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+        print("\n🎵 FUSION PLAYLISTS TERMINÉE")
 
         # ─── Avant merge_other_tables ────────────────────────────────────────────
         tables_to_check = [
