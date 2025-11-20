@@ -1887,10 +1887,12 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
                 print(f"  {os.path.basename(src)} — {old_id} → {new_id}")
 
             # 2. Fusion PlaylistItemIndependentMediaMap MAINTENANT
+            print("🔴 DEBUG: Avant merge_playlist_item_independent_media_map")
             # CORRECTION : Cette table doit être fusionnée APRÈS PlaylistItems mais AVANT les markers
             merge_playlist_item_independent_media_map(
                 merged_db_path, file1_db, file2_db, final_item_id_map, independent_media_map
             )
+            print("🔴 DEBUG: Après merge_playlist_item_independent_media_map")
             print("✅ PlaylistItemIndependentMediaMap fusionnée.")
 
             # 3. Fusion de PlaylistItemAccuracy
@@ -1908,9 +1910,11 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
             print("✅ MarkerMaps fusionnées.")
 
             # 6. Fusion PlaylistItemLocationMap
+            print("🔴 DEBUG: Avant merge_playlist_item_location_map")
             merge_playlist_item_location_map(
                 merged_db_path, file1_db, file2_db, final_item_id_map, location_id_map
             )
+            print("🔴 DEBUG: Après merge_playlist_item_location_map")
             print("✅ PlaylistItemLocationMap fusionnée.")
 
             # Nettoyage
