@@ -1885,10 +1885,19 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
 
             # CORRECTION : Ordre CRITIQUE de fusion
             # 1. Fusion de PlaylistItem d'abord
-            final_item_id_map = merge_playlist_items(
-                merged_db_path, file1_db, file2_db, independent_media_map
-            )
-            print(f"✅ Mapping PlaylistItems: {len(final_item_id_map)} entrées")
+            try:
+                final_item_id_map = merge_playlist_items(
+                    merged_db_path, file1_db, file2_db, independent_media_map
+                )
+                print(f"✅ Mapping PlaylistItems: {len(final_item_id_map)} entrées")
+            except Exception as e:
+                print(f"🔴 ERREUR CRITIQUE dans merge_playlist_items: {e}")
+                import traceback
+                traceback.print_exc()
+                # Si ça crash ici, on retourne immédiatement
+                return (0, 0, 0, 0, "error", {})
+
+            print("🔴 DEBUG: Après merge_playlist_items avec succès")
 
             # DEBUG : Afficher quelques mappings pour vérification
             print("\n🔍 ÉCHANTILLON Item ID Map:")
