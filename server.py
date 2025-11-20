@@ -1431,6 +1431,8 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                     db_source = item[0]
                     old_id, label, start_trim, end_trim, accuracy, end_action, thumb_path = item[1:]
 
+                    print(f"🔴 DEBUG: Traitement item {old_id}")  # ⬅️ AJOUT ICI
+
                     norm_label = safe_text(label)
                     norm_start = safe_number(start_trim)
                     norm_end = safe_number(end_trim)
