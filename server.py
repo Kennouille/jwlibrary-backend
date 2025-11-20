@@ -1646,7 +1646,8 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
     """
     Fusionne PlaylistItemIndependentMediaMap de manière cohérente et idempotente.
     """
-    print("\n[FUSION PlaylistItemIndependentMediaMap]")
+    print("\n[FUSION PlaylistItemIndependentMediaMap - DÉBUT]")  # ⬅️ AJOUT
+    print(f"🔴 DEBUG: Appelée avec {len(item_id_map)} items, {len(independent_media_map)} médias")
 
     try:
         with sqlite3.connect(merged_db_path, timeout=30) as conn:
