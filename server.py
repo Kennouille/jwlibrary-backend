@@ -2471,6 +2471,28 @@ def merge_data():
 
         # 9. Finalisation playlists
         print("\n=== FUSION PLAYLISTS TERMINÉE ===")
+
+        print("\n🔍 VÉRIFICATION THUMBNAIL_FILEPATH")
+        with sqlite3.connect(merged_db_path) as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT pi.PlaylistItemId, pi.Label, pi.ThumbnailFilePath, im.FilePath
+                FROM PlaylistItem pi
+                LEFT JOIN IndependentMedia im ON pi.ThumbnailFilePath = im.FilePath
+                WHERE pi.ThumbnailFilePath IS NOT NULL AND im.FilePath IS NULL
+            """)
+
+            problematic_thumbnails = cursor.fetchall()
+            if problematic_thumbnails:
+                print(f"❌ {len(problematic_thumbnails)} thumbnails sans média correspondant:")
+                for item_id, label, thumb_path, media_path in problematic_thumbnails:
+                    print(f"  Item {item_id}: '{label}'")
+                    print(f"    Thumbnail: {thumb_path}")
+                    print(f"    Aucun média trouvé avec ce chemin")
+            else:
+                print("✅ Tous les thumbnails ont un média correspondant")
+
         playlist_results = {
             'item_id_map': item_id_map,
             'marker_id_map': marker_id_map,
