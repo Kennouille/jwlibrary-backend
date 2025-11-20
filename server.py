@@ -1621,7 +1621,7 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
                     for old_item_id, old_media_id, duration_ticks in rows:
                         # CORRECTION : Utiliser normalized_db au lieu de source_id pour la cohérence
                         new_item_id = item_id_map.get((normalized_db, old_item_id))
-                        new_media_id = independent_media_map.get((normalized_db, old_media_id))
+                        new_media_id = independent_media_map.get((source_id, old_media_id))
 
                         if new_item_id is None:
                             print(f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id} (source: {source_id})")
