@@ -1448,6 +1448,7 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                         continue
 
                     # ⬇️⬇️⬇️ TOUJOURS INSÉRER, PAS DE DÉDUPLICATION ⬇️⬇️⬇️
+                    # Dans la boucle, juste avant l'INSERT :
                     try:
                         cursor.execute("""
                             INSERT INTO PlaylistItem
@@ -1457,7 +1458,8 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                         new_id = cursor.lastrowid
                         print(f"    Insertion PlaylistItem: OldID {old_id} → NewID {new_id}")
                     except sqlite3.IntegrityError as e:
-                        print(f"Erreur insertion PlaylistItem OldID {old_id} de {db_source}: {e}")
+                        print(f"🔴 ERREUR CRITIQUE insertion PlaylistItem OldID {old_id}: {e}")
+                        print(f"🔴 DONNÉES: label='{label}', thumb='{thumb_path}'")  # ⬅️ AJOUT
                         continue
 
                     cursor.execute("""
