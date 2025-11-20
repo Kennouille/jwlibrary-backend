@@ -1426,41 +1426,48 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
             print(f"Total playlist items lus : {len(all_items)}")
 
             for item in all_items:
-                db_source = item[0]
-                old_id, label, start_trim, end_trim, accuracy, end_action, thumb_path = item[1:]
+                try:  # ⬅️ AJOUT
+                    db_source = item[0]
+                    old_id, label, start_trim, end_trim, accuracy, end_action, thumb_path = item[1:]
 
-                norm_label = safe_text(label)
-                norm_start = safe_number(start_trim)
-                norm_end = safe_number(end_trim)
-                norm_thumb = safe_text(thumb_path)
+                    norm_label = safe_text(label)
+                    norm_start = safe_number(start_trim)
+                    norm_end = safe_number(end_trim)
+                    norm_thumb = safe_text(thumb_path)
 
-                key = generate_full_key(norm_label, norm_start, norm_end, accuracy, end_action, norm_thumb)
+                    key = generate_full_key(norm_label, norm_start, norm_end, accuracy, end_action, norm_thumb)
 
-                cursor.execute("SELECT NewItemId FROM MergeMapping_PlaylistItem WHERE SourceDb = ? AND OldItemId = ?", (db_source, old_id))
-                res = cursor.fetchone()
-                if res:
-                    new_id = res[0]
-                    mapping[(db_source, old_id)] = new_id
-                    continue
+                    cursor.execute("SELECT NewItemId FROM MergeMapping_PlaylistItem WHERE SourceDb = ? AND OldItemId = ?", (db_source, old_id))
+                    res = cursor.fetchone()
+                    if res:
+                        new_id = res[0]
+                        mapping[(db_source, old_id)] = new_id
+                        continue
 
-                # ⬇️⬇️⬇️ TOUJOURS INSÉRER, PAS DE DÉDUPLICATION ⬇️⬇️⬇️
-                try:
+                    # ⬇️⬇️⬇️ TOUJOURS INSÉRER, PAS DE DÉDUPLICATION ⬇️⬇️⬇️
+                    try:
+                        cursor.execute("""
+                            INSERT INTO PlaylistItem
+                            (Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (label, start_trim, end_trim, accuracy, end_action, thumb_path))
+                        new_id = cursor.lastrowid
+                        print(f"    Insertion PlaylistItem: OldID {old_id} → NewID {new_id}")
+                    except sqlite3.IntegrityError as e:
+                        print(f"Erreur insertion PlaylistItem OldID {old_id} de {db_source}: {e}")
+                        continue
+
                     cursor.execute("""
-                        INSERT INTO PlaylistItem
-                        (Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (label, start_trim, end_trim, accuracy, end_action, thumb_path))
-                    new_id = cursor.lastrowid
-                    print(f"    Insertion PlaylistItem: OldID {old_id} → NewID {new_id}")
-                except sqlite3.IntegrityError as e:
-                    print(f"Erreur insertion PlaylistItem OldID {old_id} de {db_source}: {e}")
-                    continue
+                        INSERT INTO MergeMapping_PlaylistItem (SourceDb, OldItemId, NewItemId)
+                        VALUES (?, ?, ?)
+                    """, (db_source, old_id, new_id))
+                    mapping[(db_source, old_id)] = new_id
 
-                cursor.execute("""
-                    INSERT INTO MergeMapping_PlaylistItem (SourceDb, OldItemId, NewItemId)
-                    VALUES (?, ?, ?)
-                """, (db_source, old_id, new_id))
-                mapping[(db_source, old_id)] = new_id
+                except Exception as e:  # ⬅️ AJOUT
+                    print(f"🔴 ERREUR dans la boucle sur item {old_id}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    continue  # Continue avec l'item suivant
 
             # ⬇️⬇️⬇️ DEBUG AJOUTÉ ICI - APRÈS LA BOUCLE ⬇️⬇️⬇️
             cursor.execute("SELECT COUNT(*) FROM PlaylistItem")
@@ -1494,6 +1501,7 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                 seen[new_id] = old_id
 
         print(f"✅ Total items uniques: {len(seen)}")
+        print(f"🔴 DEBUG: merge_playlist_items TERMINÉE - mapping size: {len(mapping)}")
         return mapping
     except Exception as e:
         print(f"❌ Erreur critique dans merge_playlist_items: {e}")
