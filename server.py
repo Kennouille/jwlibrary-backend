@@ -1475,6 +1475,12 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
             final_count = cursor.fetchone()[0]
             print(f"🔴 DEBUG: Nombre FINAL de PlaylistItem dans la base = {final_count}")
 
+            conn.commit()
+            print("🔴 DEBUG: Après commit")  # ⬅️ LIGNE 2
+
+            # Le reste du code existant...
+            print("🔴 DEBUG: Avant sortie du with")  # ⬅️ LIGNE 3
+
             # Vérifier les thumbnails problématiques
             cursor.execute("""
                 SELECT pi.PlaylistItemId, pi.ThumbnailFilePath 
