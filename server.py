@@ -1377,7 +1377,8 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
     """
     Fusionne PlaylistItem de façon idempotente.
     """
-    print("\n[FUSION PLAYLISTITEMS - IDÉMPOTENTE]")
+    print("\n[FUSION PLAYLISTITEMS - IDÉMPOTENTE - DÉBUT]")  # ⬅️ AJOUT
+    print(f"🔴 DEBUG: merge_playlist_items appelée avec {merged_db_path}")  # ⬅️ AJOUT
 
     mapping = {}
     try:
