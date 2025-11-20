@@ -1475,12 +1475,6 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
             final_count = cursor.fetchone()[0]
             print(f"🔴 DEBUG: Nombre FINAL de PlaylistItem dans la base = {final_count}")
 
-            conn.commit()
-            print("🔴 DEBUG: Après commit")  # ⬅️ LIGNE 2
-
-            # Le reste du code existant...
-            print("🔴 DEBUG: Avant sortie du with")  # ⬅️ LIGNE 3
-
             # Vérifier les thumbnails problématiques
             cursor.execute("""
                 SELECT pi.PlaylistItemId, pi.ThumbnailFilePath 
@@ -1497,9 +1491,14 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                 for item_id, thumb_path in problematic_thumbnails[:3]:
                     print(f"   - PlaylistItem {item_id}: {thumb_path}")
 
-            conn.commit() # Le commit est maintenant à l'intérieur du bloc 'with conn:'
-        print(f"Total PlaylistItems mappés: {len(mapping)}")
-        print(f"🔍 VÉRIFICATION DOUBLONS dans item_id_map:")
+            # ⬇️⬇️⬇️ AJOUTER CES 4 LIGNES JUSTE ICI ⬇️⬇️⬇️
+            print("🔴 DEBUG: Avant commit")
+            conn.commit()  # VOTRE COMMIT EXISTANT - NE PAS LE DUPLIQUER
+            print("🔴 DEBUG: Après commit")
+            print("🔴 DEBUG: Avant sortie du with")
+            # ⬆️⬆️⬆️ FIN DES LIGNES AJOUTÉES ⬆️⬆️⬆️
+
+            print(f"Total PlaylistItems mappés: {len(mapping)}")
         seen = {}
         for (src, old_id), new_id in mapping.items():
             if new_id in seen:
