@@ -2391,69 +2391,66 @@ def merge_data():
 
         print("\n🎵 FUSION PLAYLISTS TERMINÉE")
 
-        def diagnostic_final_merged_db(merged_db_path):
-            print("\n🔍 DIAGNOSTIC FINAL - POURQUOI LES MÉDIAS SONT VIDES ?")
+        print("\n🔍 DIAGNOSTIC URGENT - POURQUOI C'EST VIDE ?")
 
-            with sqlite3.connect(merged_db_path) as conn:
-                cursor = conn.cursor()
+        with sqlite3.connect(merged_db_path) as conn:
+            cursor = conn.cursor()
 
-                # 1. COMPTAGE CRITIQUE
-                cursor.execute("SELECT COUNT(*) FROM IndependentMedia")
-                media_count = cursor.fetchone()[0]
-                print(f"📊 IndependentMedia count: {media_count}")
+            # 1. Comptage CRITIQUE
+            cursor.execute("SELECT COUNT(*) FROM IndependentMedia")
+            media_count = cursor.fetchone()[0]
+            print(f"📊 IndependentMedia count: {media_count}")  # Doit être > 0 !
 
-                cursor.execute("SELECT COUNT(*) FROM PlaylistItemIndependentMediaMap")
-                map_count = cursor.fetchone()[0]
-                print(f"📊 PlaylistItemIndependentMediaMap count: {map_count}")
+            cursor.execute("SELECT COUNT(*) FROM PlaylistItemIndependentMediaMap")
+            map_count = cursor.fetchone()[0]
+            print(f"📊 PlaylistItemIndependentMediaMap count: {map_count}")
 
-                cursor.execute("SELECT COUNT(*) FROM PlaylistItem")
-                item_count = cursor.fetchone()[0]
-                print(f"📊 PlaylistItem count: {item_count}")
+            # 2. ÉCHANTILLONS RÉELS des mappings
+            print("\n🔍 ÉCHANTILLONS DES MAPPINGS (ça va faire mal):")
+            cursor.execute("""
+                SELECT pim.PlaylistItemId, pim.IndependentMediaId, 
+                       im.FilePath, im.IndependentMediaId IS NULL as media_missing
+                FROM PlaylistItemIndependentMediaMap pim
+                LEFT JOIN IndependentMedia im ON pim.IndependentMediaId = im.IndependentMediaId
+                LIMIT 10
+            """)
 
-                # 2. VÉRIFIER SI merge_independent_media A FONCTIONNÉ
-                print(f"\n🔍 ÉTAT DE LA FUSION DES MÉDIAS:")
-                if media_count == 0:
-                    print("❌ CATASTROPHE: IndependentMedia est VIDE!")
-                    print("   → merge_independent_media() a échoué ou n'a pas été appelée")
+            samples = cursor.fetchall()
+            broken_count = 0
+            for item_id, media_id, file_path, media_missing in samples:
+                if media_missing or not file_path:
+                    broken_count += 1
+                    status = "❌ POINTE VERS LE VIDE"
                 else:
-                    print(f"✅ IndependentMedia contient {media_count} médias")
+                    status = f"✅ {file_path}"
+                print(f"   PlaylistItem {item_id} → IndependentMedia {media_id} : {status}")
 
-                # 3. ÉCHANTILLONS DES MAPPINGS
-                print(f"\n🔍 ÉCHANTILLONS DES MAPPINGS:")
-                cursor.execute("""
-                    SELECT pim.PlaylistItemId, pim.IndependentMediaId, 
-                           im.FilePath, im.OriginalFilename
-                    FROM PlaylistItemIndependentMediaMap pim
-                    LEFT JOIN IndependentMedia im ON pim.IndependentMediaId = im.IndependentMediaId
-                    LIMIT 10
-                """)
+            print(f"💥 Mappings cassés: {broken_count}/10")
 
-                samples = cursor.fetchall()
-                broken_count = 0
-                for item_id, media_id, file_path, original_name in samples:
-                    if file_path is None:
-                        broken_count += 1
-                        status = "❌ POINTE VERS LE VIDE"
-                    else:
-                        status = f"✅ {file_path}"
-                    print(f"   PlaylistItem {item_id} → IndependentMedia {media_id} : {status}")
-                    if original_name:
-                        print(f"      Fichier: {original_name}")
+            # 3. VÉRIFICATION DES THUMBNAILS
+            print("\n🖼️ THUMBNAILS (problèmes FOREIGN KEY):")
+            cursor.execute("""
+                SELECT pi.PlaylistItemId, pi.ThumbnailFilePath 
+                FROM PlaylistItem pi
+                WHERE pi.ThumbnailFilePath IS NOT NULL 
+                AND pi.ThumbnailFilePath != ''
+                LIMIT 5
+            """)
 
-                print(f"💥 Mappings cassés: {broken_count}/10")
+            thumbnails = cursor.fetchall()
+            for item_id, thumb_path in thumbnails:
+                print(f"   PlaylistItem {item_id}: {thumb_path}")
 
-                # 4. VÉRIFIER LA TABLE PlaylistItemMediaMap (ancien système)
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='PlaylistItemMediaMap'")
-                has_old_table = cursor.fetchone() is not None
-                print(f"\n🔍 TABLE PlaylistItemMediaMap (ancien): {'✅ PRÉSENTE' if has_old_table else '❌ ABSENTE'}")
-
-                if has_old_table:
-                    cursor.execute("SELECT COUNT(*) FROM PlaylistItemMediaMap")
-                    old_map_count = cursor.fetchone()[0]
-                    print(f"   PlaylistItemMediaMap count: {old_map_count}")
-
-        # APPELER CETTE FONCTION APRÈS merge_playlists()
-        diagnostic_final_merged_db('merged_userData.db')
+        # CONCLUSION
+        print(f"\n🎯 DIAGNOSTIC: ")
+        if media_count == 0:
+            print("❌ CATASTROPHE: IndependentMedia est VIDE!")
+            print("   → La fonction merge_independent_media() a échoué ou n'a pas été appelée")
+        elif broken_count > 0:
+            print("❌ PROBLEME: Les mappings pointent vers des médias manquants")
+            print("   → Problème de déduplication trop agressive")
+        else:
+            print("✅ La structure est bonne, le problème est ailleurs")
 
         # ─── Avant merge_other_tables ────────────────────────────────────────────
         tables_to_check = [
