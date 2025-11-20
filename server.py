@@ -1384,6 +1384,7 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
     try:
         # Correction: Utilisation de 'with' pour la connexion principale
         with sqlite3.connect(merged_db_path, timeout=30) as conn:
+            print(f"🔴 DEBUG: Connexion DB réussie")  # ⬅️ AJOUT ICI
             conn.execute("PRAGMA busy_timeout = 10000") # Ajout de busy_timeout pour la robustesse
             cursor = conn.cursor()
 
