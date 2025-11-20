@@ -72,18 +72,20 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
     """
     Fusionne la table IndependentMedia des deux bases sources dans la base fusionnée.
     Deux lignes sont considérées identiques si (OriginalFilename, FilePath, Hash) sont identiques.
-    Si une ligne existe déjà, on ignore la nouvelle pour préserver les données existantes.
-    Retourne un mapping : {(db_source, ancien_ID) : nouveau_ID, ...}
+    Retourne un mapping : {(normalized_db_path, ancien_ID) : nouveau_ID}
     """
     print("\n[FUSION INDEPENDENTMEDIA]")
     mapping = {}
+
     with sqlite3.connect(merged_db_path) as merged_conn:
         merged_cursor = merged_conn.cursor()
 
-        for i, db_path in enumerate([file1_db, file2_db]):
-            source_id = f"file{i+1}"  # "file1" ou "file2"
-            print(f"Traitement de {source_id} ({db_path})")
-            with sqlite3.connect(db_path) as src_conn:
+        for db_path in (file1_db, file2_db):
+
+            normalized = os.path.normpath(db_path)
+            print(f"Traitement de {normalized}")
+
+            with sqlite3.connect(normalized) as src_conn:
                 src_cursor = src_conn.cursor()
                 src_cursor.execute("""
                     SELECT IndependentMediaId, OriginalFilename, FilePath, MimeType, Hash
@@ -95,27 +97,31 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
                     old_id, orig_fn, file_path, mime, hash_val = row
                     print(f"  - Média : {orig_fn}, Hash={hash_val}")
 
-                    # Vérifie si la ligne existe déjà (évite doublons)
+                    # Vérifie si un média identique existe déjà
                     merged_cursor.execute("""
-                        SELECT IndependentMediaId, MimeType
+                        SELECT IndependentMediaId
                         FROM IndependentMedia
-                        WHERE OriginalFilename = ? AND FilePath = ? AND Hash = ?
+                        WHERE OriginalFilename = ?
+                          AND FilePath = ?
+                          AND Hash = ?
                     """, (orig_fn, file_path, hash_val))
+
                     result = merged_cursor.fetchone()
 
                     if result:
-                        new_id, existing_mime = result
-                        # Au lieu de mettre à jour le MimeType, on ignore simplement la nouvelle ligne
-                        print(f"    > Ligne déjà présente pour ID {new_id} (ignorée pour {source_id})")
+                        new_id = result[0]
+                        print(f"    > Déjà présent -> ID {new_id}")
                     else:
                         merged_cursor.execute("""
-                            INSERT INTO IndependentMedia (OriginalFilename, FilePath, MimeType, Hash)
+                            INSERT INTO IndependentMedia
+                            (OriginalFilename, FilePath, MimeType, Hash)
                             VALUES (?, ?, ?, ?)
                         """, (orig_fn, file_path, mime, hash_val))
                         new_id = merged_cursor.lastrowid
                         print(f"    > Insertion nouvelle ligne ID {new_id}")
 
-                    mapping[(source_id, old_id)] = new_id  # ← CORRIGÉ : source_id au lieu de db_path
+                    # MAPPING CORRECT (très important)
+                    mapping[(normalized, old_id)] = new_id
 
         merged_conn.commit()
 
@@ -1455,6 +1461,27 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                 """, (db_source, old_id, new_id))
                 mapping[(db_source, old_id)] = new_id
 
+            # ⬇️⬇️⬇️ DEBUG AJOUTÉ ICI - APRÈS LA BOUCLE ⬇️⬇️⬇️
+            cursor.execute("SELECT COUNT(*) FROM PlaylistItem")
+            final_count = cursor.fetchone()[0]
+            print(f"🔴 DEBUG: Nombre FINAL de PlaylistItem dans la base = {final_count}")
+
+            # Vérifier les thumbnails problématiques
+            cursor.execute("""
+                SELECT pi.PlaylistItemId, pi.ThumbnailFilePath 
+                FROM PlaylistItem pi 
+                WHERE pi.ThumbnailFilePath IS NOT NULL 
+                AND pi.ThumbnailFilePath != ''
+                AND NOT EXISTS (
+                    SELECT 1 FROM IndependentMedia im WHERE im.FilePath = pi.ThumbnailFilePath
+                )
+            """)
+            problematic_thumbnails = cursor.fetchall()
+            if problematic_thumbnails:
+                print(f"🔴 PROBLÈME: {len(problematic_thumbnails)} thumbnails sans média correspondant")
+                for item_id, thumb_path in problematic_thumbnails[:3]:
+                    print(f"   - PlaylistItem {item_id}: {thumb_path}")
+
             conn.commit() # Le commit est maintenant à l'intérieur du bloc 'with conn:'
         print(f"Total PlaylistItems mappés: {len(mapping)}")
         print(f"🔍 VÉRIFICATION DOUBLONS dans item_id_map:")
@@ -1515,66 +1542,73 @@ def merge_playlist_item_accuracy(merged_db_path, file1_db, file2_db):
 
 
 def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map):
-    print("\n[FUSION PLAYLISTITEMLOCATIONMAP]")
+    print("\n[FUSION PlaylistItemLocationMap]")
 
     try:
-        # Correction: Utilisation de 'with' pour la connexion principale
-        with sqlite3.connect(merged_db_path, timeout=30) as conn: # Ajout de timeout pour la robustesse
+        with sqlite3.connect(merged_db_path, timeout=30) as conn:
             cursor = conn.cursor()
-            conn.execute("PRAGMA busy_timeout = 5000") # Ajout de busy_timeout pour les requêtes
+            conn.execute("PRAGMA busy_timeout = 5000")
 
-            # Étape 1: Vider complètement la table
             cursor.execute("DELETE FROM PlaylistItemLocationMap")
-            print("🗑️ Table PlaylistItemLocationMap vidée avant reconstruction")
+            print("🗑️ Table PlaylistItemLocationMap vidée")
 
-            total_inserted = 0
-            total_skipped = 0
+            inserted = 0
+            skipped = 0
 
-            # Étape 2: Reconstruction avec mapping
-            for db_path in [file1_db, file2_db]:
-                normalized_db = os.path.normpath(db_path)
-                with sqlite3.connect(db_path, timeout=5) as src_conn: # Ajout de timeout pour la robustesse
-                    src_cursor = src_conn.cursor()
+            # 🔥 Traitement identique pour file1 et file2
+            for db_path in (file1_db, file2_db):
+                normalized = os.path.normpath(db_path)
+
+                with sqlite3.connect(normalized, timeout=5) as src:
+                    src_cursor = src.cursor()
                     src_cursor.execute("""
                         SELECT PlaylistItemId, LocationId, MajorMultimediaType, BaseDurationTicks
                         FROM PlaylistItemLocationMap
+                        ORDER BY PlaylistItemId, LocationId
                     """)
-                    mappings = src_cursor.fetchall()
-                    print(f"{len(mappings)} mappings trouvés dans {os.path.basename(db_path)}")
+                    rows = src_cursor.fetchall()
 
-                    for old_item_id, old_loc_id, mm_type, duration in mappings:
-                        new_item_id = item_id_map.get((normalized_db, old_item_id))
-                        new_loc_id = location_id_map.get((normalized_db, old_loc_id))
+                print(f"{len(rows)} lignes trouvées dans {os.path.basename(db_path)}")
 
-                        if new_item_id is None or new_loc_id is None:
-                            print(f"⚠️ Ignoré: PlaylistItemId={old_item_id} ou LocationId={old_loc_id} non mappé (source: {os.path.basename(db_path)})")
-                            total_skipped += 1
-                            continue
+                for old_item_id, old_loc_id, mm_type, duration in rows:
 
-                        try:
-                            cursor.execute("""
-                                INSERT INTO PlaylistItemLocationMap
-                                (PlaylistItemId, LocationId, MajorMultimediaType, BaseDurationTicks)
-                                VALUES (?, ?, ?, ?)
-                            """, (new_item_id, new_loc_id, mm_type, duration))
-                            print(f"✅ Insertion: PlaylistItemId={new_item_id}, LocationId={new_loc_id}")
-                            total_inserted += 1
-                        except sqlite3.IntegrityError as e:
-                            print(f"⚠️ Doublon ignoré: {e}")
-                            total_skipped += 1
+                    # 🔥 mapping cohérent
+                    new_item_id = item_id_map.get((normalized, old_item_id))
+                    new_loc_id  = location_id_map.get((normalized, old_loc_id))
 
-            conn.commit() # Le commit est maintenant à l'intérieur du bloc 'with conn:'
+                    if new_item_id is None:
+                        print(f"⚠️ PlaylistItemId non mappé ({old_item_id}) dans {normalized}")
+                        skipped += 1
+                        continue
 
-            print(f"📊 Résultat: {total_inserted} lignes insérées, {total_skipped} ignorées")
+                    if new_loc_id is None:
+                        print(f"⚠️ LocationId non mappé ({old_loc_id}) dans {normalized}")
+                        skipped += 1
+                        continue
+
+                    try:
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO PlaylistItemLocationMap
+                            (PlaylistItemId, LocationId, MajorMultimediaType, BaseDurationTicks)
+                            VALUES (?, ?, ?, ?)
+                        """, (new_item_id, new_loc_id, mm_type, duration))
+                        inserted += 1
+
+                    except sqlite3.IntegrityError as e:
+                        print(f"⚠️ Conflit ignoré: {e}")
+                        skipped += 1
+
+            conn.commit()
+
+            print(f"📊 PlaylistItemLocationMap : {inserted} insérés, {skipped} ignorés")
+
             cursor.execute("SELECT COUNT(*) FROM PlaylistItemLocationMap")
-            count = cursor.fetchone()[0]
-            print(f"🔍 Total final dans PlaylistItemLocationMap: {count} lignes")
+            print(f"🔍 Total final = {cursor.fetchone()[0]}")
 
     except Exception as e:
-        print(f"❌ Erreur critique dans merge_playlist_item_location_map: {e}")
-        import traceback
+        print(f"❌ Erreur critique merge_playlist_item_location_map: {e}")
         traceback.print_exc()
-        raise # Re-lancer l'exception pour que l'erreur soit propagée
+        raise
 
 
 def cleanup_playlist_item_location_map(conn):
@@ -1591,7 +1625,7 @@ def cleanup_playlist_item_location_map(conn):
 
 def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map):
     """
-    Fusionne PlaylistItemIndependentMediaMap avec adaptation du mapping.
+    Fusionne PlaylistItemIndependentMediaMap de manière cohérente et idempotente.
     """
     print("\n[FUSION PlaylistItemIndependentMediaMap]")
 
@@ -1600,64 +1634,61 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
             cursor = conn.cursor()
             conn.execute("PRAGMA busy_timeout = 5000")
 
-            # 🧹 On vide la table avant de la reconstruire proprement
             cursor.execute("DELETE FROM PlaylistItemIndependentMediaMap")
 
             inserted = 0
             skipped = 0
 
-            for i, db_path in enumerate([file1_db, file2_db]):
-                # CORRECTION : Utiliser le chemin normalisé pour la cohérence
+            for db_path in (file1_db, file2_db):
                 normalized_db = os.path.normpath(db_path)
-                source_id = f"file{i + 1}"  # "file1" ou "file2"
 
-                with sqlite3.connect(db_path, timeout=5) as src_conn:
+                with sqlite3.connect(normalized_db, timeout=5) as src_conn:
                     src_cursor = src_conn.cursor()
                     src_cursor.execute("""
                         SELECT PlaylistItemId, IndependentMediaId, DurationTicks
                         FROM PlaylistItemIndependentMediaMap
-                        ORDER BY PlaylistItemId, IndependentMediaId  -- CORRECTION : tri pour cohérence
+                        ORDER BY PlaylistItemId, IndependentMediaId
                     """)
                     rows = src_cursor.fetchall()
-                    print(f"{len(rows)} lignes trouvées dans {source_id} pour PlaylistItemIndependentMediaMap")
 
-                    for old_item_id, old_media_id, duration_ticks in rows:
-                        # CORRECTION : Utiliser normalized_db au lieu de source_id pour la cohérence
-                        new_item_id = item_id_map.get((normalized_db, old_item_id))
-                        new_media_id = independent_media_map.get((source_id, old_media_id))
+                print(f"{len(rows)} lignes trouvées dans {normalized_db}")
 
-                        if new_item_id is None:
-                            print(f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id} (source: {source_id})")
-                            skipped += 1
-                            continue
+                for old_item_id, old_media_id, duration_ticks in rows:
 
-                        if new_media_id is None:
-                            print(f"⚠️ Mapping manquant pour IndependentMediaId={old_media_id} (source: {source_id})")
-                            skipped += 1
-                            continue
+                    # MAPPING COHÉRENT POUR LES 2
+                    new_item_id = item_id_map.get((normalized_db, old_item_id))
+                    new_media_id = independent_media_map.get((normalized_db, old_media_id))
 
-                        try:
-                            cursor.execute("""
-                                INSERT OR REPLACE INTO PlaylistItemIndependentMediaMap
-                                (PlaylistItemId, IndependentMediaId, DurationTicks)
-                                VALUES (?, ?, ?)
-                            """, (new_item_id, new_media_id, duration_ticks))
-                            inserted += 1
-                        except sqlite3.IntegrityError as e:
-                            print(f"🚫 Erreur intégrité : {e}")
-                            skipped += 1
+                    if new_item_id is None:
+                        print(f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id} dans {normalized_db}")
+                        skipped += 1
+                        continue
 
-            # VÉRIFICATION POST-INSERTION
+                    if new_media_id is None:
+                        print(f"⚠️ Mapping manquant pour IndependentMediaId={old_media_id} dans {normalized_db}")
+                        skipped += 1
+                        continue
+
+                    try:
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO PlaylistItemIndependentMediaMap
+                            (PlaylistItemId, IndependentMediaId, DurationTicks)
+                            VALUES (?, ?, ?)
+                        """, (new_item_id, new_media_id, duration_ticks))
+                        inserted += 1
+                    except sqlite3.IntegrityError as e:
+                        print(f"🚫 Erreur intégrité : {e}")
+                        skipped += 1
+
             cursor.execute("SELECT COUNT(*) FROM PlaylistItemIndependentMediaMap")
-            final_count = cursor.fetchone()[0]
-            print(
-                f"✅ PlaylistItemIndependentMediaMap : {inserted} insérés, {skipped} ignorés, total final: {final_count}")
+            total = cursor.fetchone()[0]
+
+            print(f"✅ IndependentMediaMap fusionné : {inserted} insérés, {skipped} ignorés, total = {total}")
 
             conn.commit()
 
     except Exception as e:
         print(f"❌ Erreur critique dans merge_playlist_item_independent_media_map: {e}")
-        import traceback
         traceback.print_exc()
         raise
 
@@ -2382,7 +2413,6 @@ def merge_data():
              orphaned_deleted, integrity_result, item_id_map) = result
 
             print(f"✅ Playlists fusionnées: {playlist_item_total} items")
-
 
         except Exception as e:
             print(f"❌ Erreur dans merge_playlists: {e}")
