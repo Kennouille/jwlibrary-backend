@@ -2112,6 +2112,16 @@ def merge_data():
         try:
             independent_media_map = merge_independent_media(merged_db_path, file1_db, file2_db)
             print("Mapping IndependentMedia:", independent_media_map)
+
+            print("🔍 DEBUG IndependentMedia Map:")
+            file2_media_count = 0
+            for (source, old_id), new_id in independent_media_map.items():
+                if "file2" in source:
+                    file2_media_count += 1
+                    if old_id in [26, 28, 64, 92, 146, 186, 188, 230, 232, 268, 270, 351, 391, 393]:
+                        print(f"  ✅ Media file2:{old_id} → {new_id}")
+
+            print(f"Total médias file2 dans le mapping: {file2_media_count}")
         except Exception as e:
             import traceback
             print(f"❌ Erreur dans merge_independent_media : {e}")
