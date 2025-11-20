@@ -1887,6 +1887,9 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
             for (src, old_id), new_id in sample_items:
                 print(f"  {os.path.basename(src)} — {old_id} → {new_id}")
 
+            print(f"🔴 DEBUG: Avant d'appeler merge_playlist_item_independent_media_map")
+            print(f"🔴 DEBUG: final_item_id_map size = {len(final_item_id_map)}")
+            print(f"🔴 DEBUG: independent_media_map size = {len(independent_media_map)}")
             # 2. Fusion PlaylistItemIndependentMediaMap MAINTENANT
             print("🔴 DEBUG: Avant merge_playlist_item_independent_media_map")
             # CORRECTION : Cette table doit être fusionnée APRÈS PlaylistItems mais AVANT les markers
