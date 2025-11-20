@@ -1851,6 +1851,7 @@ def merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map):
 def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, independent_media_map, item_id_map):
     """Fusionne toutes les tables liées aux playlists en respectant les contraintes."""
     print("\n=== DÉBUT FUSION PLAYLISTS ===")
+    print("🔴 DEBUG: merge_playlists COMMENCE")  # ⬅️ AJOUT ICI
 
     file1_db = os.path.normpath(file1_db)
     file2_db = os.path.normpath(file2_db)
