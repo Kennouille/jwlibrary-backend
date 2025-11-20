@@ -1451,6 +1451,7 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                         """, (label, start_trim, end_trim, accuracy, end_action, thumb_path))
                         new_id = cursor.lastrowid
                         existing_items[key] = new_id
+                        print(f"    Insertion PlaylistItem: OldID {old_id} → NewID {new_id}")
                     except sqlite3.IntegrityError as e:
                         print(f"Erreur insertion PlaylistItem OldID {old_id} de {db_source}: {e}")
                         continue
@@ -1463,6 +1464,15 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
 
             conn.commit() # Le commit est maintenant à l'intérieur du bloc 'with conn:'
         print(f"Total PlaylistItems mappés: {len(mapping)}")
+        print(f"🔍 VÉRIFICATION DOUBLONS dans item_id_map:")
+        seen = {}
+        for (src, old_id), new_id in mapping.items():
+            if new_id in seen:
+                print(f"   ⚠️ CONFLIT: {seen[new_id]} et {old_id} → même NewID {new_id}")
+            else:
+                seen[new_id] = old_id
+
+        print(f"✅ Total items uniques: {len(seen)}")
         return mapping
     except Exception as e:
         print(f"❌ Erreur critique dans merge_playlist_items: {e}")
