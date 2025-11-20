@@ -2417,6 +2417,20 @@ def merge_data():
 
         print("\n🎵 DÉBUT FUSION PLAYLISTS AVEC MAPPING SPÉCIALISÉ")
 
+        # ⬇️⬇️⬇️ AJOUTER ICI ⬇️⬇️⬇️
+        print(f"🔴 DEBUG: Independent Media Map analysis:")
+        print(f"🔴 DEBUG: Total entries: {len(independent_media_map)}")
+        file1_count = sum(1 for (src, _) in independent_media_map.keys() if "file1" in src)
+        file2_count = sum(1 for (src, _) in independent_media_map.keys() if "file2" in src)
+        print(f"🔴 DEBUG: File1 media: {file1_count}, File2 media: {file2_count}")
+
+        # Afficher quelques médias file1 pour debug
+        print(f"🔴 DEBUG: Sample file1 media mappings:")
+        for (src, old_id), new_id in list(independent_media_map.items())[:5]:
+            if "file1" in src:
+                print(f"  {src}: {old_id} → {new_id}")
+        # ⬆️⬆️⬆️ FIN DE L'AJOUT ⬆️⬆️⬆️
+
         # Fusion des playlists avec mapping correct
         try:
             result = merge_playlists(
