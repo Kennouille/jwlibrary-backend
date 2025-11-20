@@ -1406,8 +1406,6 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                 normalized = f"{label}|{start_trim}|{end_trim}|{accuracy}|{end_action}|{thumbnail_path}"
                 return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
-            existing_items = {}
-
             def read_playlist_items(db_path):
                 with sqlite3.connect(db_path, timeout=5) as src_conn: # Correction: Ajout de timeout
                     cur_source = src_conn.cursor()
@@ -1436,25 +1434,20 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                 if res:
                     new_id = res[0]
                     mapping[(db_source, old_id)] = new_id
-                    if key not in existing_items:
-                        existing_items[key] = new_id
                     continue
 
-                if key in existing_items:
-                    new_id = existing_items[key]
-                else:
-                    try:
-                        cursor.execute("""
-                            INSERT INTO PlaylistItem
-                            (Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        """, (label, start_trim, end_trim, accuracy, end_action, thumb_path))
-                        new_id = cursor.lastrowid
-                        existing_items[key] = new_id
-                        print(f"    Insertion PlaylistItem: OldID {old_id} → NewID {new_id}")
-                    except sqlite3.IntegrityError as e:
-                        print(f"Erreur insertion PlaylistItem OldID {old_id} de {db_source}: {e}")
-                        continue
+                # ⬇️⬇️⬇️ TOUJOURS INSÉRER, PAS DE DÉDUPLICATION ⬇️⬇️⬇️
+                try:
+                    cursor.execute("""
+                        INSERT INTO PlaylistItem
+                        (Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (label, start_trim, end_trim, accuracy, end_action, thumb_path))
+                    new_id = cursor.lastrowid
+                    print(f"    Insertion PlaylistItem: OldID {old_id} → NewID {new_id}")
+                except sqlite3.IntegrityError as e:
+                    print(f"Erreur insertion PlaylistItem OldID {old_id} de {db_source}: {e}")
+                    continue
 
                 cursor.execute("""
                     INSERT INTO MergeMapping_PlaylistItem (SourceDb, OldItemId, NewItemId)
