@@ -1644,9 +1644,11 @@ def cleanup_playlist_item_location_map(conn):
 
 def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map):
     print("\n[FUSION PlaylistItemIndependentMediaMap - DÉBUT]")
+    print("🔴 DEBUG: Entrée dans la fonction")  # ⬅️ AJOUT ICI
 
     try:
         with sqlite3.connect(merged_db_path, timeout=30) as conn:
+            print("🔴 DEBUG: Connexion DB réussie")  # ⬅️ AJOUT ICI
             cursor = conn.cursor()
             conn.execute("PRAGMA busy_timeout = 5000")
 
