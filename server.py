@@ -2391,6 +2391,45 @@ def merge_data():
 
         print("\n🎵 FUSION PLAYLISTS TERMINÉE")
 
+        print("\n🔍 POURQUOI C'EST VIDE ? - VÉRIFICATION COMPLÈTE")
+
+        with sqlite3.connect(merged_db_path) as conn:
+            cursor = conn.cursor()
+
+            # 1. Compter les éléments
+            cursor.execute("SELECT COUNT(*) FROM PlaylistItem")
+            total_items = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM PlaylistItemIndependentMediaMap")
+            total_media_links = cursor.fetchone()[0]
+
+            cursor.execute("SELECT COUNT(*) FROM IndependentMedia")
+            total_media = cursor.fetchone()[0]
+
+            print(f"📊 PlaylistItem: {total_items}")
+            print(f"📊 Liaisons média: {total_media_links}")
+            print(f"📊 IndependentMedia: {total_media}")
+
+            # 2. Vérifier les 5 premiers éléments
+            cursor.execute("""
+                SELECT pi.PlaylistItemId, pi.Label, pi.ThumbnailFilePath,
+                       pim.IndependentMediaId, im.FilePath, im.Title
+                FROM PlaylistItem pi
+                LEFT JOIN PlaylistItemIndependentMediaMap pim ON pi.PlaylistItemId = pim.PlaylistItemId
+                LEFT JOIN IndependentMedia im ON pim.IndependentMediaId = im.IndependentMediaId
+                ORDER BY pi.PlaylistItemId
+                LIMIT 5
+            """)
+
+            print("\n🔍 5 PREMIERS ÉLÉMENTS + LEURS MÉDIAS:")
+            for row in cursor.fetchall():
+                item_id, label, thumb, media_id, media_path, media_title = row
+                print(f"  Item {item_id}: '{label}'")
+                print(f"    Thumb: {thumb}")
+                print(f"    Media ID: {media_id}")
+                print(f"    Media: '{media_title}' → {media_path}")
+                print()
+
         # ─── Avant merge_other_tables ────────────────────────────────────────────
         tables_to_check = [
             'PlaylistItem',
