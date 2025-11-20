@@ -2391,44 +2391,66 @@ def merge_data():
 
         print("\n🎵 FUSION PLAYLISTS TERMINÉE")
 
-        print("\n🔍 POURQUOI C'EST VIDE ? - VÉRIFICATION COMPLÈTE")
+        print("\n🔍 DIAGNOSTIC URGENT - POURQUOI C'EST VIDE ?")
 
         with sqlite3.connect(merged_db_path) as conn:
             cursor = conn.cursor()
 
-            # 1. Compter les éléments
-            cursor.execute("SELECT COUNT(*) FROM PlaylistItem")
-            total_items = cursor.fetchone()[0]
+            # 1. Comptage CRITIQUE
+            cursor.execute("SELECT COUNT(*) FROM IndependentMedia")
+            media_count = cursor.fetchone()[0]
+            print(f"📊 IndependentMedia count: {media_count}")  # Doit être > 0 !
 
             cursor.execute("SELECT COUNT(*) FROM PlaylistItemIndependentMediaMap")
-            total_media_links = cursor.fetchone()[0]
+            map_count = cursor.fetchone()[0]
+            print(f"📊 PlaylistItemIndependentMediaMap count: {map_count}")
 
-            cursor.execute("SELECT COUNT(*) FROM IndependentMedia")
-            total_media = cursor.fetchone()[0]
-
-            print(f"📊 PlaylistItem: {total_items}")
-            print(f"📊 Liaisons média: {total_media_links}")
-            print(f"📊 IndependentMedia: {total_media}")
-
-            # 2. Vérifier les 5 premiers éléments
+            # 2. ÉCHANTILLONS RÉELS des mappings
+            print("\n🔍 ÉCHANTILLONS DES MAPPINGS (ça va faire mal):")
             cursor.execute("""
-                SELECT pi.PlaylistItemId, pi.Label, pi.ThumbnailFilePath,
-                       pim.IndependentMediaId, im.FilePath, im.OriginalFilename
-                FROM PlaylistItem pi
-                LEFT JOIN PlaylistItemIndependentMediaMap pim ON pi.PlaylistItemId = pim.PlaylistItemId
+                SELECT pim.PlaylistItemId, pim.IndependentMediaId, 
+                       im.FilePath, im.IndependentMediaId IS NULL as media_missing
+                FROM PlaylistItemIndependentMediaMap pim
                 LEFT JOIN IndependentMedia im ON pim.IndependentMediaId = im.IndependentMediaId
-                ORDER BY pi.PlaylistItemId
+                LIMIT 10
+            """)
+
+            samples = cursor.fetchall()
+            broken_count = 0
+            for item_id, media_id, file_path, media_missing in samples:
+                if media_missing or not file_path:
+                    broken_count += 1
+                    status = "❌ POINTE VERS LE VIDE"
+                else:
+                    status = f"✅ {file_path}"
+                print(f"   PlaylistItem {item_id} → IndependentMedia {media_id} : {status}")
+
+            print(f"💥 Mappings cassés: {broken_count}/10")
+
+            # 3. VÉRIFICATION DES THUMBNAILS
+            print("\n🖼️ THUMBNAILS (problèmes FOREIGN KEY):")
+            cursor.execute("""
+                SELECT pi.PlaylistItemId, pi.ThumbnailFilePath 
+                FROM PlaylistItem pi
+                WHERE pi.ThumbnailFilePath IS NOT NULL 
+                AND pi.ThumbnailFilePath != ''
                 LIMIT 5
             """)
 
-            print("\n🔍 5 PREMIERS ÉLÉMENTS + LEURS MÉDIAS:")
-            for row in cursor.fetchall():
-                item_id, label, thumb, media_id, media_path, media_title = row
-                print(f"  Item {item_id}: '{label}'")
-                print(f"    Thumb: {thumb}")
-                print(f"    Media ID: {media_id}")
-                print(f"    Media: '{media_title}' → {media_path}")
-                print()
+            thumbnails = cursor.fetchall()
+            for item_id, thumb_path in thumbnails:
+                print(f"   PlaylistItem {item_id}: {thumb_path}")
+
+        # CONCLUSION
+        print(f"\n🎯 DIAGNOSTIC: ")
+        if media_count == 0:
+            print("❌ CATASTROPHE: IndependentMedia est VIDE!")
+            print("   → La fonction merge_independent_media() a échoué ou n'a pas été appelée")
+        elif broken_count > 0:
+            print("❌ PROBLEME: Les mappings pointent vers des médias manquants")
+            print("   → Problème de déduplication trop agressive")
+        else:
+            print("✅ La structure est bonne, le problème est ailleurs")
 
         # ─── Avant merge_other_tables ────────────────────────────────────────────
         tables_to_check = [
