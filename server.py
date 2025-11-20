@@ -2247,14 +2247,6 @@ def merge_data():
             traceback.print_exc()
             raise
 
-        # (Ré)ouvrir la connexion pour PlaylistItem
-        conn = sqlite3.connect(merged_db_path)
-        cursor = conn.cursor()
-
-        print(f"--> PlaylistItem fusionnés : {len(item_id_map)} items")
-
-        conn.close()
-
         print("\n=== USERMARK VERIFICATION ===")
         print(f"Total UserMarks mappés (GUIDs) : {len(usermark_guid_map)}")
         with sqlite3.connect(merged_db_path) as conn:
@@ -2447,6 +2439,15 @@ def merge_data():
             import traceback
             traceback.print_exc()
             raise
+
+        # ⬇️⬇️⬇️ DÉPLACÉ ICI - APRÈS merge_playlists ⬇️⬇️⬇️
+        # (Ré)ouvrir la connexion pour PlaylistItem
+        conn = sqlite3.connect(merged_db_path)
+        cursor = conn.cursor()
+
+        print(f"--> PlaylistItem fusionnés : {len(item_id_map)} items")
+
+        conn.close()
 
         print("\n🎵 FUSION PLAYLISTS TERMINÉE")
 
