@@ -2413,7 +2413,7 @@ def merge_data():
             # 2. Vérifier les 5 premiers éléments
             cursor.execute("""
                 SELECT pi.PlaylistItemId, pi.Label, pi.ThumbnailFilePath,
-                       pim.IndependentMediaId, im.FilePath, im.Title
+                       pim.IndependentMediaId, im.FilePath, im.OriginalFilename
                 FROM PlaylistItem pi
                 LEFT JOIN PlaylistItemIndependentMediaMap pim ON pi.PlaylistItemId = pim.PlaylistItemId
                 LEFT JOIN IndependentMedia im ON pim.IndependentMediaId = im.IndependentMediaId
