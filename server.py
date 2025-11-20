@@ -2585,246 +2585,173 @@ def merge_data():
 
         print("📍 Avant le résumé final")
 
-        print("▶️ Appel de merge_playlists...")
-        print("🛑 merge_playlists appelée")
-
+        # --- Étape 1 : fusion des Tags et TagMap (utilise location_id_map) ---
         try:
-            result = merge_playlists(
+            tag_id_map, tagmap_id_map = merge_tags_and_tagmap(
                 merged_db_path,
                 file1_db,
                 file2_db,
+                note_mapping,
                 location_id_map,
-                independent_media_map,
-                item_id_map  # ⚠️ on passe le dict déjà défini (pas un nouveau {})
-            )
-
-            # 🔄 mise à jour propre des variables
-            (
-                max_playlist_id,
-                playlist_item_total,
-                max_media_id,
-                orphaned_deleted,
-                integrity_result,
                 item_id_map
-            ) = result
-
-            print("\n🔍 Vérification spécifique de item_id_map pour PlaylistItemId 1 et 2")
-
-            for test_id in [1, 2]:
-                for db in [file1_db, file2_db]:
-                    key = (db, test_id)
-                    found = item_id_map.get(key)
-                    print(f"  {key} → {found}")
-
-            # 🧪 Résumé post merge_playlists
-            print("\n🎯 Résumé final après merge_playlists:")
-            print(f"- Playlists max ID: {max_playlist_id}")
-            print(f"- PlaylistItem total: {playlist_item_total}")
-            print(f"- Médias max ID: {max_media_id}")
-            print(f"- Orphelins supprimés: {orphaned_deleted}")
-            print(f"- Résultat intégrité: {integrity_result}")
-            print("✅ Tous les calculs terminés, nettoyage…")
-
-            print("item_id_map keys:", list(item_id_map.keys()))
-            print("location_id_map keys:", list(location_id_map.keys()))
-            print("note_mapping keys:", list(note_mapping.keys()))
-
-            print("📦 Vérification complète de item_id_map AVANT merge_tags_and_tagmap:")
-            for (db_path, old_id), new_id in item_id_map.items():
-                print(f"  FROM {db_path} - OldID: {old_id} → NewID: {new_id}")
-
-            print("🧪 CONTENU DE item_id_map APRÈS merge_playlists:")
-            for k, v in item_id_map.items():
-                print(f"  {k} → {v}")
-
-            print("\n🔍 VÉRIFICATION THUMBNAIL_FILEPATH")
-            with sqlite3.connect(merged_db_path) as conn:
-                cursor = conn.cursor()
-
-                cursor.execute("""
-                    SELECT pi.PlaylistItemId, pi.Label, pi.ThumbnailFilePath, im.FilePath
-                    FROM PlaylistItem pi
-                    LEFT JOIN IndependentMedia im ON pi.ThumbnailFilePath = im.FilePath
-                    WHERE pi.ThumbnailFilePath IS NOT NULL AND im.FilePath IS NULL
-                """)
-
-                problematic_thumbnails = cursor.fetchall()
-                if problematic_thumbnails:
-                    print(f"❌ {len(problematic_thumbnails)} thumbnails sans média correspondant:")
-                    for item_id, label, thumb_path, media_path in problematic_thumbnails:
-                        print(f"  Item {item_id}: '{label}'")
-                        print(f"    Thumbnail: {thumb_path}")
-                        print(f"    Aucun média trouvé avec ce chemin")
-                else:
-                    print("✅ Tous les thumbnails ont un média correspondant")
-
-            # --- Étape 1 : fusion des Tags et TagMap (utilise location_id_map) ---
-            try:
-                tag_id_map, tagmap_id_map = merge_tags_and_tagmap(
-                    merged_db_path,
-                    file1_db,
-                    file2_db,
-                    note_mapping,
-                    location_id_map,
-                    item_id_map
-                )
-                print(f"Tag ID Map: {tag_id_map}")
-                print(f"TagMap ID Map: {tagmap_id_map}")
-
-            except Exception as e:
-                import traceback
-                print("❌ Échec de merge_tags_and_tagmap (mais on continue le merge global) :")
-                print(f"Exception capturée : {e}")
-                traceback.print_exc()
-                tag_id_map, tagmap_id_map = {}, {}
-
+            )
             print(f"Tag ID Map: {tag_id_map}")
             print(f"TagMap ID Map: {tagmap_id_map}")
 
-            # 1️⃣ Mise à jour des LocationId résiduels
-            print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
-            merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
-            print("✔ Fusion InputFields terminée")
-            location_replacements_flat = {
-                old_id: new_id
-                for (_, old_id), new_id in sorted(location_id_map.items())
-            }
-
-            print("⏳ Appel de update_location_references...")
-            try:
-                update_location_references(merged_db_path, location_replacements_flat)
-                print("✔ Mise à jour des références LocationId terminée")
-            except Exception as e:
-                import traceback
-                print(f"❌ ERREUR dans update_location_references : {e}")
-                traceback.print_exc()
-
-            with sqlite3.connect(merged_db_path) as conn:
-                cleanup_playlist_item_location_map(conn)
-
-            print("🟡 Après update_location_references")
-            sys.stdout.flush()
-            time.sleep(0.5)
-            print("🟢 Avant suppression des tables MergeMapping_*")
-
-            # 2️⃣ Suppression des tables MergeMapping_*
-            print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
-            with sqlite3.connect(merged_db_path) as cleanup_conn:
-                cleanup_conn.execute("PRAGMA busy_timeout = 5000")
-                cur = cleanup_conn.cursor()
-                cur.execute("""
-                    SELECT name
-                    FROM sqlite_master
-                    WHERE type='table'
-                      AND LOWER(name) LIKE 'mergemapping_%'
-                """)
-                rows = cur.fetchall()
-                tables_to_drop = [row[0] for row in rows]
-                print(f"🧪 Résultat brut de la requête sqlite_master : {rows}")
-                print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
-                for tbl in tables_to_drop:
-                    cur.execute(f"DROP TABLE IF EXISTS {tbl}")
-                    print(f"✔ Table supprimée : {tbl}")
-                cleanup_conn.commit()
-
-            # 🔍 Vérification juste avant la copie
-            print("📄 Vérification taille et date de merged_userData.db juste avant la copie")
-            print("📍 Fichier:", merged_db_path)
-            print("🕒 Modifié le:", os.path.getmtime(merged_db_path))
-            print("📦 Taille:", os.path.getsize(merged_db_path), "octets")
-            with sqlite3.connect(merged_db_path) as check_conn:
-                cur = check_conn.cursor()
-                cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
-                leftover = [row[0] for row in cur.fetchall()]
-                print(f"🧪 Tables restantes juste avant la copie (vérification finale): {leftover}")
-
-            print("🧹 Libération mémoire et attente...")
-            gc.collect()
-            time.sleep(1.0)
-
-            with sqlite3.connect(merged_db_path) as conn_drop_table: # Renommé
-                conn_drop_table.execute("DROP TABLE IF EXISTS PlaylistItemMediaMap")
-                print("🗑️ Table PlaylistItemMediaMap supprimée avant VACUUM.")
-
-            # 6️⃣ Création d’une DB propre avec VACUUM INTO
-            # --- DÉBUT DE L'ÉTAPE 4 ---
-            # MISE À JOUR : Le fichier nettoyé sera créé avec un nom unique
-            clean_filename = f"cleaned_merged_db_{unique_merge_id}.db" # Utilise l'UUID de la fusion
-            clean_path = os.path.join(UPLOAD_FOLDER, clean_filename)
-            # --- FIN DE L'ÉTAPE 4 ---
-
-            print("🧹 VACUUM INTO pour générer une base nettoyée...")
-            with sqlite3.connect(merged_db_path) as conn_vacuum:
-                conn_vacuum.execute(f"VACUUM INTO '{clean_path}'")
-            print(f"✅ Fichier nettoyé généré : {clean_path}")
-
-            # ... (votre code avant) ...
-
-            # 🧪 Création d'une copie debug (juste pour toi)
-            # MISE À JOUR : Le nom de la copie debug inclura l'UUID
-            debug_copy_path = os.path.join(UPLOAD_FOLDER, f"debug_cleaned_before_copy_{unique_merge_id}.db")
-            shutil.copy(clean_path, debug_copy_path)
-            print(f"📤 Copie debug créée : {debug_copy_path}")
-
-            # 7️⃣ Copie vers destination finale officielle pour le frontend
-            # ⛔ final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
-            # ⛔ shutil.copy(clean_path, final_db_dest)
-            # ⛔ print(f"✅ Copie finale pour frontend : {final_db_dest}")
-
-            # ✅ On force l’usage uniquement du fichier debug (3 lignes d'ajout pour n'envoyer que le fichier)
-            # --- DÉBUT DE LA CORRECTION DE L'ÉTAPE 6 ---
-            final_db_dest = debug_copy_path  # <--- MODIFIEZ CETTE LIGNE
-            print(
-                f"🚫 Copie vers userData.db désactivée — envoi direct de {os.path.basename(final_db_dest)}")  # <--- MODIFIEZ AUSSI CE PRINT POUR REFLETER LE NOM UNIQUE
-
-            # ✅ Forcer la génération des fichiers WAL et SHM sur userData.db
-            try:
-                print("🧪 Activation du mode WAL pour générer les fichiers -wal et -shm sur userData.db...")
-                with sqlite3.connect(final_db_dest) as conn:
-                    conn.execute("PRAGMA journal_mode=WAL;")
-                    conn.execute("CREATE TABLE IF NOT EXISTS _Dummy (x INTEGER);")
-                    conn.execute("INSERT INTO _Dummy (x) VALUES (1);")
-                    conn.execute("DELETE FROM _Dummy;")
-                    conn.execute("DROP TABLE IF EXISTS _Dummy;")  # Suppression finale
-                    conn.commit()
-                print("✅ WAL/SHM générés et _Dummy supprimée sur userData.db")
-            except Exception as e:
-                print(f"❌ Erreur WAL/SHM sur userData.db: {e}")
-
-            # 8️⃣ Vérification finale dans userData.db
-            with sqlite3.connect(final_db_dest) as final_check:
-                cur = final_check.cursor()
-                cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
-                tables_final = [row[0] for row in cur.fetchall()]
-                # print("📋 Tables MergeMapping_ dans userData.db copié :", tables_final)
-                print("📋 Tables MergeMapping_ dans debug_cleaned_before_copy.db :", tables_final)
-
-            # À la toute fin, juste avant return
-            os.remove(os.path.join(UPLOAD_FOLDER, "merge_in_progress"))
-
-            elapsed = time.time() - start_time
-            print(f"⏱️ Temps total du merge : {elapsed:.2f} secondes")
-
-            # 5️⃣ Retour JSON final
-            final_result = {
-                "merged_file": os.path.basename(final_db_dest),
-                "playlists": max_playlist_id,
-                "merge_status": "done",
-                "playlist_items": playlist_item_total,
-                "media_files": max_media_id,
-                "cleaned_items": orphaned_deleted,
-                "integrity_check": integrity_result
-            }
-            sys.stdout.flush()
-            print("🎯 Résumé final prêt à être envoyé au frontend.")
-            print("🧪 Test accès à final_result:", final_result)
-            return jsonify(final_result), 200
-
         except Exception as e:
             import traceback
-            print("❌ Exception levée pendant merge_data !")
+            print("❌ Échec de merge_tags_and_tagmap (mais on continue le merge global) :")
+            print(f"Exception capturée : {e}")
             traceback.print_exc()
-            return jsonify({"error": f"Erreur dans merge_data: {str(e)}"}), 500
+            tag_id_map, tagmap_id_map = {}, {}
+
+        print(f"Tag ID Map: {tag_id_map}")
+        print(f"TagMap ID Map: {tagmap_id_map}")
+
+        # 1️⃣ Mise à jour des LocationId résiduels
+        print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
+        merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
+        print("✔ Fusion InputFields terminée")
+        location_replacements_flat = {
+            old_id: new_id
+            for (_, old_id), new_id in sorted(location_id_map.items())
+        }
+
+        print("⏳ Appel de update_location_references...")
+        try:
+            update_location_references(merged_db_path, location_replacements_flat)
+            print("✔ Mise à jour des références LocationId terminée")
+        except Exception as e:
+            import traceback
+            print(f"❌ ERREUR dans update_location_references : {e}")
+            traceback.print_exc()
+
+        with sqlite3.connect(merged_db_path) as conn:
+            cleanup_playlist_item_location_map(conn)
+
+        print("🟡 Après update_location_references")
+        sys.stdout.flush()
+        time.sleep(0.5)
+        print("🟢 Avant suppression des tables MergeMapping_*")
+
+        # 2️⃣ Suppression des tables MergeMapping_*
+        print("\n=== SUPPRESSION DES TABLES MergeMapping_* ===")
+        with sqlite3.connect(merged_db_path) as cleanup_conn:
+            cleanup_conn.execute("PRAGMA busy_timeout = 5000")
+            cur = cleanup_conn.cursor()
+            cur.execute("""
+                SELECT name
+                FROM sqlite_master
+                WHERE type='table'
+                  AND LOWER(name) LIKE 'mergemapping_%'
+            """)
+            rows = cur.fetchall()
+            tables_to_drop = [row[0] for row in rows]
+            print(f"🧪 Résultat brut de la requête sqlite_master : {rows}")
+            print(f"🧹 Tables MergeMapping_ détectées : {tables_to_drop}")
+            for tbl in tables_to_drop:
+                cur.execute(f"DROP TABLE IF EXISTS {tbl}")
+                print(f"✔ Table supprimée : {tbl}")
+            cleanup_conn.commit()
+
+        # 🔍 Vérification juste avant la copie
+        print("📄 Vérification taille et date de merged_userData.db juste avant la copie")
+        print("📍 Fichier:", merged_db_path)
+        print("🕒 Modifié le:", os.path.getmtime(merged_db_path))
+        print("📦 Taille:", os.path.getsize(merged_db_path), "octets")
+        with sqlite3.connect(merged_db_path) as check_conn:
+            cur = check_conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
+            leftover = [row[0] for row in cur.fetchall()]
+            print(f"🧪 Tables restantes juste avant la copie (vérification finale): {leftover}")
+
+        print("🧹 Libération mémoire et attente...")
+        gc.collect()
+        time.sleep(1.0)
+
+        with sqlite3.connect(merged_db_path) as conn_drop_table: # Renommé
+            conn_drop_table.execute("DROP TABLE IF EXISTS PlaylistItemMediaMap")
+            print("🗑️ Table PlaylistItemMediaMap supprimée avant VACUUM.")
+
+        # 6️⃣ Création d’une DB propre avec VACUUM INTO
+        # --- DÉBUT DE L'ÉTAPE 4 ---
+        # MISE À JOUR : Le fichier nettoyé sera créé avec un nom unique
+        clean_filename = f"cleaned_merged_db_{unique_merge_id}.db" # Utilise l'UUID de la fusion
+        clean_path = os.path.join(UPLOAD_FOLDER, clean_filename)
+        # --- FIN DE L'ÉTAPE 4 ---
+
+        print("🧹 VACUUM INTO pour générer une base nettoyée...")
+        with sqlite3.connect(merged_db_path) as conn_vacuum:
+            conn_vacuum.execute(f"VACUUM INTO '{clean_path}'")
+        print(f"✅ Fichier nettoyé généré : {clean_path}")
+
+        # ... (votre code avant) ...
+
+        # 🧪 Création d'une copie debug (juste pour toi)
+        # MISE À JOUR : Le nom de la copie debug inclura l'UUID
+        debug_copy_path = os.path.join(UPLOAD_FOLDER, f"debug_cleaned_before_copy_{unique_merge_id}.db")
+        shutil.copy(clean_path, debug_copy_path)
+        print(f"📤 Copie debug créée : {debug_copy_path}")
+
+        # 7️⃣ Copie vers destination finale officielle pour le frontend
+        # ⛔ final_db_dest = os.path.join(UPLOAD_FOLDER, "userData.db")
+        # ⛔ shutil.copy(clean_path, final_db_dest)
+        # ⛔ print(f"✅ Copie finale pour frontend : {final_db_dest}")
+
+        # ✅ On force l’usage uniquement du fichier debug (3 lignes d'ajout pour n'envoyer que le fichier)
+        # --- DÉBUT DE LA CORRECTION DE L'ÉTAPE 6 ---
+        final_db_dest = debug_copy_path  # <--- MODIFIEZ CETTE LIGNE
+        print(
+            f"🚫 Copie vers userData.db désactivée — envoi direct de {os.path.basename(final_db_dest)}")  # <--- MODIFIEZ AUSSI CE PRINT POUR REFLETER LE NOM UNIQUE
+
+        # ✅ Forcer la génération des fichiers WAL et SHM sur userData.db
+        try:
+            print("🧪 Activation du mode WAL pour générer les fichiers -wal et -shm sur userData.db...")
+            with sqlite3.connect(final_db_dest) as conn:
+                conn.execute("PRAGMA journal_mode=WAL;")
+                conn.execute("CREATE TABLE IF NOT EXISTS _Dummy (x INTEGER);")
+                conn.execute("INSERT INTO _Dummy (x) VALUES (1);")
+                conn.execute("DELETE FROM _Dummy;")
+                conn.execute("DROP TABLE IF EXISTS _Dummy;")  # Suppression finale
+                conn.commit()
+            print("✅ WAL/SHM générés et _Dummy supprimée sur userData.db")
+        except Exception as e:
+            print(f"❌ Erreur WAL/SHM sur userData.db: {e}")
+
+        # 8️⃣ Vérification finale dans userData.db
+        with sqlite3.connect(final_db_dest) as final_check:
+            cur = final_check.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE name LIKE 'MergeMapping_%'")
+            tables_final = [row[0] for row in cur.fetchall()]
+            # print("📋 Tables MergeMapping_ dans userData.db copié :", tables_final)
+            print("📋 Tables MergeMapping_ dans debug_cleaned_before_copy.db :", tables_final)
+
+        # À la toute fin, juste avant return
+        os.remove(os.path.join(UPLOAD_FOLDER, "merge_in_progress"))
+
+        elapsed = time.time() - start_time
+        print(f"⏱️ Temps total du merge : {elapsed:.2f} secondes")
+
+        # 5️⃣ Retour JSON final
+        final_result = {
+            "merged_file": os.path.basename(final_db_dest),
+            "playlists": max_playlist_id,
+            "merge_status": "done",
+            "playlist_items": playlist_item_total,
+            "media_files": max_media_id,
+            "cleaned_items": orphaned_deleted,
+            "integrity_check": integrity_result
+        }
+        sys.stdout.flush()
+        print("🎯 Résumé final prêt à être envoyé au frontend.")
+        print("🧪 Test accès à final_result:", final_result)
+        return jsonify(final_result), 200
+
+    except Exception as e:
+        import traceback
+        print("❌ Exception levée pendant merge_data !")
+        traceback.print_exc()
+        return jsonify({"error": f"Erreur dans merge_data: {str(e)}"}), 500
 
     finally:
         # --- DÉBUT DE L'ÉTAPE 7 : NETTOYAGE DES FICHIERS TEMPORAIRES UNIQUES ---
