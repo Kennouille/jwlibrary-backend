@@ -2827,7 +2827,6 @@ def merge_data():
                 print(f"❌ Erreur lors de la fermeture de la connexion 'conn' dans finally: {e}")
 
 
-
 # === 🔒 Ancienne méthode de génération ZIP backend (désactivée avec JSZip) ===
 
 # def create_userdata_zip():
