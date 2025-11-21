@@ -1426,12 +1426,13 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
             all_items = read_playlist_items(file1_db) + read_playlist_items(file2_db)
             print(f"Total playlist items lus : {len(all_items)}")
 
-            for item in all_items:
-                try:  # ⬅️ AJOUT
+            # ⬇️⬇️⬇️ AJOUTER TRY/CATCH AUTOUR DE TOUTE LA BOUCLE ⬇️⬇️⬇️
+            try:
+                for item in all_items:
                     db_source = item[0]
                     old_id, label, start_trim, end_trim, accuracy, end_action, thumb_path = item[1:]
 
-                    print(f"🔴 DEBUG: Traitement item {old_id}")  # ⬅️ AJOUT ICI
+                    print(f"🔴 DEBUG: Traitement item {old_id}")
 
                     norm_label = safe_text(label)
                     norm_start = safe_number(start_trim)
@@ -1440,7 +1441,9 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
 
                     key = generate_full_key(norm_label, norm_start, norm_end, accuracy, end_action, norm_thumb)
 
-                    cursor.execute("SELECT NewItemId FROM MergeMapping_PlaylistItem WHERE SourceDb = ? AND OldItemId = ?", (db_source, old_id))
+                    cursor.execute(
+                        "SELECT NewItemId FROM MergeMapping_PlaylistItem WHERE SourceDb = ? AND OldItemId = ?",
+                        (db_source, old_id))
                     res = cursor.fetchone()
                     if res:
                         new_id = res[0]
@@ -1448,7 +1451,6 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                         continue
 
                     # ⬇️⬇️⬇️ TOUJOURS INSÉRER, PAS DE DÉDUPLICATION ⬇️⬇️⬇️
-                    # Dans la boucle, juste avant l'INSERT :
                     try:
                         cursor.execute("""
                             INSERT INTO PlaylistItem
@@ -1459,7 +1461,7 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                         print(f"    Insertion PlaylistItem: OldID {old_id} → NewID {new_id}")
                     except sqlite3.IntegrityError as e:
                         print(f"🔴 ERREUR CRITIQUE insertion PlaylistItem OldID {old_id}: {e}")
-                        print(f"🔴 DONNÉES: label='{label}', thumb='{thumb_path}'")  # ⬅️ AJOUT
+                        print(f"🔴 DONNÉES: label='{label}', thumb='{thumb_path}'")
                         continue
 
                     cursor.execute("""
@@ -1468,13 +1470,14 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                     """, (db_source, old_id, new_id))
                     mapping[(db_source, old_id)] = new_id
 
-                except Exception as e:  # ⬅️ AJOUT
-                    print(f"🔴 ERREUR dans la boucle sur item {old_id}: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    continue  # Continue avec l'item suivant
+            except Exception as e:
+                print(f"🔴 ERREUR CRITIQUE: La boucle entière a crashé: {e}")
+                import traceback
+                traceback.print_exc()
+                # On retourne le mapping partiel pour continuer
+                return mapping
 
-            # ⬇️⬇️⬇️ DEBUG AJOUTÉ ICI - APRÈS LA BOUCLE ⬇️⬇️⬇️
+            # ⬇️⬇️⬇️ DEBUG APRÈS LA BOUCLE (seulement si pas d'erreur) ⬇️⬇️⬇️
             cursor.execute("SELECT COUNT(*) FROM PlaylistItem")
             final_count = cursor.fetchone()[0]
             print(f"🔴 DEBUG: Nombre FINAL de PlaylistItem dans la base = {final_count}")
