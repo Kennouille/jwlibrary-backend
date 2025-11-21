@@ -2463,14 +2463,20 @@ def merge_data():
 
         # Fusion des playlists avec mapping correct
         try:
-            result = merge_playlists(
-                merged_db_path,
-                file1_db,
-                file2_db,
-                location_id_map,
-                independent_media_map,
-                {}  # item_id_map vide au départ
-            )
+            # 1. Fusionner TOUS les PlaylistItems
+            item_id_map = merge_playlist_items(merged_db_path, file1_db, file2_db)
+            print(f"✅ PlaylistItems fusionnés: {len(item_id_map)} items")
+
+            # 2. Fusionner les autres tables playlist
+            merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map)
+            merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db, item_id_map,
+                                                      independent_media_map)
+            merge_playlist_item_accuracy(merged_db_path, file1_db, file2_db)
+            marker_id_map = merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map)
+            merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map)
+
+            playlist_item_total = len(item_id_map)
+            integrity_result = "ok"
 
             # Récupérer les résultats
             (max_playlist_id, playlist_item_total, max_media_id,
