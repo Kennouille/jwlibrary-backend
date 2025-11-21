@@ -1674,9 +1674,12 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
                     """)
                     rows = src_cursor.fetchall()
 
-                print(f"{len(rows)} lignes trouvées dans {normalized_db}")
+                print(f"🔴 SOURCE ANALYSIS: {normalized_db}")
+                print(f"🔴   Lignes dans PlaylistItemIndependentMediaMap: {len(rows)}")
+                if rows:
+                    print(f"🔴   Exemple: PlaylistItemId={rows[0][0]}, IndependentMediaId={rows[0][1]}")
 
-                for old_item_id, old_media_id, duration_ticks in rows:
+            for old_item_id, old_media_id, duration_ticks in rows:
                     new_item_id = item_id_map.get((normalized_db, old_item_id))
                     new_media_id = independent_media_map.get((normalized_db, old_media_id))
 
