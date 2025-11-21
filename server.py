@@ -1893,6 +1893,13 @@ def merge_playlists(merged_db_path, file1_db, file2_db, location_id_map, indepen
                     merged_db_path, file1_db, file2_db, independent_media_map
                 )
                 print(f"✅ Mapping PlaylistItems: {len(final_item_id_map)} entrées")
+
+                # ⬇️⬇️⬇️ AJOUTER CE DEBUG CRITIQUE ⬇️⬇️⬇️
+                print(f"🔴 DEBUG: merge_playlist_items a retourné {len(final_item_id_map)} items")
+                print(f"🔴 DEBUG: Continuer avec le reste de merge_playlists")
+
+                # DEBUG : Afficher quelques mappings pour vérification
+                print("\n🔍 ÉCHANTILLON Item ID Map:")
             except Exception as e:
                 print(f"🔴 ERREUR CRITIQUE dans merge_playlist_items: {e}")
                 import traceback
