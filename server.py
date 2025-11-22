@@ -2759,29 +2759,6 @@ def merge_data():
 
         print("📍 Avant le résumé final")
 
-        # --- Étape 1 : fusion des Tags et TagMap (utilise location_id_map) ---
-        try:
-            tag_id_map, tagmap_id_map = merge_tags_and_tagmap(
-                merged_db_path,
-                file1_db,
-                file2_db,
-                note_mapping,
-                location_id_map,
-                item_id_map
-            )
-            print(f"Tag ID Map: {tag_id_map}")
-            print(f"TagMap ID Map: {tagmap_id_map}")
-
-        except Exception as e:
-            import traceback
-            print("❌ Échec de merge_tags_and_tagmap (mais on continue le merge global) :")
-            print(f"Exception capturée : {e}")
-            traceback.print_exc()
-            tag_id_map, tagmap_id_map = {}, {}
-
-        print(f"Tag ID Map: {tag_id_map}")
-        print(f"TagMap ID Map: {tagmap_id_map}")
-
         # 1️⃣ Mise à jour des LocationId résiduels
         print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
         merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map)
