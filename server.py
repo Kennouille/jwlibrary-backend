@@ -2461,7 +2461,6 @@ def merge_data():
                 print(f"  {src}: {old_id} → {new_id}")
         # ⬆️⬆️⬆️ FIN DE L'AJOUT ⬆️⬆️⬆️
 
-
         # Fusion des playlists avec mapping correct
         try:
             # 1. Fusionner TOUS les PlaylistItems
