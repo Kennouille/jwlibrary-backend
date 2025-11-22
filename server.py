@@ -1428,7 +1428,7 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
 
             # ⬇️⬇️⬇️ AJOUTER TRY/CATCH AUTOUR DE TOUTE LA BOUCLE ⬇️⬇️⬇️
             try:
-                for item in all_items:
+                for i, item in enumerate(all_items):
                     db_source = item[0]
                     old_id, label, start_trim, end_trim, accuracy, end_action, thumb_path = item[1:]
 
@@ -2335,7 +2335,13 @@ def merge_data():
         try:
             # 1. Fusionner TOUS les PlaylistItems
             item_id_map = merge_playlist_items(merged_db_path, file1_db, file2_db)
-            print(f"🔴 DEBUG: Après merge_playlist_items - item_id_map size: {len(item_id_map)}")  # ⬅️ AJOUTE ÇA
+            print(f"🔴 DEBUG CRITIQUE: item_id_map size = {len(item_id_map)}")
+            if item_id_map:
+                sample = list(item_id_map.items())[:5]
+                print(f"🔴 Échantillon item_id_map: {sample}")
+            else:
+                print("🔴 CATASTROPHE: item_id_map est VIDE!")
+
             print(f"✅ PlaylistItems fusionnés: {len(item_id_map)} items")
 
             # 2. Fusionner les autres tables playlist AVEC DEBUG
