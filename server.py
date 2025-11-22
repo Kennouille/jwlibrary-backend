@@ -2323,32 +2323,42 @@ def merge_data():
 
             # 2. Fusionner les autres tables playlist AVEC DEBUG
             try:
+                print("🔴 AVANT PlaylistItemLocationMap")
                 merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map)
+                print("🔴 APRÈS PlaylistItemLocationMap")
                 print("✅ PlaylistItemLocationMap fusionnée")
             except Exception as e:
                 print(f"❌ ERREUR dans PlaylistItemLocationMap: {e}")
 
             try:
+                print("🔴 AVANT PlaylistItemIndependentMediaMap")
                 merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db, item_id_map,
                                                           independent_media_map)
+                print("🔴 APRÈS PlaylistItemIndependentMediaMap")
                 print("✅ PlaylistItemIndependentMediaMap fusionnée")
             except Exception as e:
                 print(f"❌ ERREUR dans PlaylistItemIndependentMediaMap: {e}")
 
             try:
+                print("🔴 AVANT PlaylistItemAccuracy")
                 merge_playlist_item_accuracy(merged_db_path, file1_db, file2_db)
+                print("🔴 APRÈS PlaylistItemAccuracy")
                 print("✅ PlaylistItemAccuracy fusionnée")
             except Exception as e:
                 print(f"❌ ERREUR dans PlaylistItemAccuracy: {e}")
 
             try:
+                print("🔴 AVANT MarkerIdMap")
                 marker_id_map = merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map)
+                print("🔴 APRÈS MarkerIdMap")
                 print("✅ PlaylistItemMarker fusionnée")
             except Exception as e:
                 print(f"❌ ERREUR dans PlaylistItemMarker: {e}")
 
             try:
+                print("🔴 AVANT MarkerMaps")
                 merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map)
+                print("🔴 APRÈS MarkerMaps")
                 print("✅ MarkerMaps fusionnées")
             except Exception as e:
                 print(f"❌ ERREUR dans MarkerMaps: {e}")
