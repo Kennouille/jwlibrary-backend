@@ -1432,8 +1432,6 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                     db_source = item[0]
                     old_id, label, start_trim, end_trim, accuracy, end_action, thumb_path = item[1:]
 
-                    print(f"🔴 DEBUG: Traitement item {old_id}")
-
                     norm_label = safe_text(label)
                     norm_start = safe_number(start_trim)
                     norm_end = safe_number(end_trim)
@@ -1458,7 +1456,8 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                             VALUES (?, ?, ?, ?, ?, ?)
                         """, (label, start_trim, end_trim, accuracy, end_action, thumb_path))
                         new_id = cursor.lastrowid
-                        print(f"    Insertion PlaylistItem: OldID {old_id} → NewID {new_id}")
+                        if i % 50 == 0:  # Tous les 50 items
+                            print(f"🔴 PlaylistItems traités: {i}/{total_items}")
                     except sqlite3.IntegrityError as e:
                         print(f"🔴 ERREUR CRITIQUE insertion PlaylistItem OldID {old_id}: {e}")
                         print(f"🔴 DONNÉES: label='{label}', thumb='{thumb_path}'")
@@ -2131,7 +2130,7 @@ def merge_data():
 
         try:
             note_mapping = create_note_mapping(merged_db_path, file1_db, file2_db)
-            print("Note Mapping:", note_mapping)
+            print(f"Note Mapping: {len(note_mapping)} entrées")
         except Exception as e:
             import traceback
             print(f"❌ Erreur dans create_note_mapping : {e}")
@@ -2154,7 +2153,10 @@ def merge_data():
             for color, style, count in cursor.fetchall():
                 print(f"- Couleur {color}, Style {style}: {count} marques")
 
-
+        print(f"Location IDs mappés: {len(location_id_map)} entrées")
+        if location_id_map:
+            sample = list(location_id_map.items())[:2]
+            print(f"Échantillon Location: {sample}")
         print(f"UserMark GUIDs mappés: {len(usermark_guid_map)} entrées")
         if usermark_guid_map:
             sample = list(usermark_guid_map.items())[:3]
@@ -2274,7 +2276,10 @@ def merge_data():
                 location_id_map,
                 item_id_map
             )
-
+            print(f"Tag ID Map: {len(tag_id_map)} entrées, TagMap ID Map: {len(tagmap_id_map)} entrées")
+            if tag_id_map:
+                sample = list(tag_id_map.items())[:2]
+                print(f"Échantillon Tag: {sample}")
 
         except Exception as e:
             import traceback
@@ -2553,6 +2558,7 @@ def merge_data():
                 'orphaned_thumbnails': len(orphaned_thumbnails) if 'orphaned_thumbnails' in locals() else 0
             }
         }
+        print(f"Résumé: {len(playlist_results.get('item_id_map', {}))} items, {len(playlist_results.get('marker_id_map', {}))} markers")
 
         # 11. Vérification de cohérence
         print("\n=== VERIFICATION COHERENCE ===")
