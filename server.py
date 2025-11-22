@@ -2475,17 +2475,17 @@ def merge_data():
             marker_id_map = merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map)
             merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map)
 
+            # ✅ CORRECTION : Définir les variables directement
             playlist_item_total = len(item_id_map)
+            max_playlist_id = 0  # Plus de table Playlist
+            max_media_id = 0
+            orphaned_deleted = 0
             integrity_result = "ok"
-
-            # Récupérer les résultats
-            (max_playlist_id, playlist_item_total, max_media_id,
-             orphaned_deleted, integrity_result, item_id_map) = result
 
             print(f"✅ Playlists fusionnées: {playlist_item_total} items")
 
         except Exception as e:
-            print(f"❌ Erreur dans merge_playlists: {e}")
+            print(f"❌ Erreur dans la fusion des playlists: {e}")
             import traceback
             traceback.print_exc()
             raise
