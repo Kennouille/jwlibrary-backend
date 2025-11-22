@@ -2050,7 +2050,10 @@ def merge_data():
 
         try:
             location_id_map = merge_location_from_sources(merged_db_path, *required_dbs)
-            print("Location ID Map:", location_id_map)
+            print(f"Location ID Map: {len(location_id_map)} entrées")
+            if location_id_map:
+                sample = list(location_id_map.items())[:3]
+                print(f"Échantillon Location: {sample}")
         except Exception as e:
             import traceback
             print(f"❌ Erreur dans merge_location_from_sources : {e}")
@@ -2059,7 +2062,10 @@ def merge_data():
 
         try:
             independent_media_map = merge_independent_media(merged_db_path, file1_db, file2_db)
-            print("Mapping IndependentMedia:", independent_media_map)
+            print(f"Mapping IndependentMedia: {len(independent_media_map)} entrées")
+            if independent_media_map:
+                sample = list(independent_media_map.items())[:3]
+                print(f"Échantillon IndependentMedia: {sample}")
 
             print("🔍 DEBUG IndependentMedia Map:")
             file2_media_count = 0
@@ -2147,7 +2153,10 @@ def merge_data():
                 print(f"- Couleur {color}, Style {style}: {count} marques")
 
         print(f"Location IDs mappés: {location_id_map}")
-        print(f"UserMark GUIDs mappés: {usermark_guid_map}")
+        print(f"UserMark GUIDs mappés: {len(usermark_guid_map)} entrées")
+        if usermark_guid_map:
+            sample = list(usermark_guid_map.items())[:3]
+            print(f"Échantillon UserMark: {sample}")
 
         # ===== Vérification pré-fusion complète =====
         print("\n=== VERIFICATION PRE-FUSION ===")
@@ -2313,6 +2322,8 @@ def merge_data():
             if "file1" in src:
                 print(f"  {src}: {old_id} → {new_id}")
         # ⬆️⬆️⬆️ FIN DE L'AJOUT ⬆️⬆️⬆️
+
+        print("🔴 DEBUG: IMMÉDIATEMENT AVANT merge_playlist_items")  # ⬅️ AJOUTE ÇA
 
         # Fusion des playlists avec mapping correct
         try:
