@@ -1564,7 +1564,9 @@ def merge_playlist_item_accuracy(merged_db_path, file1_db, file2_db):
 
 
 def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map):
-    print("\n[FUSION PlaylistItemLocationMap]")
+    print("\n[FUSION PlaylistItemLocationMap - DEBUG]")
+    print(f"🔴 item_id_map size: {len(item_id_map)}")
+    print(f"🔴 location_id_map size: {len(location_id_map)}")
 
     try:
         with sqlite3.connect(merged_db_path, timeout=30) as conn:
@@ -2152,7 +2154,7 @@ def merge_data():
             for color, style, count in cursor.fetchall():
                 print(f"- Couleur {color}, Style {style}: {count} marques")
 
-        print(f"Location IDs mappés: {location_id_map}")
+
         print(f"UserMark GUIDs mappés: {len(usermark_guid_map)} entrées")
         if usermark_guid_map:
             sample = list(usermark_guid_map.items())[:3]
@@ -2272,8 +2274,7 @@ def merge_data():
                 location_id_map,
                 item_id_map
             )
-            print(f"Tag ID Map: {tag_id_map}")
-            print(f"TagMap ID Map: {tagmap_id_map}")
+
 
         except Exception as e:
             import traceback
@@ -2552,7 +2553,6 @@ def merge_data():
                 'orphaned_thumbnails': len(orphaned_thumbnails) if 'orphaned_thumbnails' in locals() else 0
             }
         }
-        print(f"Résumé intermédiaire: {playlist_results}")
 
         # 11. Vérification de cohérence
         print("\n=== VERIFICATION COHERENCE ===")
