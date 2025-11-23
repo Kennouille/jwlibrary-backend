@@ -781,7 +781,7 @@ def update_location_references(merged_db_path, location_replacements):
                 # 🔁 Mise à jour Bookmark.LocationId
                 try:
                     cursor.execute("UPDATE Bookmark SET LocationId = ? WHERE LocationId = ?", (new_loc, old_loc))
-                    print(f"Bookmark LocationId mis à jour: {old_loc} -> {new_loc}")
+                    # print(f"Bookmark LocationId mis à jour: {old_loc} -> {new_loc}")
                 except Exception as e:
                     print(f"Erreur mise à jour Bookmark LocationId {old_loc}: {e}")
 
@@ -808,7 +808,7 @@ def update_location_references(merged_db_path, location_replacements):
                                 SET PublicationLocationId = ?
                                 WHERE BookmarkId = ?
                             """, (new_loc, bookmark_id))
-                            print(f"Bookmark PublicationLocationId mis à jour: {old_loc} -> {new_loc} (BookmarkId {bookmark_id})")
+                            # print(f"Bookmark PublicationLocationId mis à jour: {old_loc} -> {new_loc} (BookmarkId {bookmark_id})")
                 except Exception as e:
                     print(f"Erreur sécurisée mise à jour PublicationLocationId {old_loc}: {e}")
 
@@ -835,7 +835,7 @@ def update_location_references(merged_db_path, location_replacements):
                                 SET LocationId = ?
                                 WHERE PlaylistItemId = ? AND LocationId = ?
                             """, (new_loc, playlist_item_id, old_loc))
-                            print(f"PlaylistItemLocationMap mis à jour: ItemId={playlist_item_id}, LocationId {old_loc} -> {new_loc}")
+                            # print(f"PlaylistItemLocationMap mis à jour: ItemId={playlist_item_id}, LocationId {old_loc} -> {new_loc}")
                 except Exception as e:
                     print(f"Erreur mise à jour PlaylistItemLocationMap pour {old_loc} -> {new_loc}: {e}")
 
