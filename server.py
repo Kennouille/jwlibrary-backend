@@ -843,6 +843,47 @@ def debug_playlist_mappings(merged_db_path):
         traceback.print_exc()
 
 
+def remove_orphaned_playlist_items(merged_db_path):
+    """
+    Supprime les PlaylistItem qui n'ont aucun mapping
+    """
+    print("\n[🧹 SUPPRESSION PLAYLISTITEM ORPHELINS]")
+
+    try:
+        with sqlite3.connect(merged_db_path) as conn:
+            cursor = conn.cursor()
+
+            # Compter avant suppression
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM PlaylistItem pi
+                WHERE pi.PlaylistItemId NOT IN (
+                    SELECT PlaylistItemId FROM PlaylistItemLocationMap
+                    UNION  
+                    SELECT PlaylistItemId FROM PlaylistItemIndependentMediaMap
+                )
+            """)
+            orphaned_count = cursor.fetchone()[0]
+
+            if orphaned_count > 0:
+                # Supprimer les orphelins
+                cursor.execute("""
+                    DELETE FROM PlaylistItem
+                    WHERE PlaylistItemId NOT IN (
+                        SELECT PlaylistItemId FROM PlaylistItemLocationMap
+                        UNION  
+                        SELECT PlaylistItemId FROM PlaylistItemIndependentMediaMap
+                    )
+                """)
+                conn.commit()
+                print(f"✅ {orphaned_count} PlaylistItem orphelins supprimés")
+            else:
+                print("✅ Aucun PlaylistItem orphelin trouvé")
+
+    except Exception as e:
+        print(f"❌ Erreur suppression PlaylistItem orphelins: {e}")
+
+
 def debug_playlist_content(merged_db_path):
     """
     Debug du contenu réel des playlists
