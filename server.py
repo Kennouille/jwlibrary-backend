@@ -1377,15 +1377,15 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
     """
     Fusionne PlaylistItem de façon idempotente.
     """
-    print("\n[FUSION PLAYLISTITEMS - IDÉMPOTENTE - DÉBUT]")  # ⬅️ AJOUT
-    print(f"🔴 DEBUG: merge_playlist_items appelée avec {merged_db_path}")  # ⬅️ AJOUT
+    print("\n[FUSION PLAYLISTITEMS - IDÉMPOTENTE - DÉBUT]")
+    print(f"🔴 DEBUG: merge_playlist_items appelée avec {merged_db_path}")
 
     mapping = {}
     try:
         # Correction: Utilisation de 'with' pour la connexion principale
         with sqlite3.connect(merged_db_path, timeout=30) as conn:
-            print(f"🔴 DEBUG: Connexion DB réussie")  # ⬅️ AJOUT ICI
-            conn.execute("PRAGMA busy_timeout = 10000") # Ajout de busy_timeout pour la robustesse
+            print(f"🔴 DEBUG: Connexion DB réussie")
+            conn.execute("PRAGMA busy_timeout = 10000")  # Ajout de busy_timeout pour la robustesse
             cursor = conn.cursor()
 
             cursor.execute("""
@@ -1401,7 +1401,6 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='PlaylistItem'")
             if not cursor.fetchone():
                 print("[ERREUR] La table PlaylistItem n'existe pas dans la DB fusionnée.")
-                # Pas besoin de conn.close() ici car 'with' gère la fermeture
                 return {}
 
             def safe_text(val):
@@ -1415,7 +1414,7 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                 return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
             def read_playlist_items(db_path):
-                with sqlite3.connect(db_path, timeout=5) as src_conn: # Correction: Ajout de timeout
+                with sqlite3.connect(db_path, timeout=5) as src_conn:
                     cur_source = src_conn.cursor()
                     cur_source.execute("""
                         SELECT PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath
@@ -1424,9 +1423,11 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                     return [(db_path,) + row for row in cur_source.fetchall()]
 
             all_items = read_playlist_items(file1_db) + read_playlist_items(file2_db)
-            print(f"Total playlist items lus : {len(all_items)}")
+            total_items = len(all_items)  # ⬅️ CORRECTION ICI - variable ajoutée
+            print(f"Total playlist items lus : {total_items}")
+            print(f"🔴 File1 items: {len(read_playlist_items(file1_db))}")  # ⬅️ DEBUG AJOUTÉ
+            print(f"🔴 File2 items: {len(read_playlist_items(file2_db))}")  # ⬅️ DEBUG AJOUTÉ
 
-            # ⬇️⬇️⬇️ AJOUTER TRY/CATCH AUTOUR DE TOUTE LA BOUCLE ⬇️⬇️⬇️
             try:
                 for i, item in enumerate(all_items):
                     db_source = item[0]
@@ -1457,7 +1458,7 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                         """, (label, start_trim, end_trim, accuracy, end_action, thumb_path))
                         new_id = cursor.lastrowid
                         if i % 50 == 0:  # Tous les 50 items
-                            print(f"🔴 PlaylistItems traités: {i}/{total_items}")
+                            print(f"🔴 PlaylistItems traités: {i}/{total_items}")  # ⬅️ MAINTENANT total_items existe
                     except sqlite3.IntegrityError as e:
                         print(f"🔴 ERREUR CRITIQUE insertion PlaylistItem OldID {old_id}: {e}")
                         print(f"🔴 DONNÉES: label='{label}', thumb='{thumb_path}'")
@@ -1473,10 +1474,9 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                 print(f"🔴 ERREUR CRITIQUE: La boucle entière a crashé: {e}")
                 import traceback
                 traceback.print_exc()
-                # On retourne le mapping partiel pour continuer
                 return mapping
 
-            # ⬇️⬇️⬇️ DEBUG APRÈS LA BOUCLE (seulement si pas d'erreur) ⬇️⬇️⬇️
+            # DEBUG APRÈS LA BOUCLE
             cursor.execute("SELECT COUNT(*) FROM PlaylistItem")
             final_count = cursor.fetchone()[0]
             print(f"🔴 DEBUG: Nombre FINAL de PlaylistItem dans la base = {final_count}")
@@ -1497,14 +1497,13 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                 for item_id, thumb_path in problematic_thumbnails[:3]:
                     print(f"   - PlaylistItem {item_id}: {thumb_path}")
 
-            # ⬇️⬇️⬇️ AJOUTER CES 4 LIGNES JUSTE ICI ⬇️⬇️⬇️
             print("🔴 DEBUG: Avant commit")
-            conn.commit()  # VOTRE COMMIT EXISTANT - NE PAS LE DUPLIQUER
+            conn.commit()
             print("🔴 DEBUG: Après commit")
             print("🔴 DEBUG: Avant sortie du with")
-            # ⬆️⬆️⬆️ FIN DES LIGNES AJOUTÉES ⬆️⬆️⬆️
 
             print(f"Total PlaylistItems mappés: {len(mapping)}")
+
         seen = {}
         for (src, old_id), new_id in mapping.items():
             if new_id in seen:
@@ -1515,11 +1514,12 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
         print(f"✅ Total items uniques: {len(seen)}")
         print(f"🔴 DEBUG: merge_playlist_items TERMINÉE - mapping size: {len(mapping)}")
         return mapping
+
     except Exception as e:
         print(f"❌ Erreur critique dans merge_playlist_items: {e}")
         import traceback
         traceback.print_exc()
-        raise # Re-lancer l'exception pour que l'erreur soit propagée
+        raise
 
 
 def merge_playlist_item_accuracy(merged_db_path, file1_db, file2_db):
