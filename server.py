@@ -770,6 +770,52 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
     print(f"❌ LocationId manquants : {missing_count}")
 
 
+def debug_playlist_mappings(merged_db_path):
+    """
+    Debug complet des mappings Playlist
+    """
+    print("\n=== 🐛 DEBUG CRITIQUE PLAYLIST MAPPINGS ===")
+
+    with sqlite3.connect(merged_db_path) as conn:
+        cursor = conn.cursor()
+
+        # 1. Compter les PlaylistItems avec et sans mappings
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as total_items,
+                SUM(CASE WHEN plm.PlaylistItemId IS NOT NULL THEN 1 ELSE 0 END) as with_location,
+                SUM(CASE WHEN pim.PlaylistItemId IS NOT NULL THEN 1 ELSE 0 END) as with_media,
+                SUM(CASE WHEN plm.PlaylistItemId IS NULL AND pim.PlaylistItemId IS NULL THEN 1 ELSE 0 END) as orphaned
+            FROM PlaylistItem pi
+            LEFT JOIN PlaylistItemLocationMap plm ON pi.PlaylistItemId = plm.PlaylistItemId
+            LEFT JOIN PlaylistItemIndependentMediaMap pim ON pi.PlaylistItemId = pim.PlaylistItemId
+        """)
+        total, with_location, with_media, orphaned = cursor.fetchone()
+
+        print(f"📊 PlaylistItem TOTAL: {total}")
+        print(f"📍 Avec LocationMap: {with_location}")
+        print(f"🎵 Avec MediaMap: {with_media}")
+        print(f"🚫 Orphelins (sans mapping): {orphaned}")
+
+        # 2. Vérifier les LocationId valides dans les mappings
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM PlaylistItemLocationMap plm
+            JOIN Location l ON plm.LocationId = l.LocationId
+        """)
+        valid_location_mappings = cursor.fetchone()[0]
+        print(f"✅ LocationMap valides: {valid_location_mappings}")
+
+        # 3. Vérifier les MediaId valides dans les mappings
+        cursor.execute("""
+            SELECT COUNT(*) 
+            FROM PlaylistItemIndependentMediaMap pim
+            JOIN IndependentMedia im ON pim.IndependentMediaId = im.IndependentMediaId
+        """)
+        valid_media_mappings = cursor.fetchone()[0]
+        print(f"✅ MediaMap valides: {valid_media_mappings}")
+
+
 def update_location_references(merged_db_path, location_replacements):
     try:
         # Correction: Utilisation de 'with' pour la connexion principale
@@ -2820,6 +2866,7 @@ def merge_data():
         }
         sys.stdout.flush()
         print("🎯 Résumé final prêt à être envoyé au frontend.")
+        debug_playlist_mappings(merged_db_path)
         print("🧪 Test accès à final_result:", final_result)
         return jsonify(final_result), 200
 
