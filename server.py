@@ -70,34 +70,54 @@ def list_tables(db_path):
 
 def merge_independent_media(merged_db_path, file1_db, file2_db):
     """
-    Fusionne la table IndependentMedia des deux bases sources dans la base fusionnée.
-    Deux lignes sont considérées identiques si (OriginalFilename, FilePath, Hash) sont identiques.
-    Retourne un mapping : {(normalized_db_path, ancien_ID) : nouveau_ID}
+    Fusion fiable et compatible JW Library de la table IndependentMedia.
     """
     print("\n[FUSION INDEPENDENTMEDIA]")
+
     mapping = {}
 
+    # Normalisation uniforme pour éviter les erreurs de clé de mapping
+    def normalize_path(p):
+        return os.path.abspath(os.path.normcase(os.path.normpath(p)))
+
     with sqlite3.connect(merged_db_path) as merged_conn:
+        merged_conn.execute("PRAGMA foreign_keys = OFF")
         merged_cursor = merged_conn.cursor()
 
+        # 1. Assurer que la table existe dans la base fusionnée
+        merged_cursor.execute("""
+            CREATE TABLE IF NOT EXISTS IndependentMedia (
+                IndependentMediaId INTEGER PRIMARY KEY,
+                OriginalFilename   TEXT NOT NULL,
+                FilePath           TEXT NOT NULL,
+                MimeType           TEXT NOT NULL,
+                Hash               TEXT NOT NULL
+            ) WITHOUT ROWID;
+        """)
+
+        # 2. Assurer un index sur Hash (important pour JW Library)
+        merged_cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_IndependentMedia_Hash
+            ON IndependentMedia(Hash);
+        """)
+
+        # 3. Fusion des deux fichiers source
         for db_path in (file1_db, file2_db):
 
-            normalized = os.path.normpath(db_path)
-            print(f"Traitement de {normalized}")
+            normalized_db = normalize_path(db_path)
+            print(f"Traitement de {normalized_db}")
 
-            with sqlite3.connect(normalized) as src_conn:
+            with sqlite3.connect(normalized_db) as src_conn:
                 src_cursor = src_conn.cursor()
                 src_cursor.execute("""
                     SELECT IndependentMediaId, OriginalFilename, FilePath, MimeType, Hash
                     FROM IndependentMedia
                 """)
-                rows = src_cursor.fetchall()
 
-                for row in rows:
-                    old_id, orig_fn, file_path, mime, hash_val = row
+                for old_id, orig_fn, file_path, mime, hash_val in src_cursor.fetchall():
                     print(f"  - Média : {orig_fn}, Hash={hash_val}")
 
-                    # Vérifie si un média identique existe déjà
+                    # 4. Vérifier si média identique déjà présent
                     merged_cursor.execute("""
                         SELECT IndependentMediaId
                         FROM IndependentMedia
@@ -106,27 +126,29 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
                           AND Hash = ?
                     """, (orig_fn, file_path, hash_val))
 
-                    result = merged_cursor.fetchone()
+                    existing = merged_cursor.fetchone()
 
-                    if result:
-                        new_id = result[0]
+                    if existing:
+                        new_id = existing[0]
                         print(f"    > Déjà présent -> ID {new_id}")
+
                     else:
                         merged_cursor.execute("""
                             INSERT INTO IndependentMedia
-                            (OriginalFilename, FilePath, MimeType, Hash)
+                                (OriginalFilename, FilePath, MimeType, Hash)
                             VALUES (?, ?, ?, ?)
                         """, (orig_fn, file_path, mime, hash_val))
                         new_id = merged_cursor.lastrowid
-                        print(f"    > Insertion nouvelle ligne ID {new_id}")
+                        print(f"    > Insert nouveau média -> ID {new_id}")
 
-                    # MAPPING CORRECT (très important)
-                    mapping[(normalized, old_id)] = new_id
+                    # MAPPING PRÉCIS
+                    mapping[(normalized_db, old_id)] = new_id
 
         merged_conn.commit()
 
-    print("Fusion IndependentMedia terminée.")
+    print("Fusion IndependentMedia terminée.\n")
     return mapping
+
 
 
 def read_notes_and_highlights(db_path):
