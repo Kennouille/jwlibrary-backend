@@ -1572,7 +1572,7 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
             cursor = conn.cursor()
             conn.execute("PRAGMA busy_timeout = 5000")
 
-            cursor.execute("DELETE FROM PlaylistItemLocationMap")
+            # cursor.execute("DELETE FROM PlaylistItemLocationMap")
             print("🗑️ Table PlaylistItemLocationMap vidée")
 
             inserted = 0
@@ -1656,7 +1656,7 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
             cursor = conn.cursor()
             conn.execute("PRAGMA busy_timeout = 5000")
 
-            cursor.execute("DELETE FROM PlaylistItemIndependentMediaMap")
+            # cursor.execute("DELETE FROM PlaylistItemIndependentMediaMap")
 
             inserted = 0
             skipped = 0
