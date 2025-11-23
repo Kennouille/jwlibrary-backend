@@ -843,6 +843,65 @@ def debug_playlist_mappings(merged_db_path):
         traceback.print_exc()
 
 
+def debug_playlist_content(merged_db_path):
+    """
+    Debug du contenu réel des playlists
+    """
+    print("\n=== 🔍 DEBUG CONTENU PLAYLIST ===")
+
+    try:
+        with sqlite3.connect(merged_db_path) as conn:
+            cursor = conn.cursor()
+
+            # 1. Vérifier les 5 premiers PlaylistItem avec leur contenu
+            print("📋 5 PREMIERS PLAYLISTITEM AVEC CONTENU:")
+            cursor.execute("""
+                SELECT 
+                    pi.PlaylistItemId,
+                    pi.Label,
+                    CASE 
+                        WHEN plm.LocationId IS NOT NULL THEN 'Location: ' || plm.LocationId
+                        WHEN pim.IndependentMediaId IS NOT NULL THEN 'Media: ' || pim.IndependentMediaId
+                        ELSE 'ORPHELIN'
+                    END as content_type
+                FROM PlaylistItem pi
+                LEFT JOIN PlaylistItemLocationMap plm ON pi.PlaylistItemId = plm.PlaylistItemId
+                LEFT JOIN PlaylistItemIndependentMediaMap pim ON pi.PlaylistItemId = pim.PlaylistItemId
+                WHERE plm.LocationId IS NOT NULL OR pim.IndependentMediaId IS NOT NULL
+                LIMIT 5
+            """)
+
+            for item_id, label, content_type in cursor.fetchall():
+                print(f"   🎵 Item {item_id}: '{label}' → {content_type}")
+
+            # 2. Vérifier si les Locations pointent vers du contenu valide
+            print("\n📍 VÉRIFICATION LOCATIONS:")
+            cursor.execute("""
+                SELECT DISTINCT l.KeySymbol, l.BookNumber, l.ChapterNumber
+                FROM PlaylistItemLocationMap plm
+                JOIN Location l ON plm.LocationId = l.LocationId
+                LIMIT 3
+            """)
+            locations = cursor.fetchall()
+            for key_symbol, book, chapter in locations:
+                print(f"   📖 {key_symbol} {book}:{chapter}")
+
+            # 3. Vérifier si les Médias pointent vers des fichiers valides
+            print("\n🎵 VÉRIFICATION MÉDIAS:")
+            cursor.execute("""
+                SELECT DISTINCT im.OriginalFilename, im.MimeType
+                FROM PlaylistItemIndependentMediaMap pim
+                JOIN IndependentMedia im ON pim.IndependentMediaId = im.IndependentMediaId
+                LIMIT 3
+            """)
+            medias = cursor.fetchall()
+            for filename, mime_type in medias:
+                print(f"   📁 {filename} ({mime_type})")
+
+    except Exception as e:
+        print(f"❌ Erreur debug contenu: {e}")
+
+
 def update_location_references(merged_db_path, location_replacements):
     try:
         # Correction: Utilisation de 'with' pour la connexion principale
@@ -2882,6 +2941,8 @@ def merge_data():
         elapsed = time.time() - start_time
         print(f"⏱️ Temps total du merge : {elapsed:.2f} secondes")
         debug_playlist_mappings(final_db_dest)
+        debug_playlist_content(final_db_dest)
+        remove_orphaned_playlist_items(final_db_dest)
 
         # 5️⃣ Retour JSON final
         final_result = {
