@@ -1047,7 +1047,7 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
             res = cur.fetchone()
             if res:
                 new_id = res[0]
-                print(f"⏩ Location déjà fusionnée OldID={old_loc_id} → NewID={new_id} (Source: {db_source})")
+                # print(f"⏩ Location déjà fusionnée OldID={old_loc_id} → NewID={new_id} (Source: {db_source})")
                 location_id_map[(db_source, old_loc_id)] = new_id
                 continue
 
@@ -1070,7 +1070,7 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
 
             if existing:
                 new_id = existing[0]
-                print(f"🔎 Location existante trouvée OldID={old_loc_id} → NewID={new_id} (Source: {db_source})")
+                # print(f"🔎 Location existante trouvée OldID={old_loc_id} → NewID={new_id} (Source: {db_source})")
             else:
                 # Pas trouvée → insertion
                 current_max_id += 1
@@ -1082,7 +1082,7 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
                          IssueTagNumber, KeySymbol, MepsLanguage, Type, Title)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (new_id, book_num, chap_num, doc_id, track, issue, key_sym, meps_lang, loc_type, title))
-                    print(f"✅ Location insérée : NewID={new_id} (Source: {db_source})")
+                    # print(f"✅ Location insérée : NewID={new_id} (Source: {db_source})")
                 except sqlite3.IntegrityError as e:
                     print(f"❌ Erreur insertion Location OldID={old_loc_id}: {e}")
                     continue
