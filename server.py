@@ -630,7 +630,7 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
             # 2) Récupération des mappings
             dest_cursor.execute("SELECT UserMarkId, UserMarkGuid FROM UserMark")
             usermark_guid_map = {guid: uid for uid, guid in dest_cursor.fetchall()}
-            print(f"UserMark GUIDs: {usermark_guid_map}")
+            # print(f"UserMark GUIDs: {usermark_guid_map}")
 
             # 3) Traitement des sources
             for db_path in [file1_db, file2_db]:
@@ -662,7 +662,7 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
                                 """, (block_type, identifier, new_usermark_id, start_token, end_token))
 
                                 if dest_cursor.fetchone():
-                                    print(f"⏩ Existe déjà: {row}")
+                                    # print(f"⏩ Existe déjà: {row}")
                                     continue
 
                                 dest_cursor.execute("""
@@ -671,7 +671,7 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
                                     VALUES (?, ?, ?, ?, ?)
                                 """, (block_type, identifier, start_token, end_token, new_usermark_id))
 
-                                print(f"✅ Inserté: {row}")
+                                # print(f"✅ Inserté: {row}")
 
                             except sqlite3.IntegrityError as e:
                                 print(f"❌ Erreur intégrité: {e}")
@@ -911,7 +911,7 @@ def merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_
                             if (color, new_loc, style, version) == (
                             existing_color, existing_loc, existing_style, existing_version):
                                 new_um_id = existing_id
-                                print(f"⏩ UserMark guid={guid} déjà présent (identique), réutilisé (ID={new_um_id})")
+                                # print(f"⏩ UserMark guid={guid} déjà présent (identique), réutilisé (ID={new_um_id})")
                             else:
                                 # Données différentes - générer un nouveau GUID
                                 new_guid = str(uuid.uuid4())
@@ -931,7 +931,7 @@ def merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_
                                 INSERT INTO UserMark (UserMarkId, ColorIndex, LocationId, StyleIndex, UserMarkGuid, Version)
                                 VALUES (?, ?, ?, ?, ?, ?)
                             """, (new_um_id, color, new_loc, style, guid, version))
-                            print(f"✅ Insertion UserMark guid={guid}, NewID={new_um_id}")
+                            # print(f"✅ Insertion UserMark guid={guid}, NewID={new_um_id}")
 
                         # Mise à jour des mappings
                         mapping[(db_path, old_um_id)] = new_um_id
