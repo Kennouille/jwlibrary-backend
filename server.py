@@ -1857,21 +1857,16 @@ def cleanup_playlist_item_location_map(conn):
 
 def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map):
     print("\n[FUSION PlaylistItemIndependentMediaMap - DÉBUT]")
-    print("🔴 DEBUG: Entrée dans la fonction")  # ⬅️ AJOUT ICI
 
     try:
         with sqlite3.connect(merged_db_path, timeout=30) as conn:
-            print("🔴 DEBUG: Connexion DB réussie")  # ⬅️ AJOUT ICI
             cursor = conn.cursor()
             conn.execute("PRAGMA busy_timeout = 5000")
 
-            # cursor.execute("DELETE FROM PlaylistItemIndependentMediaMap")
-
             inserted = 0
             skipped = 0
-            file1_inserted = 0
-            file2_inserted = 0
 
+            # 🔥 ON TRAITE CHAQUE FICHIER INDÉPENDAMMENT
             for db_path in (file1_db, file2_db):
                 normalized_db = os.path.normpath(db_path)
 
@@ -1884,50 +1879,35 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
                     """)
                     rows = src_cursor.fetchall()
 
-                print(f"🔴 SOURCE ANALYSIS: {normalized_db}")
-                print(f"🔴   Lignes dans PlaylistItemIndependentMediaMap: {len(rows)}")
-                if rows:
-                    print(f"🔴   Exemple: PlaylistItemId={rows[0][0]}, IndependentMediaId={rows[0][1]}")
+                print(f"🔴 SOURCE: {normalized_db}, {len(rows)} lignes trouvées")
 
-            for old_item_id, old_media_id, duration_ticks in rows:
+                # 🔥 ON INSÈRE POUR CE FICHIER, PAS APRÈS LES DEUX
+                for old_item_id, old_media_id, duration_ticks in rows:
+
                     new_item_id = item_id_map.get((normalized_db, old_item_id))
                     new_media_id = independent_media_map.get((normalized_db, old_media_id))
 
                     if new_item_id is None:
-                        print(f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id} dans {normalized_db}")
+                        print(f"⚠️ PlaylistItem mapping manquant: {old_item_id} ({normalized_db})")
                         skipped += 1
                         continue
 
                     if new_media_id is None:
-                        print(f"⚠️ Mapping manquant pour IndependentMediaId={old_media_id} dans {normalized_db}")
+                        print(f"⚠️ IndependentMedia mapping manquant: {old_media_id} ({normalized_db})")
                         skipped += 1
                         continue
 
-                    try:
-                        cursor.execute("""
-                            INSERT OR IGNORE INTO PlaylistItemIndependentMediaMap
-                            (PlaylistItemId, IndependentMediaId, DurationTicks)
-                            VALUES (?, ?, ?)
-                        """, (new_item_id, new_media_id, duration_ticks))
-                        inserted += 1
-                        if "file1" in normalized_db:
-                            file1_inserted += 1
-                        else:
-                            file2_inserted += 1
-                    except sqlite3.IntegrityError as e:
-                        print(f"🚫 Erreur intégrité : {e}")
-                        skipped += 1
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO PlaylistItemIndependentMediaMap
+                        (PlaylistItemId, IndependentMediaId, DurationTicks)
+                        VALUES (?, ?, ?)
+                    """, (new_item_id, new_media_id, duration_ticks))
 
-            # ⬇️⬇️⬇️ AJOUTER CE RAPPORT FINAL ⬇️⬇️⬇️
-            print(f"🔴 RAPPORT FINAL IndependentMediaMap:")
-            print(f"🔴   Total insérés: {inserted}")
-            print(f"🔴   File1 insérés: {file1_inserted}")
-            print(f"🔴   File2 insérés: {file2_inserted}")
-            print(f"🔴   Ignorés: {skipped}")
+                    inserted += 1
 
-            cursor.execute("SELECT COUNT(*) FROM PlaylistItemIndependentMediaMap")
-            total = cursor.fetchone()[0]
-            print(f"✅ IndependentMediaMap fusionné : {inserted} insérés, {skipped} ignorés, total = {total}")
+            print(f"✅ FIN - PlaylistItemIndependentMediaMap fusionné.")
+            print(f"   → {inserted} insérés")
+            print(f"   → {skipped} ignorés")
 
             conn.commit()
 
