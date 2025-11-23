@@ -828,14 +828,28 @@ def update_location_references(merged_db_path, location_replacements):
                         conflict = cursor.fetchone()
 
                         if conflict:
-                            print(f"⚠️ Mise à jour ignorée pour PlaylistItemLocationMap: ItemId={playlist_item_id}, conflit LocationId {new_loc}")
-                        else:
-                            cursor.execute("""
-                                UPDATE PlaylistItemLocationMap
-                                SET LocationId = ?
-                                WHERE PlaylistItemId = ? AND LocationId = ?
-                            """, (new_loc, playlist_item_id, old_loc))
+                            print(f"🔄 Conflit détecté - création nouveau PlaylistItem pour ItemId={playlist_item_id}")
+                            # Copier le PlaylistItem existant avec un nouvel ID
+                            cursor.execute("SELECT * FROM PlaylistItem WHERE PlaylistItemId = ?", (playlist_item_id,))
+                            item_data = cursor.fetchone()
+
+                            if item_data:
+                                new_item_id = cursor.execute("SELECT MAX(PlaylistItemId) FROM PlaylistItem").fetchone()[
+                                                  0] + 1
+                                cursor.execute("""
+                                    INSERT INTO PlaylistItem (PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """, (new_item_id, *item_data[1:]))
+
+                                # Mettre à jour le mapping avec le nouvel ItemId
+                                cursor.execute("""
+                                    UPDATE PlaylistItemLocationMap 
+                                    SET PlaylistItemId = ?, LocationId = ?
+                                    WHERE PlaylistItemId = ? AND LocationId = ?
+                                """, (new_item_id, new_loc, playlist_item_id, old_loc))
+
                             # print(f"PlaylistItemLocationMap mis à jour: ItemId={playlist_item_id}, LocationId {old_loc} -> {new_loc}")
+
                 except Exception as e:
                     print(f"Erreur mise à jour PlaylistItemLocationMap pour {old_loc} -> {new_loc}: {e}")
 
