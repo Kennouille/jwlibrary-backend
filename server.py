@@ -2730,7 +2730,6 @@ def merge_data():
                 print("Avertissement: Échec de l'activation WAL")
 
         print("📍 Avant le résumé final")
-        debug_playlist_mappings(merged_db_path)
         sys.stdout.flush()
 
         # 1️⃣ Mise à jour des LocationId résiduels
@@ -2856,6 +2855,7 @@ def merge_data():
 
         elapsed = time.time() - start_time
         print(f"⏱️ Temps total du merge : {elapsed:.2f} secondes")
+        debug_playlist_mappings(final_db_dest)
 
         # 5️⃣ Retour JSON final
         final_result = {
