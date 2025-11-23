@@ -774,6 +774,7 @@ def debug_playlist_mappings(merged_db_path):
     """
     Debug complet des mappings Playlist
     """
+    print("🔴 DEBUG: Fonction debug_playlist_mappings APPELEE")
     print("\n=== 🐛 DEBUG CRITIQUE PLAYLIST MAPPINGS ===")
 
     with sqlite3.connect(merged_db_path) as conn:
@@ -2729,6 +2730,8 @@ def merge_data():
                 print("Avertissement: Échec de l'activation WAL")
 
         print("📍 Avant le résumé final")
+        debug_playlist_mappings(merged_db_path)
+        sys.stdout.flush()
 
         # 1️⃣ Mise à jour des LocationId résiduels
         print("\n=== MISE À JOUR DES LocationId RÉSIDUELS ===")
@@ -2866,7 +2869,6 @@ def merge_data():
         }
         sys.stdout.flush()
         print("🎯 Résumé final prêt à être envoyé au frontend.")
-        debug_playlist_mappings(merged_db_path)
         print("🧪 Test accès à final_result:", final_result)
         return jsonify(final_result), 200
 
