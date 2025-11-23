@@ -772,49 +772,75 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
 
 def debug_playlist_mappings(merged_db_path):
     """
-    Debug complet des mappings Playlist
+    Debug complet des mappings Playlist - VERSION CORRIGÉE
     """
     print("🔴 DEBUG: Fonction debug_playlist_mappings APPELEE")
     print("\n=== 🐛 DEBUG CRITIQUE PLAYLIST MAPPINGS ===")
 
-    with sqlite3.connect(merged_db_path) as conn:
-        cursor = conn.cursor()
+    try:
+        with sqlite3.connect(merged_db_path) as conn:
+            cursor = conn.cursor()
 
-        # 1. Compter les PlaylistItems avec et sans mappings
-        cursor.execute("""
-            SELECT 
-                COUNT(*) as total_items,
-                SUM(CASE WHEN plm.PlaylistItemId IS NOT NULL THEN 1 ELSE 0 END) as with_location,
-                SUM(CASE WHEN pim.PlaylistItemId IS NOT NULL THEN 1 ELSE 0 END) as with_media,
-                SUM(CASE WHEN plm.PlaylistItemId IS NULL AND pim.PlaylistItemId IS NULL THEN 1 ELSE 0 END) as orphaned
-            FROM PlaylistItem pi
-            LEFT JOIN PlaylistItemLocationMap plm ON pi.PlaylistItemId = plm.PlaylistItemId
-            LEFT JOIN PlaylistItemIndependentMediaMap pim ON pi.PlaylistItemId = pim.PlaylistItemId
-        """)
-        total, with_location, with_media, orphaned = cursor.fetchone()
+            # 1. Compter les PlaylistItems avec et sans mappings - VERSION SIMPLIFIÉE
+            cursor.execute("SELECT COUNT(*) FROM PlaylistItem")
+            total = cursor.fetchone()[0]
+            print(f"📊 PlaylistItem TOTAL: {total}")
 
-        print(f"📊 PlaylistItem TOTAL: {total}")
-        print(f"📍 Avec LocationMap: {with_location}")
-        print(f"🎵 Avec MediaMap: {with_media}")
-        print(f"🚫 Orphelins (sans mapping): {orphaned}")
+            cursor.execute("SELECT COUNT(*) FROM PlaylistItemLocationMap")
+            with_location = cursor.fetchone()[0]
+            print(f"📍 PlaylistItemLocationMap count: {with_location}")
 
-        # 2. Vérifier les LocationId valides dans les mappings
-        cursor.execute("""
-            SELECT COUNT(*) 
-            FROM PlaylistItemLocationMap plm
-            JOIN Location l ON plm.LocationId = l.LocationId
-        """)
-        valid_location_mappings = cursor.fetchone()[0]
-        print(f"✅ LocationMap valides: {valid_location_mappings}")
+            cursor.execute("SELECT COUNT(*) FROM PlaylistItemIndependentMediaMap")
+            with_media = cursor.fetchone()[0]
+            print(f"🎵 PlaylistItemIndependentMediaMap count: {with_media}")
 
-        # 3. Vérifier les MediaId valides dans les mappings
-        cursor.execute("""
-            SELECT COUNT(*) 
-            FROM PlaylistItemIndependentMediaMap pim
-            JOIN IndependentMedia im ON pim.IndependentMediaId = im.IndependentMediaId
-        """)
-        valid_media_mappings = cursor.fetchone()[0]
-        print(f"✅ MediaMap valides: {valid_media_mappings}")
+            # 2. Compter les orphelins
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM PlaylistItem pi
+                WHERE pi.PlaylistItemId NOT IN (
+                    SELECT PlaylistItemId FROM PlaylistItemLocationMap
+                    UNION  
+                    SELECT PlaylistItemId FROM PlaylistItemIndependentMediaMap
+                )
+            """)
+            orphaned = cursor.fetchone()[0]
+            print(f"🚫 PlaylistItem orphelins (sans mapping): {orphaned}")
+
+            # 3. Vérifier les LocationId valides
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM PlaylistItemLocationMap plm
+                JOIN Location l ON plm.LocationId = l.LocationId
+            """)
+            valid_location_mappings = cursor.fetchone()[0]
+            print(f"✅ LocationMap valides: {valid_location_mappings}")
+
+            # 4. Vérifier les MediaId valides
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM PlaylistItemIndependentMediaMap pim
+                JOIN IndependentMedia im ON pim.IndependentMediaId = im.IndependentMediaId
+            """)
+            valid_media_mappings = cursor.fetchone()[0]
+            print(f"✅ MediaMap valides: {valid_media_mappings}")
+
+            # 5. DIAGNOSTIC FINAL
+            print(f"\n🎯 DIAGNOSTIC FINAL:")
+            if orphaned == total:
+                print("❌ CATASTROPHE: TOUS les PlaylistItem sont orphelins!")
+            elif valid_location_mappings == 0 and valid_media_mappings == 0:
+                print("❌ PROBLEME: Tous les mappings pointent vers des IDs invalides!")
+            elif valid_location_mappings + valid_media_mappings < total:
+                print(
+                    f"⚠️  PROBLEME: Seulement {valid_location_mappings + valid_media_mappings}/{total} PlaylistItem sont valides")
+            else:
+                print("✅ STRUCTURE BONNE: Le problème est ailleurs")
+
+    except Exception as e:
+        print(f"❌ ERREUR dans debug_playlist_mappings: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def update_location_references(merged_db_path, location_replacements):
