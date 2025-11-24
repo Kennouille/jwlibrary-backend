@@ -15,6 +15,12 @@ import threading
 import hashlib # Nécessaire pour hashlib.sha256
 import time
 
+
+def get_source_key(db_path):
+    """Retourne une clé cohérente pour tous les mappings"""
+    return os.path.normpath(db_path)
+
+
 app = Flask(__name__)
 app.config['PROPAGATE_EXCEPTIONS'] = True
 CORS(app, origins=["https://jwmerge.netlify.app"])
@@ -24,13 +30,6 @@ EXTRACT_FOLDER = "extracted"
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(EXTRACT_FOLDER, exist_ok=True)
-
-
-def normalize_mapping_keys(mapping):
-    return {
-        (os.path.normpath(k[0]), k[1]): v
-        for k, v in mapping.items()
-    }
 
 
 def get_current_local_iso8601():
@@ -105,7 +104,7 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
         # 3. Fusion des deux fichiers source
         for db_path in (file1_db, file2_db):
 
-            normalized_db = normalize_path(db_path)
+            source_key = get_source_key(db_path)
             print(f"Traitement de {normalized_db}")
 
             with sqlite3.connect(normalized_db) as src_conn:
@@ -143,7 +142,7 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
                         print(f"    > Insert nouveau média -> ID {new_id}")
 
                     # MAPPING PRÉCIS
-                    mapping[(normalized_db, old_id)] = new_id
+                    mapping[(source_key, old_id)] = new_id
 
         merged_conn.commit()
 
@@ -403,6 +402,7 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
             conn.commit()
 
             for db_path in [file1_db, file2_db]:
+                source_key = get_source_key(db_path)
                 with sqlite3.connect(db_path, timeout=5) as src_conn:
                     src_cursor = src_conn.cursor()
 
@@ -428,7 +428,7 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
                     res = cursor.fetchone()
                     if res:
                         new_id = res[0] # <--- ASSIGNATION : new_id est défini ici si déjà mappé
-                        mapping[(db_path, old_id)] = new_id
+                        mapping[(source_key, old_id)] = new_id
                         continue
 
                     new_loc_id = location_id_map.get((db_path, loc_id), loc_id)
@@ -514,6 +514,7 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
             conn.execute("PRAGMA busy_timeout = 5000") # Ajout de busy_timeout
 
             for db_path in [file1_db, file2_db]:
+                source_key = get_source_key(db_path)
                 with sqlite3.connect(db_path, timeout=5) as src_conn: # Ajout de timeout
                     src_cursor = src_conn.cursor()
                     # Lire toutes les données de la source AVANT de quitter le bloc 'with'
@@ -526,9 +527,7 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
 
                 for (old_note_id, guid, usermark_guid, location_id, title, content,
                      last_modified, created, block_type, block_identifier) in source_notes: # Utilisation des données lues
-                    normalized_key = (os.path.normpath(db_path), location_id)
-                    normalized_map = {(os.path.normpath(k[0]), k[1]): v for k, v in location_id_map.items()}
-                    new_location_id = normalized_map.get(normalized_key) if location_id else None
+                    new_location_id = location_id_map.get((source_key, location_id)) if location_id else None
                     new_usermark_id = usermark_guid_map.get(usermark_guid) if usermark_guid else None
 
                     # On garde les notes même si LocationId est NULL (notes créées manuellement)
@@ -571,7 +570,7 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
                         block_identifier
                     ))
                     new_note_id = cursor.lastrowid
-                    note_mapping[(db_path, old_note_id)] = new_note_id
+                    note_mapping[(source_key, old_note_id)] = new_note_id
                     inserted += 1
 
         conn.commit() # Le commit est maintenant à l'intérieur du bloc 'with conn:'
@@ -1084,6 +1083,7 @@ def merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_
             max_id = cursor.fetchone()[0]
 
             for db_path in [file1_db, file2_db]:
+                source_key = get_source_key(db_path)
                 with sqlite3.connect(db_path, timeout=5) as src_conn: # Ajout de timeout
                     src_cursor = src_conn.cursor()
                     src_cursor.execute("""
@@ -1144,7 +1144,7 @@ def merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_
                             # print(f"✅ Insertion UserMark guid={guid}, NewID={new_um_id}")
 
                         # Mise à jour des mappings
-                        mapping[(db_path, old_um_id)] = new_um_id
+                        mapping[(source_key, old_um_id)] = new_um_id
                         mapping[guid] = new_um_id
                         cursor.execute("""
                             INSERT OR REPLACE INTO MergeMapping_UserMark (SourceDb, OldUserMarkId, NewUserMarkId)
@@ -1213,6 +1213,7 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
     print("\n[FUSION LOCATION - IDÉMPOTENTE]")
 
     def read_locations(db_path):
+        source_key = get_source_key(db_path)
         with sqlite3.connect(db_path) as conn:
             cur = conn.cursor()
             cur.execute("""
@@ -1220,7 +1221,7 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
                        IssueTagNumber, KeySymbol, MepsLanguage, Type, Title
                 FROM Location
             """)
-            return [(db_path,) + row for row in cur.fetchall()]
+            return [(source_key,) + row for row in cur.fetchall()]
 
     # Lecture combinée des deux fichiers
     locations = read_locations(file1_db) + read_locations(file2_db)
@@ -1481,6 +1482,7 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
             tag_id_map = {}
 
             for db_path in [file1_db, file2_db]:
+                source_key = get_source_key(db_path)
                 with sqlite3.connect(db_path, timeout=5) as src_conn: # Correction: Ajout de timeout
                     src_cursor = src_conn.cursor()
                     src_cursor.execute("SELECT TagId, Type, Name FROM Tag")
@@ -1500,7 +1502,7 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                             new_tag_id = max_tag_id
                             cursor.execute("INSERT INTO Tag (TagId, Type, Name) VALUES (?, ?, ?)", (new_tag_id, tag_type, tag_name))
 
-                        tag_id_map[(db_path, tag_id)] = new_tag_id
+                        tag_id_map[(source_key, tag_id)] = new_tag_id
                         cursor.execute("INSERT INTO MergeMapping_Tag (SourceDb, OldTagId, NewTagId) VALUES (?, ?, ?)", (db_path, tag_id, new_tag_id))
 
             # Fusion des TagMap
@@ -1571,7 +1573,7 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                             VALUES (?, ?, ?)
                         """, (db_path, old_tagmap_id, new_tagmap_id))
 
-                        tagmap_id_map[(db_path, old_tagmap_id)] = new_tagmap_id
+                        tagmap_id_map[(source_key, old_tagmap_id)] = new_tagmap_id
 
             conn.commit() # Le commit est maintenant à l'intérieur du bloc 'with conn:'
         print("Fusion des Tags et TagMap terminée (idempotente).")
@@ -1624,13 +1626,14 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                 return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
             def read_playlist_items(db_path):
+                source_key = get_source_key(db_path)
                 with sqlite3.connect(db_path, timeout=5) as src_conn:
                     cur_source = src_conn.cursor()
                     cur_source.execute("""
                         SELECT PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath
                         FROM PlaylistItem
                     """)
-                    return [(db_path,) + row for row in cur_source.fetchall()]
+                    return [(source_key,) + row for row in cur_source.fetchall()]
 
             all_items = read_playlist_items(file1_db) + read_playlist_items(file2_db)
             total_items = len(all_items)  # ⬅️ CORRECTION ICI - variable ajoutée
@@ -1856,7 +1859,7 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
 
             # 🔥 Traitement identique pour file1 et file2
             for db_path in (file1_db, file2_db):
-                normalized = os.path.normpath(db_path)
+                source_key = get_source_key(db_path)
 
                 with sqlite3.connect(normalized, timeout=5) as src:
                     src_cursor = src.cursor()
@@ -1872,8 +1875,8 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
                 for old_item_id, old_loc_id, mm_type, duration in rows:
 
                     # 🔥 mapping cohérent
-                    new_item_id = item_id_map.get((normalized, old_item_id))
-                    new_loc_id  = location_id_map.get((normalized, old_loc_id))
+                    new_item_id = item_id_map.get((source_key, old_item_id))
+                    new_loc_id  = location_id_map.get((source_key, old_loc_id))
 
                     if new_item_id is None:
                         print(f"⚠️ PlaylistItemId non mappé ({old_item_id}) dans {normalized}")
@@ -1947,6 +1950,7 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
             skipped = 0
 
             for db_path in (file1_db, file2_db):
+                source_key = get_source_key(db_path)
                 print(f"🔴 TRAITEMENT DE: {db_path}")
 
                 with sqlite3.connect(db_path, timeout=5) as src_conn:
@@ -1964,8 +1968,8 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
                     # ⬇️⬇️⬇️ DEBUG DE CHAQUE RECHERCHE ⬇️⬇️⬇️
                     print(f"🔴 RECHERCHE: PlaylistItemId={old_item_id}, IndependentMediaId={old_media_id}")
 
-                    new_item_id = item_id_map.get((db_path, old_item_id))
-                    new_media_id = independent_media_map.get((db_path, old_media_id))
+                    new_item_id = item_id_map.get((source_key, old_item_id))
+                    new_media_id = independent_media_map.get((source_key, old_media_id))
 
                     print(f"🔴   → new_item_id: {new_item_id}, new_media_id: {new_media_id}")
 
@@ -2029,9 +2033,8 @@ def merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map):
             max_marker_id = cursor.fetchone()[0] or 0
             print(f"ID max initial: {max_marker_id}")
 
-
             for db_path in [file1_db, file2_db]:
-                normalized_db = os.path.normpath(db_path)
+                source_key = get_source_key(db_path)
                 with sqlite3.connect(db_path, timeout=5) as src_conn: # Ajout de timeout
                     src_cursor = src_conn.cursor()
                     src_cursor.execute("""
@@ -2042,7 +2045,7 @@ def merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map):
                     print(f"{len(markers)} markers trouvés dans {os.path.basename(db_path)}")
 
                     for old_marker_id, old_item_id, label, start_time, duration, end_transition in markers:
-                        new_item_id = item_id_map.get((normalized_db, old_item_id))
+                        new_item_id = item_id_map.get((source_key, old_item_id))
                         if not new_item_id:
                             print(f"    > ID item introuvable pour marker {old_marker_id} — ignoré")
                             continue
@@ -2065,7 +2068,7 @@ def merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map):
                                 INSERT INTO PlaylistItemMarker
                                 VALUES (?, ?, ?, ?, ?, ?)
                             """, new_row)
-                            marker_id_map[(normalized_db, old_marker_id)] = max_marker_id
+                            marker_id_map[(source_key, old_marker_id)] = new_marker_id
                             cursor.execute("""
                                 INSERT INTO MergeMapping_PlaylistItemMarker (SourceDb, OldMarkerId, NewMarkerId)
                                 VALUES (?, ?, ?)
@@ -2108,7 +2111,7 @@ def merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map):
                 print(f"\nFusion de {table_name}")
 
                 for db_path in [file1_db, file2_db]:
-                    normalized_db = os.path.normpath(db_path)
+                    source_key = get_source_key(db_path)
                     with sqlite3.connect(db_path, timeout=5) as src_conn: # Ajout de timeout
                         src_cursor = src_conn.cursor()
                         src_cursor.execute(f"SELECT * FROM {table_name}")
@@ -2117,7 +2120,7 @@ def merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map):
 
                         for row in rows:
                             old_marker_id = row[0]
-                            new_marker_id = marker_id_map.get((normalized_db, old_marker_id))
+                            new_marker_id = marker_id_map.get((source_key, old_marker_id))
                             if not new_marker_id:
                                 continue
                             new_row = (new_marker_id,) + row[1:]
@@ -2164,6 +2167,7 @@ def create_note_mapping(merged_db_path, file1_db, file2_db):
             merged_guid_map = {guid: note_id for guid, note_id in merged_cursor.fetchall() if guid}
 
         for db_path in [file1_db, file2_db]:
+            source_key = get_source_key(db_path)
             if not os.path.exists(db_path):
                 print(f"[WARN] Fichier DB manquant : {db_path}")
                 continue
@@ -2173,7 +2177,7 @@ def create_note_mapping(merged_db_path, file1_db, file2_db):
                 src_cursor.execute("SELECT NoteId, Guid FROM Note")
                 for old_note_id, guid in src_cursor.fetchall():
                     if guid and guid in merged_guid_map:
-                        mapping[(db_path, old_note_id)] = merged_guid_map[guid]
+                        mapping[(source_key, old_note_id)] = merged_guid_map[guid]
 
     except Exception as e:
         print(f"[ERREUR] create_note_mapping: {str(e)}")
