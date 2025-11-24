@@ -1923,18 +1923,31 @@ def cleanup_playlist_item_location_map(conn):
 
 
 def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map):
-    print("\n[FUSION PlaylistItemIndependentMediaMap - CORRIGÉE]")
+    print("\n[FUSION PlaylistItemIndependentMediaMap - DEBUG COMPLET]")
 
     try:
         with sqlite3.connect(merged_db_path, timeout=30) as conn:
             cursor = conn.cursor()
             conn.execute("PRAGMA busy_timeout = 5000")
 
+            # ⬇️⬇️⬇️ DEBUG COMPLET DU MAPPING ⬇️⬇️⬇️
+            print(f"🔴 DEBUG: independent_media_map a {len(independent_media_map)} entrées")
+            print(f"🔴 DEBUG: item_id_map a {len(item_id_map)} entrées")
+
+            # Afficher quelques clés pour voir le format
+            print(f"🔴 DEBUG: Format des clés dans independent_media_map:")
+            for i, (key, value) in enumerate(list(independent_media_map.items())[:3]):
+                print(f"🔴   {i}: {key} → {value}")
+
+            print(f"🔴 DEBUG: Format des clés dans item_id_map:")
+            for i, (key, value) in enumerate(list(item_id_map.items())[:3]):
+                print(f"🔴   {i}: {key} → {value}")
+
             inserted = 0
             skipped = 0
 
             for db_path in (file1_db, file2_db):
-                normalized_db = db_path  # Garder le chemin complet, pas normalized
+                print(f"🔴 TRAITEMENT DE: {db_path}")
 
                 with sqlite3.connect(db_path, timeout=5) as src_conn:
                     src_cursor = src_conn.cursor()
@@ -1945,20 +1958,24 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
                     """)
                     rows = src_cursor.fetchall()
 
-                print(f"🔴 {os.path.basename(db_path)}: {len(rows)} liaisons à traiter")
+                print(f"🔴 {len(rows)} liaisons à traiter")
 
                 for old_item_id, old_media_id, duration_ticks in rows:
-                    # ⬇️⬇️⬇️ CORRECTION : Utiliser db_path directement ⬇️⬇️⬇️
+                    # ⬇️⬇️⬇️ DEBUG DE CHAQUE RECHERCHE ⬇️⬇️⬇️
+                    print(f"🔴 RECHERCHE: PlaylistItemId={old_item_id}, IndependentMediaId={old_media_id}")
+
                     new_item_id = item_id_map.get((db_path, old_item_id))
                     new_media_id = independent_media_map.get((db_path, old_media_id))
 
+                    print(f"🔴   → new_item_id: {new_item_id}, new_media_id: {new_media_id}")
+
                     if new_item_id is None:
-                        print(f"⚠️ PlaylistItemId {old_item_id} non mappé")
+                        print(f"🔴   ❌ PlaylistItemId NON TROUVÉ")
                         skipped += 1
                         continue
 
                     if new_media_id is None:
-                        print(f"⚠️ IndependentMediaId {old_media_id} non mappé")
+                        print(f"🔴   ❌ IndependentMediaId NON TROUVÉ")
                         skipped += 1
                         continue
 
@@ -1969,11 +1986,12 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
                             VALUES (?, ?, ?)
                         """, (new_item_id, new_media_id, duration_ticks))
                         inserted += 1
+                        print(f"🔴   ✅ INSERTION RÉUSSIE")
                     except sqlite3.IntegrityError as e:
-                        print(f"🚫 Conflit ignoré: {e}")
+                        print(f"🔴   ❌ ERREUR: {e}")
                         skipped += 1
 
-            print(f"✅ PlaylistItemIndependentMediaMap: {inserted} insérés, {skipped} ignorés")
+            print(f"🔴 RAPPORT FINAL: {inserted} insérés, {skipped} ignorés")
             conn.commit()
 
     except Exception as e:
