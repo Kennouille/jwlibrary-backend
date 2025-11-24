@@ -1685,6 +1685,40 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                 traceback.print_exc()
                 return mapping
 
+            print("\n=== DEBUG CRITIQUE - ÉTAT DES LIAISONS APRÈS INSERTION ===")
+
+            # 1. Compter les PlaylistItem et leurs liaisons
+            cursor.execute("""
+                            SELECT COUNT(*) as total_items,
+                                   COUNT(DISTINCT pim.PlaylistItemId) as items_avec_media,
+                                   COUNT(DISTINCT pilm.PlaylistItemId) as items_avec_location
+                            FROM PlaylistItem pi
+                            LEFT JOIN PlaylistItemIndependentMediaMap pim ON pi.PlaylistItemId = pim.PlaylistItemId
+                            LEFT JOIN PlaylistItemLocationMap pilm ON pi.PlaylistItemId = pilm.PlaylistItemId
+                        """)
+            stats = cursor.fetchone()
+            print(f"🔴 STATS CRITIQUES:")
+            print(f"🔴   Total PlaylistItem: {stats[0]}")
+            print(f"🔴   Avec média (IndependentMedia): {stats[1]}")
+            print(f"🔴   Avec location: {stats[2]}")
+            print(f"🔴   Sans aucune liaison: {stats[0] - max(stats[1], stats[2])}")
+
+            # 2. Vérifier quelques éléments spécifiques
+            cursor.execute("""
+                            SELECT pi.PlaylistItemId, pi.Label, 
+                                   pim.IndependentMediaId IS NOT NULL as has_media,
+                                   pilm.LocationId IS NOT NULL as has_location
+                            FROM PlaylistItem pi
+                            LEFT JOIN PlaylistItemIndependentMediaMap pim ON pi.PlaylistItemId = pim.PlaylistItemId
+                            LEFT JOIN PlaylistItemLocationMap pilm ON pi.PlaylistItemId = pilm.PlaylistItemId
+                            ORDER BY pi.PlaylistItemId
+                            LIMIT 10
+                        """)
+            sample = cursor.fetchall()
+            print(f"🔴 EXEMPLES (premiers 10):")
+            for item in sample:
+                print(f"🔴   ID:{item[0]} '{item[1][:30] if item[1] else ''}...' media:{item[2]} location:{item[3]}")
+
             # DEBUG APRÈS LA BOUCLE
             cursor.execute("SELECT COUNT(*) FROM PlaylistItem")
             final_count = cursor.fetchone()[0]
@@ -1705,6 +1739,38 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                 print(f"🔴 PROBLÈME: {len(problematic_thumbnails)} thumbnails sans média correspondant")
                 for item_id, thumb_path in problematic_thumbnails[:3]:
                     print(f"   - PlaylistItem {item_id}: {thumb_path}")
+
+            # ⬇️⬇️⬇️ AJOUTEZ ICI LE NOUVEAU CODE DE DEBUG ⬇️⬇️⬇️
+            print("\n=== DEBUG CRITIQUE - ÉTAT DES LIAISONS ===")
+            cursor.execute("""
+                    SELECT COUNT(*) as total_items,
+                           COUNT(DISTINCT pim.PlaylistItemId) as items_avec_media,
+                           COUNT(DISTINCT pilm.PlaylistItemId) as items_avec_location
+                    FROM PlaylistItem pi
+                    LEFT JOIN PlaylistItemIndependentMediaMap pim ON pi.PlaylistItemId = pim.PlaylistItemId
+                    LEFT JOIN PlaylistItemLocationMap pilm ON pi.PlaylistItemId = pilm.PlaylistItemId
+                """)
+            stats = cursor.fetchone()
+            print(f"🔴 STATS CRITIQUES DANS merge_playlist_items:")
+            print(f"🔴   Total PlaylistItem: {stats[0]}")
+            print(f"🔴   Avec média: {stats[1]}")
+            print(f"🔴   Avec location: {stats[2]}")
+
+            # Vérifier quelques éléments spécifiques
+            cursor.execute("""
+                    SELECT pi.PlaylistItemId, pi.Label, 
+                           pim.IndependentMediaId IS NOT NULL as has_media,
+                           pilm.LocationId IS NOT NULL as has_location
+                    FROM PlaylistItem pi
+                    LEFT JOIN PlaylistItemIndependentMediaMap pim ON pi.PlaylistItemId = pim.PlaylistItemId
+                    LEFT JOIN PlaylistItemLocationMap pilm ON pi.PlaylistItemId = pilm.PlaylistItemId
+                    ORDER BY pi.PlaylistItemId
+                    LIMIT 10
+                """)
+            sample = cursor.fetchall()
+            print(f"🔴 EXEMPLES (premiers 10):")
+            for item in sample:
+                print(f"🔴   ID:{item[0]} '{item[1][:30]}...' media:{item[2]} location:{item[3]}")
 
             print("🔴 DEBUG: Avant commit")
             conn.commit()
@@ -1889,34 +1955,34 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
                 if rows:
                     print(f"🔴   Exemple: PlaylistItemId={rows[0][0]}, IndependentMediaId={rows[0][1]}")
 
-            for old_item_id, old_media_id, duration_ticks in rows:
-                    new_item_id = item_id_map.get((normalized_db, old_item_id))
-                    new_media_id = independent_media_map.get((normalized_db, old_media_id))
+                for old_item_id, old_media_id, duration_ticks in rows:
+                        new_item_id = item_id_map.get((normalized_db, old_item_id))
+                        new_media_id = independent_media_map.get((normalized_db, old_media_id))
 
-                    if new_item_id is None:
-                        print(f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id} dans {normalized_db}")
-                        skipped += 1
-                        continue
+                        if new_item_id is None:
+                            print(f"⚠️ Mapping manquant pour PlaylistItemId={old_item_id} dans {normalized_db}")
+                            skipped += 1
+                            continue
 
-                    if new_media_id is None:
-                        print(f"⚠️ Mapping manquant pour IndependentMediaId={old_media_id} dans {normalized_db}")
-                        skipped += 1
-                        continue
+                        if new_media_id is None:
+                            print(f"⚠️ Mapping manquant pour IndependentMediaId={old_media_id} dans {normalized_db}")
+                            skipped += 1
+                            continue
 
-                    try:
-                        cursor.execute("""
-                            INSERT OR IGNORE INTO PlaylistItemIndependentMediaMap
-                            (PlaylistItemId, IndependentMediaId, DurationTicks)
-                            VALUES (?, ?, ?)
-                        """, (new_item_id, new_media_id, duration_ticks))
-                        inserted += 1
-                        if "file1" in normalized_db:
-                            file1_inserted += 1
-                        else:
-                            file2_inserted += 1
-                    except sqlite3.IntegrityError as e:
-                        print(f"🚫 Erreur intégrité : {e}")
-                        skipped += 1
+                        try:
+                            cursor.execute("""
+                                INSERT OR IGNORE INTO PlaylistItemIndependentMediaMap
+                                (PlaylistItemId, IndependentMediaId, DurationTicks)
+                                VALUES (?, ?, ?)
+                            """, (new_item_id, new_media_id, duration_ticks))
+                            inserted += 1
+                            if "file1" in normalized_db:
+                                file1_inserted += 1
+                            else:
+                                file2_inserted += 1
+                        except sqlite3.IntegrityError as e:
+                            print(f"🚫 Erreur intégrité : {e}")
+                            skipped += 1
 
             # ⬇️⬇️⬇️ AJOUTER CE RAPPORT FINAL ⬇️⬇️⬇️
             print(f"🔴 RAPPORT FINAL IndependentMediaMap:")
@@ -2545,6 +2611,7 @@ def merge_data():
             # 1. Fusionner TOUS les PlaylistItems
             item_id_map = merge_playlist_items(merged_db_path, file1_db, file2_db)
             print(f"🔴 DEBUG CRITIQUE: item_id_map size = {len(item_id_map)}")
+
             if item_id_map:
                 sample = list(item_id_map.items())[:5]
                 print(f"🔴 Échantillon item_id_map: {sample}")
@@ -2552,6 +2619,27 @@ def merge_data():
                 print("🔴 CATASTROPHE: item_id_map est VIDE!")
 
             print(f"✅ PlaylistItems fusionnés: {len(item_id_map)} items")
+
+            print("\n=== DEBUG POST merge_playlist_items ===")
+            with sqlite3.connect(merged_db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM PlaylistItem")
+                total_items = cursor.fetchone()[0]
+                print(f"🔴 PlaylistItem dans DB: {total_items}")
+
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT PlaylistItemId) 
+                    FROM PlaylistItemLocationMap
+                """)
+                items_with_location = cursor.fetchone()[0]
+                print(f"🔴 PlaylistItem avec location: {items_with_location}")
+
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT PlaylistItemId) 
+                    FROM PlaylistItemIndependentMediaMap
+                """)
+                items_with_media = cursor.fetchone()[0]
+                print(f"🔴 PlaylistItem avec média: {items_with_media}")
 
             # 2. Fusionner les autres tables playlist AVEC DEBUG
             try:
