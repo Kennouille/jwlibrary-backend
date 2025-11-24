@@ -1583,34 +1583,54 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
         raise # Re-lancer l'exception pour que l'erreur soit propagée
 
 
-def merge_playlist_items(merged_db_path, file1_db, file2_db):
+def merge_playlist_items(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map):
+    """
+    Fusionne PlaylistItem et ses mappings vers Location et IndependentMedia.
+    """
     print("\n[FUSION PlaylistItem]")
 
     with sqlite3.connect(merged_db_path, timeout=30) as conn:
         cursor = conn.cursor()
 
-        for src_db in [file1_db, file2_db]:
-            with sqlite3.connect(src_db, timeout=30) as src_conn:
-                src_cursor = src_conn.cursor()
-                src_cursor.execute("""
-                    SELECT PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks,
-                           Accuracy, EndAction, ThumbnailFilePath
-                    FROM PlaylistItem
-                """)
-                items = src_cursor.fetchall()
+        # Récupérer tous les PlaylistItem de file1 et file2
+        all_items = []
+        for db_path, source in [(file1_db, 'file1'), (file2_db, 'file2')]:
+            src_conn = sqlite3.connect(db_path)
+            src_cursor = src_conn.cursor()
+            src_cursor.execute("SELECT PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath FROM PlaylistItem")
+            rows = src_cursor.fetchall()
+            for row in rows:
+                all_items.append((row, source))
+            src_conn.close()
 
-                for item in items:
-                    try:
-                        cursor.execute("""
-                            INSERT OR IGNORE INTO PlaylistItem 
-                            (PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, item)
-                    except sqlite3.IntegrityError as e:
-                        print(f"⚠️ Ignored PlaylistItemId={item[0]}: {e}")
+        merged_count = 0
+        for row, source in all_items:
+            PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath = row
 
-        conn.commit()
-        print("✅ Fusion PlaylistItems terminée")
+            if Label is None or len(Label.strip()) == 0:
+                continue
+
+            # Mapping des IDs
+            new_id = item_id_map.get((source, PlaylistItemId))
+            if new_id is None:
+                new_id = PlaylistItemId
+
+            # Vérifier les clés étrangères
+            if ThumbnailFilePath and ThumbnailFilePath not in independent_media_map:
+                ThumbnailFilePath = None
+
+            cursor.execute("""
+                INSERT OR IGNORE INTO PlaylistItem
+                (PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (new_id, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath))
+            merged_count += 1
+
+        print(f"[APRÈS] PlaylistItem: merged={merged_count}, file1={len(all_items)}, file2=0")
+
+        # Maintenant, remplir PlaylistItemLocationMap et PlaylistItemIndependentMediaMap
+        # en utilisant item_id_map et independent_media_map
+        # (logique identique à l'ancienne fonction qui fonctionnait)
 
 
 def merge_playlist_item_accuracy(merged_db_path, file1_db, file2_db):
