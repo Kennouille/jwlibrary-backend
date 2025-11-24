@@ -2380,6 +2380,32 @@ def merge_data():
                 sample = list(independent_media_map.items())[:3]
                 print(f"Échantillon IndependentMedia: {sample}")
 
+            # ⬇️⬇️⬇️ AJOUTEZ EXACTEMENT ICI ⬇️⬇️⬇️
+            print(f"\n🔴 URGENT: VÉRIFICATION DU MAPPING IndependentMedia")
+            print(f"🔴 Total entries in independent_media_map: {len(independent_media_map)}")
+
+            # Afficher TOUS les IDs de file2 dans le mapping
+            file2_ids = []
+            for (source, old_id), new_id in independent_media_map.items():
+                if "file2" in source:
+                    file2_ids.append(old_id)
+
+            print(f"🔴 IDs de file2 dans independent_media_map: {sorted(file2_ids)[:20]}...")  # Affiche les 20 premiers
+            print(f"🔴 Total IDs file2 dans le mapping: {len(file2_ids)}")
+
+            # Vérifier quelques IDs manquants spécifiques
+            missing_ids = [319, 323, 280, 282, 284]
+            print(f"🔴 Vérification IDs manquants:")
+            for missing_id in missing_ids:
+                found = False
+                for (source, old_id), new_id in independent_media_map.items():
+                    if old_id == missing_id and "file2" in source:
+                        print(f"🔴   {missing_id} → TROUVÉ: {new_id}")
+                        found = True
+                        break
+                if not found:
+                    print(f"🔴   {missing_id} → NON TROUVÉ")
+
             time.sleep(1)  # Pause d'1 seconde
 
             # ⬇️⬇️⬇️ GARDEZ SEULEMENT CE DEBUG PROPRE ⬇️⬇️⬇️
