@@ -1772,74 +1772,57 @@ def merge_playlist_item_accuracy(merged_db_path, file1_db, file2_db):
 
 
 def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map):
-    print("\n[FUSION PlaylistItemLocationMap - DEBUG]")
-    print(f"🔴 item_id_map size: {len(item_id_map)}")
-    print(f"🔴 location_id_map size: {len(location_id_map)}")
+    print("\n[FUSION PlaylistItemLocationMap]")
 
     try:
         with sqlite3.connect(merged_db_path, timeout=30) as conn:
             cursor = conn.cursor()
             conn.execute("PRAGMA busy_timeout = 5000")
 
-            # cursor.execute("DELETE FROM PlaylistItemLocationMap")
-            print("🗑️ Table PlaylistItemLocationMap vidée")
-
             inserted = 0
             skipped = 0
 
-            # 🔥 Traitement identique pour file1 et file2
             for db_path in (file1_db, file2_db):
-                normalized = os.path.normpath(db_path)
+                src = os.path.normpath(db_path)
 
-                with sqlite3.connect(normalized, timeout=5) as src:
-                    src_cursor = src.cursor()
-                    src_cursor.execute("""
-                        SELECT PlaylistItemId, LocationId, MajorMultimediaType, BaseDurationTicks
+                with sqlite3.connect(src) as src_conn:
+                    cur = src_conn.cursor()
+                    cur.execute("""
+                        SELECT PlaylistItemId, LocationId
                         FROM PlaylistItemLocationMap
-                        ORDER BY PlaylistItemId, LocationId
+                        ORDER BY PlaylistItemId
                     """)
-                    rows = src_cursor.fetchall()
+                    rows = cur.fetchall()
 
-                print(f"{len(rows)} lignes trouvées dans {os.path.basename(db_path)}")
+                for old_item, old_loc in rows:
 
-                for old_item_id, old_loc_id, mm_type, duration in rows:
+                    # ⭐ MAPPING CORRECT
+                    new_item = item_id_map.get((src, old_item))
+                    new_loc  = location_id_map.get((src, old_loc))
 
-                    # 🔥 mapping cohérent
-                    new_item_id = item_id_map.get((normalized, old_item_id))
-                    new_loc_id  = location_id_map.get((normalized, old_loc_id))
-
-                    if new_item_id is None:
-                        print(f"⚠️ PlaylistItemId non mappé ({old_item_id}) dans {normalized}")
+                    if new_item is None:
+                        print(f"❌ ITEM MANQUANT: {old_item} depuis {src}")
                         skipped += 1
                         continue
 
-                    if new_loc_id is None:
-                        print(f"⚠️ LocationId non mappé ({old_loc_id}) dans {normalized}")
+                    if new_loc is None:
+                        print(f"❌ LOCATION MANQUANTE: {old_loc} depuis {src}")
                         skipped += 1
                         continue
 
-                    try:
-                        cursor.execute("""
-                            INSERT OR IGNORE INTO PlaylistItemLocationMap
-                            (PlaylistItemId, LocationId, MajorMultimediaType, BaseDurationTicks)
-                            VALUES (?, ?, ?, ?)
-                        """, (new_item_id, new_loc_id, mm_type, duration))
-                        inserted += 1
+                    cursor.execute("""
+                        INSERT OR IGNORE INTO PlaylistItemLocationMap
+                        (PlaylistItemId, LocationId)
+                        VALUES (?, ?)
+                    """, (new_item, new_loc))
 
-                    except sqlite3.IntegrityError as e:
-                        print(f"⚠️ Conflit ignoré: {e}")
-                        skipped += 1
+                    inserted += 1
 
             conn.commit()
-
-            print(f"📊 PlaylistItemLocationMap : {inserted} insérés, {skipped} ignorés")
-
-            cursor.execute("SELECT COUNT(*) FROM PlaylistItemLocationMap")
-            print(f"🔍 Total final = {cursor.fetchone()[0]}")
+            print(f"✔ PlaylistItemLocationMap fusionnée: {inserted} insérés, {skipped} ignorés")
 
     except Exception as e:
-        print(f"❌ Erreur critique merge_playlist_item_location_map: {e}")
-        traceback.print_exc()
+        print("❌ ERREUR dans merge_playlist_item_location_map :", e)
         raise
 
 
