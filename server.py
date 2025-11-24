@@ -17,8 +17,21 @@ import time
 
 
 def get_source_key(db_path):
-    """Retourne une clé cohérente pour tous les mappings"""
-    return os.path.normpath(db_path)
+    """Retourne une clé cohérente pour tous les mappings - Version ULTIME"""
+    # Normalisation AGGRESSIVE pour garantir l'uniformité
+    normalized = os.path.normpath(db_path)
+
+    # Conversion en minuscules pour éviter les problèmes de casse
+    normalized = normalized.lower()
+
+    # Conversion des backslashes en forward slashes (Windows → Unix)
+    normalized = normalized.replace('\\', '/')
+
+    # Suppression des chemins relatifs et résolution
+    normalized = os.path.abspath(normalized)
+
+    print(f"🔑 NORMALISATION: '{db_path}' → '{normalized}'")
+    return normalized
 
 
 app = Flask(__name__)
@@ -419,15 +432,15 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
                     cursor.execute("""
                         SELECT NewID FROM MergeMapping_Bookmark
                         WHERE SourceDb = ? AND OldID = ?
-                    """, (db_path, old_id))
+                    """, (source_key, old_id))
                     res = cursor.fetchone()
                     if res:
                         new_id = res[0] # <--- ASSIGNATION : new_id est défini ici si déjà mappé
                         mapping[(source_key, old_id)] = new_id
                         continue
 
-                    new_loc_id = location_id_map.get((db_path, loc_id), loc_id)
-                    new_pub_loc_id = location_id_map.get((db_path, pub_loc_id), pub_loc_id)
+                    new_loc_id = location_id_map.get((source_key, loc_id), loc_id)
+                    new_pub_loc_id = location_id_map.get((source_key, pub_loc_id), pub_loc_id)
 
                     cursor.execute("SELECT 1 FROM Location WHERE LocationId IN (?, ?)", (new_loc_id, new_pub_loc_id))
                     if len(cursor.fetchall()) != 2:
@@ -472,11 +485,11 @@ def merge_bookmarks(merged_db_path, file1_db, file2_db, location_id_map):
 
                     # Seule cette section s'exécute si new_id a été défini par l'un des chemins ci-dessus
                     if new_id is not None: # Vérification supplémentaire pour la robustesse
-                        mapping[(db_path, old_id)] = new_id
+                        mapping[(source_key, old_id)] = new_id
                         cursor.execute("""
                             INSERT INTO MergeMapping_Bookmark (SourceDb, OldID, NewID)
                             VALUES (?, ?, ?)
-                        """, (db_path, old_id, new_id))
+                        """, (source_key, old_id, new_id))
                     else:
                         print(f"❌ ERREUR: new_id n'a pas été défini pour Bookmark OldID {old_id} de {db_path}. Ceci ne devrait pas arriver.")
 
@@ -761,7 +774,8 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
 
         # Réinsertion propre
         for db_path, loc_id, tag, value in all_rows:
-            mapped_loc = location_id_map.get((db_path, loc_id))
+            source_key = get_source_key(db_path)
+            mapped_loc = location_id_map.get((source_key, loc_id))
             if mapped_loc is None:
                 print(f"❌ LocationId {loc_id} (depuis {db_path}) non mappé — ligne ignorée")
                 missing_count += 1
@@ -776,7 +790,7 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
                 cursor.execute("""
                     INSERT INTO MergeMapping_InputField (SourceDb, OldLocationId, TextTag, Value)
                     VALUES (?, ?, ?, ?)
-                """, (db_path, loc_id, tag, value))
+                """, (source_key, loc_id, tag, value))
             except sqlite3.IntegrityError as e:
                 print(f"❌ Conflit à l’insertion (Loc={mapped_loc}, Tag={tag}): {e}")
 
@@ -1092,15 +1106,15 @@ def merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_
                         cursor.execute("""
                             SELECT NewUserMarkId FROM MergeMapping_UserMark
                             WHERE SourceDb = ? AND OldUserMarkId = ?
-                        """, (db_path, old_um_id))
+                        """, (source_key, old_um_id))
                         res = cursor.fetchone()
                         if res:
-                            mapping[(db_path, old_um_id)] = res[0]
+                            mapping[(source_key, old_um_id)] = res[0]
                             mapping[guid] = res[0]
                             continue
 
                         # Appliquer mapping LocationId
-                        new_loc = location_id_map.get((db_path, loc_id), loc_id) if loc_id is not None else None
+                        new_loc = location_id_map.get((source_key, loc_id), loc_id) if loc_id is not None else None
 
                         # Vérifier si le GUID existe déjà et récupérer toutes ses données
                         cursor.execute("""
@@ -1144,7 +1158,7 @@ def merge_usermark_from_sources(merged_db_path, file1_db, file2_db, location_id_
                         cursor.execute("""
                             INSERT OR REPLACE INTO MergeMapping_UserMark (SourceDb, OldUserMarkId, NewUserMarkId)
                             VALUES (?, ?, ?)
-                        """, (db_path, old_um_id, new_um_id))
+                        """, (source_key, old_um_id, new_um_id))
 
             conn.commit() # Commit de toutes les insertions/mises à jour dans la base fusionnée
         print("Fusion UserMark terminée (idempotente).")
@@ -1482,7 +1496,7 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                     src_cursor = src_conn.cursor()
                     src_cursor.execute("SELECT TagId, Type, Name FROM Tag")
                     for tag_id, tag_type, tag_name in src_cursor.fetchall():
-                        cursor.execute("SELECT NewTagId FROM MergeMapping_Tag WHERE SourceDb = ? AND OldTagId = ?", (db_path, tag_id))
+                        cursor.execute("SELECT NewTagId FROM MergeMapping_Tag WHERE SourceDb = ? AND OldTagId = ?", (source_key, tag_id))
                         res = cursor.fetchone()
                         if res:
                             tag_id_map[(db_path, tag_id)] = res[0]
@@ -1498,7 +1512,7 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                             cursor.execute("INSERT INTO Tag (TagId, Type, Name) VALUES (?, ?, ?)", (new_tag_id, tag_type, tag_name))
 
                         tag_id_map[(source_key, tag_id)] = new_tag_id
-                        cursor.execute("INSERT INTO MergeMapping_Tag (SourceDb, OldTagId, NewTagId) VALUES (?, ?, ?)", (db_path, tag_id, new_tag_id))
+                        cursor.execute("INSERT INTO MergeMapping_Tag (SourceDb, OldTagId, NewTagId) VALUES (?, ?, ?)", (source_key, tag_id, new_tag_id))
 
             # Fusion des TagMap
             cursor.execute("SELECT COALESCE(MAX(TagMapId), 0) FROM TagMap")
@@ -1512,13 +1526,13 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                     rows = src_cursor.fetchall()
 
                     for old_tagmap_id, playlist_item_id, location_id, note_id, old_tag_id, position in rows:
-                        new_tag_id = tag_id_map.get((db_path, old_tag_id))
+                        new_tag_id = tag_id_map.get((source_key, old_tag_id))
                         if new_tag_id is None:
                             continue
 
-                        new_note_id = note_mapping.get((db_path, note_id)) if note_id else None
-                        new_location_id = location_id_map.get((db_path, location_id)) if location_id else None
-                        new_playlist_item_id = item_id_map.get((db_path, playlist_item_id)) if playlist_item_id else None
+                        new_note_id = note_mapping.get((source_key, note_id)) if note_id else None
+                        new_location_id = location_id_map.get((source_key, location_id)) if location_id else None
+                        new_playlist_item_id = item_id_map.get((source_key, playlist_item_id)) if playlist_item_id else None
 
                         non_null_refs = sum(x is not None for x in [new_note_id, new_location_id, new_playlist_item_id])
                         if non_null_refs != 1:
@@ -1566,9 +1580,9 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                         cursor.execute("""
                             INSERT INTO MergeMapping_TagMap (SourceDb, OldTagMapId, NewTagMapId)
                             VALUES (?, ?, ?)
-                        """, (db_path, old_tagmap_id, new_tagmap_id))
+                        """, (source_key, old_tagmap_id, new_tagmap_id))
 
-                        tagmap_id_map[(source_key, old_tagmap_id)] = new_tagmap_id
+                        tagmap_id_map[(source_key, old_tagmap_id)] = existing[0]
 
             conn.commit() # Le commit est maintenant à l'intérieur du bloc 'with conn:'
         print("Fusion des Tags et TagMap terminée (idempotente).")
@@ -1856,7 +1870,7 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
             for db_path in (file1_db, file2_db):
                 source_key = get_source_key(db_path)
 
-                with sqlite3.connect(normalized, timeout=5) as src:
+                with sqlite3.connect(db_path, timeout=5) as src:
                     src_cursor = src.cursor()
                     src_cursor.execute("""
                         SELECT PlaylistItemId, LocationId, MajorMultimediaType, BaseDurationTicks
@@ -1874,12 +1888,12 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
                     new_loc_id  = location_id_map.get((source_key, old_loc_id))
 
                     if new_item_id is None:
-                        print(f"⚠️ PlaylistItemId non mappé ({old_item_id}) dans {normalized}")
+                        print(f"⚠️ PlaylistItemId non mappé ({old_item_id}) dans {source_key}")
                         skipped += 1
                         continue
 
                     if new_loc_id is None:
-                        print(f"⚠️ LocationId non mappé ({old_loc_id}) dans {normalized}")
+                        print(f"⚠️ LocationId non mappé ({old_loc_id}) dans {source_key}")
                         skipped += 1
                         continue
 
@@ -2063,7 +2077,7 @@ def merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map):
                                 INSERT INTO PlaylistItemMarker
                                 VALUES (?, ?, ?, ?, ?, ?)
                             """, new_row)
-                            marker_id_map[(source_key, old_marker_id)] = new_marker_id
+                            marker_id_map[(source_key, old_marker_id)] = max_marker_id
                             cursor.execute("""
                                 INSERT INTO MergeMapping_PlaylistItemMarker (SourceDb, OldMarkerId, NewMarkerId)
                                 VALUES (?, ?, ?)
