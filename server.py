@@ -1796,17 +1796,17 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
 
                 for old_item, old_loc in rows:
 
-                    # ⭐ MAPPING CORRECT
-                    new_item = item_id_map.get((src, old_item))
-                    new_loc  = location_id_map.get((src, old_loc))
+                    # ⭐ MAPPING CORRECT — FIX
+                    new_item = item_id_map.get(old_item)
+                    new_loc  = location_id_map.get(old_loc)
 
                     if new_item is None:
-                        print(f"❌ ITEM MANQUANT: {old_item} depuis {src}")
+                        print(f"❌ ITEM MANQUANT (pas mappé): {old_item} depuis {src}")
                         skipped += 1
                         continue
 
                     if new_loc is None:
-                        print(f"❌ LOCATION MANQUANTE: {old_loc} depuis {src}")
+                        print(f"❌ LOCATION MANQUANTE (pas mappée): {old_loc} depuis {src}")
                         skipped += 1
                         continue
 
