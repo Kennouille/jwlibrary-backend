@@ -1583,127 +1583,49 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
         raise # Re-lancer l'exception pour que l'erreur soit propagée
 
 
-def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
+def merge_playlist_items(merged_db_path, file1_db, file2_db):
     """
-    Fusionne PlaylistItem de façon idempotente.
+    Fusionne les PlaylistItems de file1 et file2 dans merged_db_path.
+    Assure que les PlaylistItems sont correctement liés à:
+        - PlaylistItemAccuracy (Accuracy)
+        - IndependentMedia (ThumbnailFilePath)
     """
-    print("\n[FUSION PLAYLISTITEMS - DÉBUT]")
-    print(f"🔴 DEBUG: merge_playlist_items appelée avec {merged_db_path}")
+    print("\n[FUSION PlaylistItem]")
 
-    mapping = {}
-    try:
-        with sqlite3.connect(merged_db_path, timeout=30) as conn:
-            print(f"🔴 DEBUG: Connexion DB réussie")
-            conn.execute("PRAGMA busy_timeout = 10000")
-            cursor = conn.cursor()
+    with sqlite3.connect(merged_db_path, timeout=30) as conn:
+        cursor = conn.cursor()
 
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS MergeMapping_PlaylistItem (
-                    SourceDb TEXT,
-                    OldItemId INTEGER,
-                    NewItemId INTEGER,
-                    PRIMARY KEY (SourceDb, OldItemId)
-                )
-            """)
-            conn.commit()
+        # Récupération des PlaylistItems depuis file1
+        cursor.execute("ATTACH DATABASE ? AS f1", (file1_db,))
+        cursor.execute("""
+            INSERT INTO PlaylistItem (PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
+            SELECT pi.PlaylistItemId, pi.Label, pi.StartTrimOffsetTicks, pi.EndTrimOffsetTicks,
+                   pi.Accuracy, pi.EndAction, pi.ThumbnailFilePath
+            FROM f1.PlaylistItem pi
+            LEFT JOIN PlaylistItemAccuracy a ON pi.Accuracy = a.PlaylistItemAccuracyId
+            LEFT JOIN IndependentMedia im ON pi.ThumbnailFilePath = im.FilePath
+            WHERE pi.PlaylistItemId NOT IN (SELECT PlaylistItemId FROM PlaylistItem)
+        """)
+        print("[INFO] PlaylistItems de file1 insérés")
 
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='PlaylistItem'")
-            if not cursor.fetchone():
-                print("[ERREUR] La table PlaylistItem n'existe pas dans la DB fusionnée.")
-                return {}
+        # Récupération des PlaylistItems depuis file2
+        cursor.execute("ATTACH DATABASE ? AS f2", (file2_db,))
+        cursor.execute("""
+            INSERT INTO PlaylistItem (PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
+            SELECT pi.PlaylistItemId, pi.Label, pi.StartTrimOffsetTicks, pi.EndTrimOffsetTicks,
+                   pi.Accuracy, pi.EndAction, pi.ThumbnailFilePath
+            FROM f2.PlaylistItem pi
+            LEFT JOIN PlaylistItemAccuracy a ON pi.Accuracy = a.PlaylistItemAccuracyId
+            LEFT JOIN IndependentMedia im ON pi.ThumbnailFilePath = im.FilePath
+            WHERE pi.PlaylistItemId NOT IN (SELECT PlaylistItemId FROM PlaylistItem)
+        """)
+        print("[INFO] PlaylistItems de file2 insérés")
 
-            def safe_text(val):
-                return val if val is not None else ""
+        cursor.execute("DETACH DATABASE f1")
+        cursor.execute("DETACH DATABASE f2")
 
-            def safe_number(val):
-                return val if val is not None else 0
-
-            def read_playlist_items(db_path):
-                with sqlite3.connect(db_path, timeout=5) as src_conn:
-                    cur = src_conn.cursor()
-                    tables = [row[0].lower() for row in cur.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table'"
-                    ).fetchall()]
-
-                    possible_tables = [
-                        "playlistitem",
-                        "playlistitems",
-                        "playlistitem2",
-                        "zplaylistitem"
-                    ]
-
-                    table = next((t for t in possible_tables if t in tables), None)
-                    if table is None:
-                        print(f"❌ Aucune table PlaylistItem trouvée dans {db_path}")
-                        return []
-
-                    print(f"🔵 Lecture PlaylistItem depuis table: {table} ({db_path})")
-
-                    cur.execute(f"""
-                        SELECT PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks,
-                               Accuracy, EndAction, ThumbnailFilePath
-                        FROM {table}
-                    """)
-
-                    return [(db_path,) + row for row in cur.fetchall()]
-
-            all_items = read_playlist_items(file1_db) + read_playlist_items(file2_db)
-            total_items = len(all_items)
-            print(f"Total playlist items lus : {total_items}")
-
-            for i, item in enumerate(all_items):
-                raw_db_source = item[0]
-                db_source = os.path.normpath(raw_db_source)
-                old_id, label, start_trim, end_trim, accuracy, end_action, thumb_path = item[1:]
-
-                norm_label = safe_text(label)
-                norm_start = safe_number(start_trim)
-                norm_end = safe_number(end_trim)
-                norm_thumb = safe_text(thumb_path)
-
-                cursor.execute(
-                    "SELECT NewItemId FROM MergeMapping_PlaylistItem WHERE SourceDb = ? AND OldItemId = ?",
-                    (db_source, old_id))
-                res = cursor.fetchone()
-                if res:
-                    new_id = res[0]
-                    mapping[(db_source, old_id)] = new_id
-                    continue
-
-                try:
-                    cursor.execute("""
-                        INSERT INTO PlaylistItem
-                        (Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (norm_label, norm_start, norm_end, accuracy, end_action, norm_thumb))
-                    new_id = cursor.lastrowid
-                except sqlite3.IntegrityError as e:
-                    print(f"❌ ERREUR insertion PlaylistItem OldID {old_id}: {e}")
-                    continue
-
-                cursor.execute("""
-                    INSERT INTO MergeMapping_PlaylistItem (SourceDb, OldItemId, NewItemId)
-                    VALUES (?, ?, ?)
-                """, (db_source, old_id, new_id))
-                mapping[(db_source, old_id)] = new_id
-
-                if i % 50 == 0:
-                    print(f"🔴 PlaylistItems traités: {i}/{total_items}")
-
-            cursor.execute("SELECT COUNT(*) FROM PlaylistItem")
-            final_count = cursor.fetchone()[0]
-            print(f"🔴 DEBUG: Nombre FINAL de PlaylistItem dans la base = {final_count}")
-
-            conn.commit()
-            print(f"Total PlaylistItems mappés: {len(mapping)}")
-
-        return mapping
-
-    except Exception as e:
-        print(f"❌ Erreur critique dans merge_playlist_items: {e}")
-        import traceback
-        traceback.print_exc()
-        raise
+        conn.commit()
+        print("✅ Fusion PlaylistItems terminée")
 
 
 def merge_playlist_item_accuracy(merged_db_path, file1_db, file2_db):
