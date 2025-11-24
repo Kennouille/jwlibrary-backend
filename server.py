@@ -13,6 +13,8 @@ import io
 import traceback
 import threading
 import hashlib # Nécessaire pour hashlib.sha256
+import json
+import os
 
 app = Flask(__name__)
 app.config['PROPAGATE_EXCEPTIONS'] = True
@@ -1212,14 +1214,13 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
     print("\n[FUSION LOCATION - IDÉMPOTENTE]")
 
     def read_locations(db_path):
+        normalized = os.path.normpath(db_path)
         with sqlite3.connect(db_path) as conn:
             cur = conn.cursor()
-            cur.execute("""
-                SELECT LocationId, BookNumber, ChapterNumber, DocumentId, Track,
-                       IssueTagNumber, KeySymbol, MepsLanguage, Type, Title
-                FROM Location
-            """)
-            return [(db_path,) + row for row in cur.fetchall()]
+            cur.execute(""" SELECT LocationId, BookNumber, ChapterNumber, DocumentId, Track,
+                                   IssueTagNumber, KeySymbol, MepsLanguage, Type, Title
+                            FROM Location """)
+            return [(normalized,) + row for row in cur.fetchall()]
 
     # Lecture combinée des deux fichiers
     locations = read_locations(file1_db) + read_locations(file2_db)
@@ -1639,7 +1640,8 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
 
             try:
                 for i, item in enumerate(all_items):
-                    db_source = item[0]
+                    raw_db_source = item[0]
+                    db_source = os.path.normpath(raw_db_source)  # <-- NORMALISATION
                     old_id, label, start_trim, end_trim, accuracy, end_action, thumb_path = item[1:]
 
                     norm_label = safe_text(label)
@@ -1649,16 +1651,17 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
 
                     key = generate_full_key(norm_label, norm_start, norm_end, accuracy, end_action, norm_thumb)
 
+                    # Cherche par SourceDb normalisé
                     cursor.execute(
                         "SELECT NewItemId FROM MergeMapping_PlaylistItem WHERE SourceDb = ? AND OldItemId = ?",
                         (db_source, old_id))
                     res = cursor.fetchone()
                     if res:
                         new_id = res[0]
-                        mapping[(db_source, old_id)] = new_id
+                        mapping[(db_source, old_id)] = new_id  # <-- clé normalisée
                         continue
 
-                    # ⬇️⬇️⬇️ TOUJOURS INSÉRER, PAS DE DÉDUPLICATION ⬇️⬇️⬇️
+                    # ⬇️ INSÉRER (pas de déduplication)
                     try:
                         cursor.execute("""
                             INSERT INTO PlaylistItem
@@ -1667,12 +1670,13 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
                         """, (label, start_trim, end_trim, accuracy, end_action, thumb_path))
                         new_id = cursor.lastrowid
                         if i % 50 == 0:  # Tous les 50 items
-                            print(f"🔴 PlaylistItems traités: {i}/{total_items}")  # ⬅️ MAINTENANT total_items existe
+                            print(f"🔴 PlaylistItems traités: {i}/{total_items}")
                     except sqlite3.IntegrityError as e:
                         print(f"🔴 ERREUR CRITIQUE insertion PlaylistItem OldID {old_id}: {e}")
                         print(f"🔴 DONNÉES: label='{label}', thumb='{thumb_path}'")
                         continue
 
+                    # Stocke le mapping avec la même forme de SourceDb normalisé
                     cursor.execute("""
                         INSERT INTO MergeMapping_PlaylistItem (SourceDb, OldItemId, NewItemId)
                         VALUES (?, ?, ?)
@@ -1794,21 +1798,14 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
                     """)
                     rows = cur.fetchall()
 
-                print(f"📌 DEBUG {src}: {len(rows)} lignes trouvées dans PlaylistItemLocationMap")
-                if rows:
-                    print("   → Exemple:", rows[:5])
-
                 for old_item, old_loc in rows:
-
-                    # ⭐ VERSION CORRECTE : mapping composite (src, old_id)
-                    new_item = item_id_map.get((src, old_item))
-                    new_loc  = location_id_map.get((src, old_loc))
+                    new_item = item_id_map.get((src, old_item))  # <- tuple (src, id)
+                    new_loc = location_id_map.get((src, old_loc))  # <- tuple (src, id)
 
                     if new_item is None:
                         print(f"❌ ITEM MANQUANT (pas mappé): {old_item} depuis {src}")
                         skipped += 1
                         continue
-
                     if new_loc is None:
                         print(f"❌ LOCATION MANQUANTE (pas mappée): {old_loc} depuis {src}")
                         skipped += 1
@@ -1819,7 +1816,6 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
                         (PlaylistItemId, LocationId)
                         VALUES (?, ?)
                     """, (new_item, new_loc))
-
                     inserted += 1
 
             conn.commit()
@@ -3175,8 +3171,7 @@ MERGE_STATS_FILE = "merge_stats.json"
 STATS_LOCK = threading.Lock()
 
 
-import json
-import os
+
 
 
 def load_merge_stats():
