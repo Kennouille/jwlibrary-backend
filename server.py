@@ -2673,6 +2673,45 @@ def merge_data():
                 traceback.print_exc()
                 tag_id_map, tagmap_id_map = {}, {}
 
+            print(f"\n🔴 DEBUG CRITIQUE - ÉTAT DES TAGMAP POUR PLAYLISTS:")
+            with sqlite3.connect(merged_db_path) as conn:
+                cursor = conn.cursor()
+
+                # 1. Vérifier les TagMap problématiques
+                cursor.execute("""
+                    SELECT tm.TagMapId, tm.PlaylistItemId, t.Name as playlist_name
+                    FROM TagMap tm
+                    JOIN Tag t ON tm.TagId = t.TagId
+                    WHERE t.Type = 2 
+                    AND NOT EXISTS (
+                        SELECT 1 FROM PlaylistItem pi WHERE pi.PlaylistItemId = tm.PlaylistItemId
+                    )
+                    LIMIT 10
+                """)
+                broken_links = cursor.fetchall()
+                print(f"🔴 TagMap avec PlaylistItemId manquant: {len(broken_links)}")
+                for tagmap_id, item_id, playlist_name in broken_links:
+                    print(f"🔴   - TagMap {tagmap_id}: PlaylistItem {item_id} manquant dans '{playlist_name}'")
+
+                # 2. Vérifier les PlaylistItem avec médias indépendants mais sans playlist
+                cursor.execute("""
+                    SELECT pi.PlaylistItemId, pi.Label
+                    FROM PlaylistItem pi
+                    WHERE EXISTS (
+                        SELECT 1 FROM PlaylistItemIndependentMediaMap WHERE PlaylistItemId = pi.PlaylistItemId
+                    )
+                    AND NOT EXISTS (
+                        SELECT 1 FROM TagMap tm 
+                        JOIN Tag t ON tm.TagId = t.TagId 
+                        WHERE tm.PlaylistItemId = pi.PlaylistItemId AND t.Type = 2
+                    )
+                    LIMIT 10
+                """)
+                orphaned_independent = cursor.fetchall()
+                print(f"🔴 PlaylistItem avec médias indépendants mais SANS playlist: {len(orphaned_independent)}")
+                for item_id, label in orphaned_independent:
+                    print(f"🔴   - {item_id}: '{label}'")
+
             # --- Vérification Tag ---
             print("\n=== TAGS VERIFICATION ===")
 
