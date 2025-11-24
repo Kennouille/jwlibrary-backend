@@ -1625,12 +1625,39 @@ def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
 
             def read_playlist_items(db_path):
                 with sqlite3.connect(db_path, timeout=5) as src_conn:
-                    cur_source = src_conn.cursor()
-                    cur_source.execute("""
-                        SELECT PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath
-                        FROM PlaylistItem
+                    cur = src_conn.cursor()
+
+                    # Détection automatique de la table existante
+                    tables = [row[0].lower() for row in cur.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()]
+
+                    possible_tables = [
+                        "playlistitem",
+                        "playlistitems",
+                        "playlistitem2",
+                        "zplaylistitem"
+                    ]
+
+                    table = None
+                    for t in possible_tables:
+                        if t in tables:
+                            table = t
+                            break
+
+                    if table is None:
+                        print(f"❌ Aucune table PlaylistItem trouvée dans {db_path}")
+                        return []
+
+                    print(f"🔵 Lecture PlaylistItem depuis table: {table} ({db_path})")
+
+                    cur.execute(f"""
+                        SELECT PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks,
+                               Accuracy, EndAction, ThumbnailFilePath
+                        FROM {table}
                     """)
-                    return [(db_path,) + row for row in cur_source.fetchall()]
+
+                    return [(db_path,) + row for row in cur.fetchall()]
 
             all_items = read_playlist_items(file1_db) + read_playlist_items(file2_db)
             total_items = len(all_items)  # ⬅️ CORRECTION ICI - variable ajoutée
