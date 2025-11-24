@@ -76,10 +76,6 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
 
     mapping = {}
 
-    # Normalisation uniforme pour éviter les erreurs de clé de mapping
-    def normalize_path(p):
-        return os.path.abspath(os.path.normcase(os.path.normpath(p)))
-
     with sqlite3.connect(merged_db_path) as merged_conn:
         merged_conn.execute("PRAGMA foreign_keys = OFF")
         merged_cursor = merged_conn.cursor()
@@ -105,9 +101,9 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
         for db_path in (file1_db, file2_db):
 
             source_key = get_source_key(db_path)
-            print(f"Traitement de {normalized_db}")
+            print(f"Traitement de {source_key}")
 
-            with sqlite3.connect(normalized_db) as src_conn:
+            with sqlite3.connect(db_path) as src_conn:
                 src_cursor = src_conn.cursor()
                 src_cursor.execute("""
                     SELECT IndependentMediaId, OriginalFilename, FilePath, MimeType, Hash
@@ -148,7 +144,6 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
 
     print("Fusion IndependentMedia terminée.\n")
     return mapping
-
 
 
 def read_notes_and_highlights(db_path):
@@ -2054,10 +2049,10 @@ def merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map):
                         cursor.execute("""
                             SELECT NewMarkerId FROM MergeMapping_PlaylistItemMarker
                             WHERE SourceDb = ? AND OldMarkerId = ?
-                        """, (normalized_db, old_marker_id))
+                        """, (source_key, old_marker_id))
                         res = cursor.fetchone()
                         if res:
-                            marker_id_map[(normalized_db, old_marker_id)] = res[0]
+                            marker_id_map[(source_key, old_marker_id)] = res[0]
                             continue
 
                         max_marker_id += 1
@@ -2072,7 +2067,7 @@ def merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map):
                             cursor.execute("""
                                 INSERT INTO MergeMapping_PlaylistItemMarker (SourceDb, OldMarkerId, NewMarkerId)
                                 VALUES (?, ?, ?)
-                            """, (normalized_db, old_marker_id, max_marker_id))
+                            """, (source_key, old_marker_id, max_marker_id))
                             # Correction: Supprimé conn.commit() d'ici pour améliorer les performances.
                             # Le commit sera fait une seule fois à la fin du bloc 'with conn:'.
                         except sqlite3.IntegrityError as e:
