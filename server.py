@@ -13,6 +13,7 @@ import io
 import traceback
 import threading
 import hashlib # Nécessaire pour hashlib.sha256
+import time
 
 app = Flask(__name__)
 app.config['PROPAGATE_EXCEPTIONS'] = True
@@ -2343,7 +2344,6 @@ def merge_data():
                 sample = list(independent_media_map.items())[:3]
                 print(f"Échantillon IndependentMedia: {sample}")
 
-            import time
             time.sleep(1)  # Pause d'1 seconde
 
             # ⬇️⬇️⬇️ GARDEZ SEULEMENT CE DEBUG PROPRE ⬇️⬇️⬇️
