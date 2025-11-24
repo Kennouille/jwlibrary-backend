@@ -2343,15 +2343,44 @@ def merge_data():
                 sample = list(independent_media_map.items())[:3]
                 print(f"Échantillon IndependentMedia: {sample}")
 
-            print("🔍 DEBUG IndependentMedia Map:")
-            file2_media_count = 0
-            for (source, old_id), new_id in independent_media_map.items():
-                if "file2" in source:
-                    file2_media_count += 1
-                    if old_id in [26, 28, 64, 92, 146, 186, 188, 230, 232, 268, 270, 351, 391, 393]:
-                        print(f"  ✅ Media file2:{old_id} → {new_id}")
+            # ⬇️⬇️⬇️ GARDEZ SEULEMENT CE DEBUG PROPRE ⬇️⬇️⬇️
+            print(f"\n🔴 URGENT: Independent Media Map analysis:")
+            print(f"🔴   Total entries in independent_media_map: {len(independent_media_map)}")
 
-            print(f"Total médias file2 dans le mapping: {file2_media_count}")
+            # Vérifier le contenu des tables sources AVANT la fusion
+            for db_path in [file1_db, file2_db]:
+                with sqlite3.connect(db_path) as conn:
+                    cursor = conn.cursor()
+
+                    # 1. Compter les IndependentMedia
+                    cursor.execute("SELECT COUNT(*) FROM IndependentMedia")
+                    im_count = cursor.fetchone()[0]
+
+                    # 2. Compter les PlaylistItemIndependentMediaMap
+                    cursor.execute("SELECT COUNT(*) FROM PlaylistItemIndependentMediaMap")
+                    pim_count = cursor.fetchone()[0]
+
+                    # 3. Vérifier s'il y a des données
+                    cursor.execute("""
+                        SELECT COUNT(*) 
+                        FROM PlaylistItemIndependentMediaMap pim
+                        JOIN IndependentMedia im ON pim.IndependentMediaId = im.IndependentMediaId
+                    """)
+                    valid_count = cursor.fetchone()[0]
+
+                    print(f"🔴   {os.path.basename(db_path)}:")
+                    print(f"🔴     - IndependentMedia: {im_count}")
+                    print(f"🔴     - PlaylistItemIndependentMediaMap: {pim_count}")
+                    print(f"🔴     - Liaisons valides: {valid_count}")
+
+            # Vérifier quelques mappings
+            if independent_media_map:
+                print(f"🔴   Échantillon independent_media_map:")
+                for (source, old_id), new_id in list(independent_media_map.items())[:5]:
+                    print(f"🔴     {source}: {old_id} → {new_id}")
+            else:
+                print("🔴   CATASTROPHE: independent_media_map est VIDE!")
+
         except Exception as e:
             import traceback
             print(f"❌ Erreur dans merge_independent_media : {e}")
