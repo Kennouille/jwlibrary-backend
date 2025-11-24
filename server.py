@@ -2274,6 +2274,29 @@ def merge_data():
         file1_db = os.path.join(EXTRACT_FOLDER, "file1_extracted", "userData.db")
         file2_db = os.path.join(EXTRACT_FOLDER, "file2_extracted", "userData.db")
 
+        # ⬇️⬇️⬇️ METTEZ LE DEBUG ICI - APRÈS la définition des variables ⬇️⬇️⬇️
+        print("🔴 VÉRIFICATION STRUCTURE PLAYLIST:")
+
+        for db_path in [file1_db, file2_db]:
+            print(f"\n🔴 Analyse de {os.path.basename(db_path)}:")
+            with sqlite3.connect(db_path) as conn:
+                cursor = conn.cursor()
+
+                # Chercher toutes les tables liées aux playlists
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%Playlist%'")
+                playlist_tables = cursor.fetchall()
+                print(f"🔴 Tables Playlist: {playlist_tables}")
+
+                # Compter les PlaylistItem
+                cursor.execute("SELECT COUNT(*) FROM PlaylistItem")
+                playlist_items = cursor.fetchone()[0]
+                print(f"🔴 PlaylistItem: {playlist_items}")
+
+                # Chercher des tables d'organisation
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%Map%'")
+                map_tables = cursor.fetchall()
+                print(f"🔴 Tables Map: {map_tables}")
+
         # Validation fichiers sources
         if not all(os.path.exists(db) for db in [file1_db, file2_db]):
             return jsonify({"error": "Fichiers source manquants"}), 400
