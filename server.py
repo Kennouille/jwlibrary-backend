@@ -2343,6 +2343,9 @@ def merge_data():
                 sample = list(independent_media_map.items())[:3]
                 print(f"Échantillon IndependentMedia: {sample}")
 
+            import time
+            time.sleep(1)  # Pause d'1 seconde
+
             # ⬇️⬇️⬇️ GARDEZ SEULEMENT CE DEBUG PROPRE ⬇️⬇️⬇️
             print(f"\n🔴 URGENT: Independent Media Map analysis:")
             print(f"🔴   Total entries in independent_media_map: {len(independent_media_map)}")
