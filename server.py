@@ -1917,6 +1917,20 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
         raise
 
 
+def remap_thumbnails(conn, item_id_map):
+    cursor = conn.cursor()
+    print("[REMAPPING Thumbnails]")
+
+    for old_id, new_id in item_id_map.items():
+        cursor.execute("""
+            UPDATE Thumbnails
+            SET PlaylistItemId = ?
+            WHERE PlaylistItemId = ?
+        """, (new_id, old_id))
+
+    conn.commit()
+
+
 def merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map):
     """
     Fusionne la table PlaylistItemMarker de façon idempotente.
@@ -2533,10 +2547,19 @@ def merge_data():
 
             print(f"✅ PlaylistItems fusionnés: {len(item_id_map)} items")
 
+            # 🔥🔥🔥 AJOUT ICI : remap des Thumbnails 🔥🔥🔥
+            try:
+                with sqlite3.connect(merged_db_path) as conn:
+                    remap_thumbnails(conn, item_id_map)
+                print("✅ Thumbnails remappés")
+            except Exception as e:
+                print(f"❌ ERREUR remap_thumbnails : {e}")
+
             # 2. Fusionner les autres tables playlist AVEC DEBUG
             try:
                 print("🔴 AVANT PlaylistItemLocationMap")
-                merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map)
+                merge_playlist_item_location_map(
+                    merged_db_path, file1_db, file2_db, item_id_map, location_id_map)
                 print("🔴 APRÈS PlaylistItemLocationMap")
                 print("✅ PlaylistItemLocationMap fusionnée")
             except Exception as e:
@@ -2544,8 +2567,8 @@ def merge_data():
 
             try:
                 print("🔴 AVANT PlaylistItemIndependentMediaMap")
-                merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db, item_id_map,
-                                                          independent_media_map)
+                merge_playlist_item_independent_media_map(
+                    merged_db_path, file1_db, file2_db, item_id_map, independent_media_map)
                 print("🔴 APRÈS PlaylistItemIndependentMediaMap")
                 print("✅ PlaylistItemIndependentMediaMap fusionnée")
             except Exception as e:
