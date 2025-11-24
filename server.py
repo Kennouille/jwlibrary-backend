@@ -1965,8 +1965,21 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
                             skipped += 1
                             continue
 
+                        # Dans merge_playlist_item_independent_media_map, modifiez cette partie :
                         if new_media_id is None:
                             print(f"⚠️ Mapping manquant pour IndependentMediaId={old_media_id} dans {normalized_db}")
+
+                            # ⬇️⬇️⬇️ AJOUTEZ CE DEBUG ⬇️⬇️⬇️
+                            print(f"🔴 DEBUG: Recherche dans independent_media_map:")
+                            found = False
+                            for (source, old_id), new_id in independent_media_map.items():
+                                if old_id == old_media_id and source == normalized_db:
+                                    print(f"🔴   TROUVÉ: {source}: {old_id} → {new_id}")
+                                    found = True
+                                    break
+                            if not found:
+                                print(f"🔴   NON TROUVÉ: Aucun mapping pour {old_media_id} dans {normalized_db}")
+
                             skipped += 1
                             continue
 
