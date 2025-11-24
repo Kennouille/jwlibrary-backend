@@ -1794,11 +1794,15 @@ def merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id
                     """)
                     rows = cur.fetchall()
 
+                print(f"📌 DEBUG {src}: {len(rows)} lignes trouvées dans PlaylistItemLocationMap")
+                if rows:
+                    print("   → Exemple:", rows[:5])
+
                 for old_item, old_loc in rows:
 
-                    # ⭐ MAPPING CORRECT — FIX
-                    new_item = item_id_map.get(old_item)
-                    new_loc  = location_id_map.get(old_loc)
+                    # ⭐ VERSION CORRECTE : mapping composite (src, old_id)
+                    new_item = item_id_map.get((src, old_item))
+                    new_loc  = location_id_map.get((src, old_loc))
 
                     if new_item is None:
                         print(f"❌ ITEM MANQUANT (pas mappé): {old_item} depuis {src}")
