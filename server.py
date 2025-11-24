@@ -1584,45 +1584,30 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
 
 
 def merge_playlist_items(merged_db_path, file1_db, file2_db):
-    """
-    Fusionne les PlaylistItems de file1 et file2 dans merged_db_path.
-    Assure que les PlaylistItems sont correctement liés à:
-        - PlaylistItemAccuracy (Accuracy)
-        - IndependentMedia (ThumbnailFilePath)
-    """
     print("\n[FUSION PlaylistItem]")
 
     with sqlite3.connect(merged_db_path, timeout=30) as conn:
         cursor = conn.cursor()
 
-        # Récupération des PlaylistItems depuis file1
-        cursor.execute("ATTACH DATABASE ? AS f1", (file1_db,))
-        cursor.execute("""
-            INSERT INTO PlaylistItem (PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
-            SELECT pi.PlaylistItemId, pi.Label, pi.StartTrimOffsetTicks, pi.EndTrimOffsetTicks,
-                   pi.Accuracy, pi.EndAction, pi.ThumbnailFilePath
-            FROM f1.PlaylistItem pi
-            LEFT JOIN PlaylistItemAccuracy a ON pi.Accuracy = a.PlaylistItemAccuracyId
-            LEFT JOIN IndependentMedia im ON pi.ThumbnailFilePath = im.FilePath
-            WHERE pi.PlaylistItemId NOT IN (SELECT PlaylistItemId FROM PlaylistItem)
-        """)
-        print("[INFO] PlaylistItems de file1 insérés")
+        for src_db in [file1_db, file2_db]:
+            with sqlite3.connect(src_db, timeout=30) as src_conn:
+                src_cursor = src_conn.cursor()
+                src_cursor.execute("""
+                    SELECT PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks,
+                           Accuracy, EndAction, ThumbnailFilePath
+                    FROM PlaylistItem
+                """)
+                items = src_cursor.fetchall()
 
-        # Récupération des PlaylistItems depuis file2
-        cursor.execute("ATTACH DATABASE ? AS f2", (file2_db,))
-        cursor.execute("""
-            INSERT INTO PlaylistItem (PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
-            SELECT pi.PlaylistItemId, pi.Label, pi.StartTrimOffsetTicks, pi.EndTrimOffsetTicks,
-                   pi.Accuracy, pi.EndAction, pi.ThumbnailFilePath
-            FROM f2.PlaylistItem pi
-            LEFT JOIN PlaylistItemAccuracy a ON pi.Accuracy = a.PlaylistItemAccuracyId
-            LEFT JOIN IndependentMedia im ON pi.ThumbnailFilePath = im.FilePath
-            WHERE pi.PlaylistItemId NOT IN (SELECT PlaylistItemId FROM PlaylistItem)
-        """)
-        print("[INFO] PlaylistItems de file2 insérés")
-
-        cursor.execute("DETACH DATABASE f1")
-        cursor.execute("DETACH DATABASE f2")
+                for item in items:
+                    try:
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO PlaylistItem 
+                            (PlaylistItemId, Label, StartTrimOffsetTicks, EndTrimOffsetTicks, Accuracy, EndAction, ThumbnailFilePath)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, item)
+                    except sqlite3.IntegrityError as e:
+                        print(f"⚠️ Ignored PlaylistItemId={item[0]}: {e}")
 
         conn.commit()
         print("✅ Fusion PlaylistItems terminée")
