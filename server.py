@@ -2596,52 +2596,7 @@ def merge_data():
             traceback.print_exc()
             raise
 
-        # --- Étape suivante : fusion des Tags et TagMap ---
-        try:
-            tag_id_map, tagmap_id_map = merge_tags_and_tagmap(
-                merged_db_path,
-                file1_db,
-                file2_db,
-                note_mapping,
-                location_id_map,
-                item_id_map
-            )
-            print(f"Tag ID Map: {len(tag_id_map)} entrées, TagMap ID Map: {len(tagmap_id_map)} entrées")
-            if tag_id_map:
-                sample = list(tag_id_map.items())[:2]
-                print(f"Échantillon Tag: {sample}")
 
-        except Exception as e:
-            import traceback
-            print("❌ Échec de merge_tags_and_tagmap (mais on continue le merge global) :")
-            print(f"Exception capturée : {e}")
-            traceback.print_exc()
-            tag_id_map, tagmap_id_map = {}, {}
-
-        # --- Vérification Tag ---
-        print("\n=== TAGS VERIFICATION ===")
-
-        try:
-            with sqlite3.connect(merged_db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT COUNT(*) FROM Tag")
-                tags_count = cursor.fetchone()[0]
-                cursor.execute("SELECT COUNT(*) FROM TagMap")
-                tagmaps_count = cursor.fetchone()[0]
-                print(f"Tags: {tags_count}")
-                print(f"TagMaps: {tagmaps_count}")
-                cursor.execute("""
-                    SELECT COUNT(*) 
-                    FROM TagMap 
-                    WHERE NoteId NOT IN (SELECT NoteId FROM Note)
-                """)
-                orphaned = cursor.fetchone()[0]
-                print(f"TagMaps orphelins: {orphaned}")
-        except Exception as e:
-            print(f"❌ ERREUR dans la vérification des tags : {e}")
-            import traceback
-            traceback.print_exc()
-            return jsonify({"error": "Erreur lors de la vérification des tags"}), 500
 
         print("\n🎵 DÉBUT FUSION PLAYLISTS AVEC MAPPING SPÉCIALISÉ")
 
@@ -2695,6 +2650,100 @@ def merge_data():
                 """)
                 items_with_media = cursor.fetchone()[0]
                 print(f"🔴 PlaylistItem avec média: {items_with_media}")
+
+            # --- Étape suivante : fusion des Tags et TagMap ---
+            try:
+                tag_id_map, tagmap_id_map = merge_tags_and_tagmap(
+                    merged_db_path,
+                    file1_db,
+                    file2_db,
+                    note_mapping,
+                    location_id_map,
+                    item_id_map
+                )
+                print(f"Tag ID Map: {len(tag_id_map)} entrées, TagMap ID Map: {len(tagmap_id_map)} entrées")
+                if tag_id_map:
+                    sample = list(tag_id_map.items())[:2]
+                    print(f"Échantillon Tag: {sample}")
+
+            except Exception as e:
+                import traceback
+                print("❌ Échec de merge_tags_and_tagmap (mais on continue le merge global) :")
+                print(f"Exception capturée : {e}")
+                traceback.print_exc()
+                tag_id_map, tagmap_id_map = {}, {}
+
+            # --- Vérification Tag ---
+            print("\n=== TAGS VERIFICATION ===")
+
+            try:
+                with sqlite3.connect(merged_db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM Tag")
+                    tags_count = cursor.fetchone()[0]
+                    cursor.execute("SELECT COUNT(*) FROM TagMap")
+                    tagmaps_count = cursor.fetchone()[0]
+                    print(f"Tags: {tags_count}")
+                    print(f"TagMaps: {tagmaps_count}")
+                    cursor.execute("""
+                            SELECT COUNT(*) 
+                            FROM TagMap 
+                            WHERE NoteId NOT IN (SELECT NoteId FROM Note)
+                        """)
+                    orphaned = cursor.fetchone()[0]
+                    print(f"TagMaps orphelins: {orphaned}")
+
+                    print(f"\n🔴 VÉRIFICATION LIENS PLAYLIST-TAG:")
+
+                    # Compter les Tags de type 2 (playlists)
+                    cursor.execute("SELECT COUNT(*) FROM Tag WHERE Type = 2")
+                    playlists_count = cursor.fetchone()[0]
+                    print(f"🔴 Tags de type 2 (playlists): {playlists_count}")
+
+                    # Compter les TagMap liant Tags et PlaylistItem
+                    cursor.execute("""
+                                SELECT COUNT(*) 
+                                FROM TagMap tm 
+                                JOIN Tag t ON tm.TagId = t.TagId 
+                                WHERE t.Type = 2 AND tm.PlaylistItemId IS NOT NULL
+                            """)
+                    playlist_links = cursor.fetchone()[0]
+                    print(f"🔴 Liens PlaylistItem → Playlist: {playlist_links}")
+
+                    # Afficher quelques playlists
+                    cursor.execute("""
+                                SELECT t.TagId, t.Name, COUNT(tm.PlaylistItemId) as items
+                                FROM Tag t 
+                                LEFT JOIN TagMap tm ON t.TagId = tm.TagId AND tm.PlaylistItemId IS NOT NULL
+                                WHERE t.Type = 2
+                                GROUP BY t.TagId, t.Name
+                                LIMIT 5
+                            """)
+                    playlists = cursor.fetchall()
+                    print(f"🔴 Exemples de playlists:")
+                    for tag_id, name, item_count in playlists:
+                        print(f"🔴   - '{name}' (ID:{tag_id}): {item_count} éléments")
+
+                    # Vérifier si les PlaylistItem ont des liens
+                    cursor.execute("""
+                                SELECT COUNT(DISTINCT pi.PlaylistItemId)
+                                FROM PlaylistItem pi
+                                WHERE EXISTS (
+                                    SELECT 1 FROM TagMap tm 
+                                    JOIN Tag t ON tm.TagId = t.TagId 
+                                    WHERE tm.PlaylistItemId = pi.PlaylistItemId AND t.Type = 2
+                                )
+                            """)
+                    items_in_playlists = cursor.fetchone()[0]
+                    cursor.execute("SELECT COUNT(*) FROM PlaylistItem")
+                    total_items = cursor.fetchone()[0]
+                    print(f"🔴 PlaylistItem dans des playlists: {items_in_playlists}/{total_items}")
+
+            except Exception as e:
+                print(f"❌ ERREUR dans la vérification des tags : {e}")
+                import traceback
+                traceback.print_exc()
+                return jsonify({"error": "Erreur lors de la vérification des tags"}), 500
 
             # 2. Fusionner les autres tables playlist AVEC DEBUG
             try:
