@@ -1810,66 +1810,50 @@ def cleanup_playlist_item_location_map(conn):
 
 
 def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db, item_id_map, independent_media_map):
-    print("\n[FUSION PlaylistItemIndependentMediaMap - DÉBUT]")
+    """
+    Fusionne PlaylistItemIndependentMediaMap avec adaptation du mapping.
+    Corrige le problème des mappings cassés.
+    """
+    print("🔴 DEBUG: Début merge_playlist_item_independent_media_map")
 
-    try:
-        with sqlite3.connect(merged_db_path, timeout=30) as conn:
-            cursor = conn.cursor()
-            conn.execute("PRAGMA busy_timeout = 5000")
+    with sqlite3.connect(merged_db_path) as conn:
+        cur = conn.cursor()
 
-            inserted = 0
-            skipped = 0
+        for src_db, src_name in [(file1_db, "file1"), (file2_db, "file2")]:
+            print(f"🔹 Traitement {src_name} PlaylistItemIndependentMediaMap")
+            cur.execute(f"ATTACH DATABASE ? AS src", (src_db,))
+            cur.execute("SELECT PlaylistItemId, IndependentMediaId FROM src.PlaylistItemIndependentMediaMap")
+            rows = cur.fetchall()
+            print(f"  {len(rows)} mappings trouvés dans {src_name}")
 
-            for db_path in (file1_db, file2_db):
-                normalized_db = os.path.normpath(db_path)
+            inserted_count = 0
+            skipped_count = 0
 
-                with sqlite3.connect(normalized_db, timeout=5) as src_conn:
-                    src_cursor = src_conn.cursor()
-                    src_cursor.execute("""
-                        SELECT PlaylistItemId, IndependentMediaId, DurationTicks
-                        FROM PlaylistItemIndependentMediaMap
-                        ORDER BY PlaylistItemId, IndependentMediaId
-                    """)
-                    rows = src_cursor.fetchall()
+            for old_item_id, old_media_id in rows:
+                key_item = (src_name, old_item_id)
+                key_media = (src_name, old_media_id)
 
-                print(f"🔴 SOURCE: {normalized_db}, {len(rows)} lignes trouvées")
+                if key_item not in item_id_map:
+                    skipped_count += 1
+                    continue
+                if key_media not in independent_media_map:
+                    skipped_count += 1
+                    continue
 
-                for old_item_id, old_media_id, duration_ticks in rows:
-                    new_item_id = item_id_map.get((normalized_db, old_item_id))
-                    new_media_id = independent_media_map.get((normalized_db, old_media_id))
+                new_item_id = item_id_map[key_item]
+                new_media_id = independent_media_map[key_media]
 
-                    if new_item_id is None:
-                        print(f"⚠️ PlaylistItem mapping manquant: {old_item_id} ({normalized_db})")
-                        skipped += 1
-                        continue
+                cur.execute(
+                    "INSERT INTO PlaylistItemIndependentMediaMap (PlaylistItemId, IndependentMediaId) VALUES (?, ?)",
+                    (new_item_id, new_media_id)
+                )
+                inserted_count += 1
 
-                    if new_media_id is None:
-                        print(f"⚠️ IndependentMedia mapping manquant: {old_media_id} ({normalized_db})")
-                        skipped += 1
-                        continue
+            cur.execute("DETACH DATABASE src")
+            print(f"  ✅ {inserted_count} mappings insérés, {skipped_count} ignorés dans {src_name}")
 
-                    try:
-                        cursor.execute("""
-                            INSERT OR IGNORE INTO PlaylistItemIndependentMediaMap
-                            (PlaylistItemId, IndependentMediaId, DurationTicks)
-                            VALUES (?, ?, ?)
-                        """, (new_item_id, new_media_id, duration_ticks))
-                        inserted += 1
-                    except Exception as e:
-                        print(f"❌ ERREUR insertion PlaylistItemIndependentMediaMap: {e}")
-                        skipped += 1
-
-            print(f"✅ FIN - PlaylistItemIndependentMediaMap fusionné.")
-            print(f"   → {inserted} insérés")
-            print(f"   → {skipped} ignorés")
-
-            conn.commit()
-
-    except Exception as e:
-        print(f"❌ Erreur critique dans merge_playlist_item_independent_media_map: {e}")
-        import traceback
-        traceback.print_exc()
-        raise
+        conn.commit()
+    print("🔴 DEBUG: Fin merge_playlist_item_independent_media_map")
 
 
 def remap_thumbnails(conn, item_id_map):
