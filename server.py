@@ -148,7 +148,7 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
                             VALUES (?, ?, ?, ?)
                         """, (orig_fn, file_path, mime, hash_val))
                         new_id = merged_cursor.lastrowid
-                        print(f"    > Insert nouveau média -> ID {new_id}")
+                        # print(f"    > Insert nouveau média -> ID {new_id}")
 
                     # MAPPING PRÉCIS
                     mapping[(source_key, old_id)] = new_id
@@ -3299,7 +3299,7 @@ def merge_data():
         print(f"⏱️ Temps total du merge : {elapsed:.2f} secondes")
         debug_playlist_mappings(final_db_dest)
         debug_playlist_content(final_db_dest)
-        remove_orphaned_playlist_items(final_db_dest)
+        # remove_orphaned_playlist_items(final_db_dest)
 
         # 5️⃣ Retour JSON final
         final_result = {
