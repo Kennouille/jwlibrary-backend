@@ -3299,7 +3299,7 @@ def merge_data():
         print(f"⏱️ Temps total du merge : {elapsed:.2f} secondes")
         debug_playlist_mappings(final_db_dest)
         debug_playlist_content(final_db_dest)
-        # remove_orphaned_playlist_items(final_db_dest)
+        remove_orphaned_playlist_items(final_db_dest)
 
         # 5️⃣ Retour JSON final
         final_result = {
