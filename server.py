@@ -30,7 +30,7 @@ def get_source_key(db_path):
     # Suppression des chemins relatifs et résolution
     normalized = os.path.abspath(normalized)
 
-    print(f"🔑 NORMALISATION: '{db_path}' → '{normalized}'")
+    # print(f"🔑 NORMALISATION: '{db_path}' → '{normalized}'")
     return normalized
 
 
@@ -878,6 +878,7 @@ def debug_playlist_mappings(merged_db_path):
 def remove_orphaned_playlist_items(merged_db_path):
     """
     Supprime les PlaylistItem qui n'ont aucun mapping
+    et liste les orphelins pour le débogage.
     """
     print("\n[🧹 SUPPRESSION PLAYLISTITEM ORPHELINS]")
 
@@ -885,20 +886,39 @@ def remove_orphaned_playlist_items(merged_db_path):
         with sqlite3.connect(merged_db_path) as conn:
             cursor = conn.cursor()
 
-            # Compter avant suppression
-            cursor.execute("""
-                SELECT COUNT(*) 
+            # Requête pour identifier les PlaylistItem orphelins
+            orphan_query = """
+                SELECT pi.PlaylistItemId, pi.Title, pi.IndependentMediaId
                 FROM PlaylistItem pi
                 WHERE pi.PlaylistItemId NOT IN (
                     SELECT PlaylistItemId FROM PlaylistItemLocationMap
                     UNION  
                     SELECT PlaylistItemId FROM PlaylistItemIndependentMediaMap
                 )
-            """)
+            """
+
+            # 1. Compter avant suppression
+            cursor.execute(f"SELECT COUNT(*) FROM ({orphan_query})")
             orphaned_count = cursor.fetchone()[0]
 
             if orphaned_count > 0:
-                # Supprimer les orphelins
+                print("\n--- 🚨 DÉTAIL DES PLAYLISTITEM ORPHELINS (Avant Suppression) 🚨 ---")
+
+                # 2. Lister les orphelins (Ajout pour le débogage)
+                # Note: On sélectionne les champs importants pour le diagnostic
+                cursor.execute(orphan_query)
+                orphans = cursor.fetchall()
+
+                for item_id, title, media_id in orphans:
+                    # Le LocationId n'est pas dans la table PlaylistItem elle-même,
+                    # mais le log du titre et du MediaId est suffisant ici.
+                    print(f"🚫 Orphelin ID: {item_id}, Titre: '{title[:50]}...', MediaID: {media_id}")
+
+                print("----------------------------------------------------------------")
+
+                # 3. Supprimer les orphelins
+                # Note: La requête DELETE doit utiliser la même logique d'identification
+                # (ici on ne change pas votre DELETE car elle était correcte)
                 cursor.execute("""
                     DELETE FROM PlaylistItem
                     WHERE PlaylistItemId NOT IN (
@@ -1976,12 +1996,12 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
 
                 for old_item_id, old_media_id, duration_ticks in rows:
                     # ⬇️⬇️⬇️ DEBUG DE CHAQUE RECHERCHE ⬇️⬇️⬇️
-                    print(f"🔴 RECHERCHE: PlaylistItemId={old_item_id}, IndependentMediaId={old_media_id}")
+                    # print(f"🔴 RECHERCHE: PlaylistItemId={old_item_id}, IndependentMediaId={old_media_id}")
 
                     new_item_id = item_id_map.get((source_key, old_item_id))
                     new_media_id = independent_media_map.get((source_key, old_media_id))
 
-                    print(f"🔴   → new_item_id: {new_item_id}, new_media_id: {new_media_id}")
+                    # print(f"🔴   → new_item_id: {new_item_id}, new_media_id: {new_media_id}")
 
                     if new_item_id is None:
                         print(f"🔴   ❌ PlaylistItemId NON TROUVÉ")
@@ -2000,7 +2020,7 @@ def merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db
                             VALUES (?, ?, ?)
                         """, (new_item_id, new_media_id, duration_ticks))
                         inserted += 1
-                        print(f"🔴   ✅ INSERTION RÉUSSIE")
+                        # print(f"🔴   ✅ INSERTION RÉUSSIE")
                     except sqlite3.IntegrityError as e:
                         print(f"🔴   ❌ ERREUR: {e}")
                         skipped += 1
