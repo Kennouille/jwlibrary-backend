@@ -551,7 +551,7 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
                         existing_note_id, existing_title, existing_content = existing
                         if existing_title == title and existing_content == content:
                             print(f"Note guid={guid} déjà présente et identique (source: {db_path}), aucune action.")
-                            note_mapping[(db_path, old_note_id)] = existing_note_id
+                            note_mapping[(source_key, old_note_id)] = existing_note_id
                             continue
                         else:
                             new_guid = str(uuid.uuid4())
@@ -630,7 +630,8 @@ def merge_usermark_with_id_relabeling(merged_db_path, source_db_path, location_i
         Version = row[5]
 
         # Mapping du LocationId
-        mapped_loc_id = location_id_map.get((source_db_path, LocationId), LocationId)
+        source_key = get_source_key(source_db_path)
+        mapped_loc_id = location_id_map.get((source_key, LocationId), LocationId)
 
         try:
             cur_merged.execute("""
@@ -1462,10 +1463,9 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
     print("\n[FUSION TAGS ET TAGMAP - IDÉMPOTENTE]")
 
     try:
-        # Correction: Utilisation de 'with' pour la connexion principale
         with sqlite3.connect(merged_db_path, timeout=30) as conn:
             cursor = conn.cursor()
-            conn.execute("PRAGMA busy_timeout = 5000") # Ajout de busy_timeout pour la robustesse
+            conn.execute("PRAGMA busy_timeout = 5000")
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS MergeMapping_Tag (
@@ -1492,14 +1492,14 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
 
             for db_path in [file1_db, file2_db]:
                 source_key = get_source_key(db_path)
-                with sqlite3.connect(db_path, timeout=5) as src_conn: # Correction: Ajout de timeout
+                with sqlite3.connect(db_path, timeout=5) as src_conn:
                     src_cursor = src_conn.cursor()
                     src_cursor.execute("SELECT TagId, Type, Name FROM Tag")
                     for tag_id, tag_type, tag_name in src_cursor.fetchall():
                         cursor.execute("SELECT NewTagId FROM MergeMapping_Tag WHERE SourceDb = ? AND OldTagId = ?", (source_key, tag_id))
                         res = cursor.fetchone()
                         if res:
-                            tag_id_map[(db_path, tag_id)] = res[0]
+                            tag_id_map[(source_key, tag_id)] = res[0]  # ✅ CORRECTION: source_key partout
                             continue
 
                         cursor.execute("SELECT TagId FROM Tag WHERE Type = ? AND Name = ?", (tag_type, tag_name))
@@ -1511,7 +1511,7 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                             new_tag_id = max_tag_id
                             cursor.execute("INSERT INTO Tag (TagId, Type, Name) VALUES (?, ?, ?)", (new_tag_id, tag_type, tag_name))
 
-                        tag_id_map[(source_key, tag_id)] = new_tag_id
+                        tag_id_map[(source_key, tag_id)] = new_tag_id  # ✅ CORRECTION: source_key partout
                         cursor.execute("INSERT INTO MergeMapping_Tag (SourceDb, OldTagId, NewTagId) VALUES (?, ?, ?)", (source_key, tag_id, new_tag_id))
 
             # Fusion des TagMap
@@ -1520,13 +1520,14 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
             tagmap_id_map = {}
 
             for db_path in [file1_db, file2_db]:
-                with sqlite3.connect(db_path, timeout=5) as src_conn: # Correction: Ajout de timeout
+                source_key = get_source_key(db_path)  # ✅ CORRECTION: source_key redéfini
+                with sqlite3.connect(db_path, timeout=5) as src_conn:
                     src_cursor = src_conn.cursor()
                     src_cursor.execute("SELECT TagMapId, PlaylistItemId, LocationId, NoteId, TagId, Position FROM TagMap")
                     rows = src_cursor.fetchall()
 
                     for old_tagmap_id, playlist_item_id, location_id, note_id, old_tag_id, position in rows:
-                        new_tag_id = tag_id_map.get((source_key, old_tag_id))
+                        new_tag_id = tag_id_map.get((source_key, old_tag_id))  # ✅ Maintenant cohérent
                         if new_tag_id is None:
                             continue
 
@@ -1558,7 +1559,7 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                             """, (new_tag_id, new_location_id))
                             existing = cursor.fetchone()
                             if existing:
-                                tagmap_id_map[(db_path, old_tagmap_id)] = existing[0]
+                                tagmap_id_map[(source_key, old_tagmap_id)] = existing[0]  # ✅ existing existe ici
                                 continue
 
                         # Gestion de conflit sur (TagId, Position)
@@ -1582,16 +1583,16 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                             VALUES (?, ?, ?)
                         """, (source_key, old_tagmap_id, new_tagmap_id))
 
-                        tagmap_id_map[(source_key, old_tagmap_id)] = existing[0]
+                        tagmap_id_map[(source_key, old_tagmap_id)] = new_tagmap_id  # ✅ CORRECTION: utiliser new_tagmap_id
 
-            conn.commit() # Le commit est maintenant à l'intérieur du bloc 'with conn:'
+            conn.commit()
         print("Fusion des Tags et TagMap terminée (idempotente).")
         return tag_id_map, tagmap_id_map
     except Exception as e:
         print(f"❌ Erreur critique dans merge_tags_and_tagmap: {e}")
         import traceback
         traceback.print_exc()
-        raise # Re-lancer l'exception pour que l'erreur soit propagée
+        raise
 
 
 def merge_playlist_items(merged_db_path, file1_db, file2_db, im_mapping=None):
@@ -2631,8 +2632,6 @@ def merge_data():
             traceback.print_exc()
             raise
 
-
-
         print("\n🎵 DÉBUT FUSION PLAYLISTS AVEC MAPPING SPÉCIALISÉ")
 
         # ⬇️⬇️⬇️ AJOUTER ICI ⬇️⬇️⬇️
@@ -2647,9 +2646,11 @@ def merge_data():
         for (src, old_id), new_id in list(independent_media_map.items())[:5]:
             if "file1" in src:
                 print(f"  {src}: {old_id} → {new_id}")
-        # ⬆️⬆️⬆️ FIN DE L'AJOUT ⬆️⬆️⬆️
 
         print("🔴 DEBUG: IMMÉDIATEMENT AVANT merge_playlist_items")  # ⬅️ AJOUTE ÇA
+
+        # ─── DÉBUT DE LA VRAIE FUSION PLAYLISTS ──────────────────────────────
+        # I. FUSION PRINCIPALE (PlaylistItem)
 
         # Fusion des playlists avec mapping correct
         try:
@@ -2686,66 +2687,122 @@ def merge_data():
                 items_with_media = cursor.fetchone()[0]
                 print(f"🔴 PlaylistItem avec média: {items_with_media}")
 
-            # --- Étape suivante : fusion des Tags et TagMap ---
-            try:
-                tag_id_map, tagmap_id_map = merge_tags_and_tagmap(
-                    merged_db_path,
-                    file1_db,
-                    file2_db,
-                    note_mapping,
-                    location_id_map,
-                    item_id_map
+        except Exception as e:
+            import traceback
+            print(f"❌ Erreur dans la fusion des playlists (PlaylistItem) : {e}")
+            traceback.print_exc()
+            raise  # On lève l'exception car item_id_map est critique
+
+        # II. FUSION DES TABLES DE LIAISON (MAPS) DIRECTES
+        # Ordre suggéré pour une lecture logique : médias, locations, puis marqueurs.
+
+        print("\n⚙️ FUSION des TABLES DE LIAISON (MAPS) PlaylistItem...")
+
+        # 2. Liaison PlaylistItem <-> IndependentMedia
+        try:
+            print("🔴 AVANT PlaylistItemIndependentMediaMap")
+            merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db, item_id_map,
+                                                      independent_media_map)
+            print("🔴 APRÈS PlaylistItemIndependentMediaMap")
+            print("✅ PlaylistItemIndependentMediaMap fusionnée")
+        except Exception as e:
+            print(f"❌ ERREUR dans PlaylistItemIndependentMediaMap: {e}")
+
+        # 3. Liaison PlaylistItem <-> Location
+        try:
+            print("🔴 AVANT PlaylistItemLocationMap")
+            merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map)
+            print("🔴 APRÈS PlaylistItemLocationMap")
+            print("✅ PlaylistItemLocationMap fusionnée")
+        except Exception as e:
+            print(f"❌ ERREUR dans PlaylistItemLocationMap: {e}")
+
+        # 4. PlaylistItemAccuracy
+        try:
+            print("🔴 AVANT PlaylistItemAccuracy")
+            merge_playlist_item_accuracy(merged_db_path, file1_db, file2_db)
+            print("🔴 APRÈS PlaylistItemAccuracy")
+            print("✅ PlaylistItemAccuracy fusionnée")
+        except Exception as e:
+            print(f"❌ ERREUR dans PlaylistItemAccuracy: {e}")
+
+        # 5. PlaylistItemMarker et MarkerMaps
+        try:
+            print("🔴 AVANT MarkerIdMap")
+            marker_id_map = merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map)
+            print("🔴 APRÈS MarkerIdMap")
+            print("✅ PlaylistItemMarker fusionnée")
+        except Exception as e:
+            print(f"❌ ERREUR dans PlaylistItemMarker: {e}")
+
+        try:
+            print("🔴 AVANT MarkerMaps")
+            merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map)
+            print("🔴 APRÈS MarkerMaps")
+            print("✅ MarkerMaps fusionnées")
+        except Exception as e:
+            print(f"❌ ERREUR dans MarkerMaps: {e}")
+
+        # III. FUSION DES TAGS (Dépend de Location, Note, et PlaylistItem)
+        try:
+            tag_id_map, tagmap_id_map = merge_tags_and_tagmap(
+                merged_db_path,
+                file1_db,
+                file2_db,
+                note_mapping,
+                location_id_map,
+                item_id_map
+            )
+            print(f"Tag ID Map: {len(tag_id_map)} entrées, TagMap ID Map: {len(tagmap_id_map)} entrées")
+            if tag_id_map:
+                sample = list(tag_id_map.items())[:2]
+                print(f"Échantillon Tag: {sample}")
+
+        except Exception as e:
+            import traceback
+            print("❌ Échec de merge_tags_and_tagmap (mais on continue le merge global) :")
+            print(f"Exception capturée : {e}")
+            traceback.print_exc()
+            tag_id_map, tagmap_id_map = {}, {}
+
+        print(f"\n🔴 DEBUG CRITIQUE - ÉTAT DES TAGMAP POUR PLAYLISTS:")
+        with sqlite3.connect(merged_db_path) as conn:
+            cursor = conn.cursor()
+
+            # 1. Vérifier les TagMap problématiques
+            cursor.execute("""
+                SELECT tm.TagMapId, tm.PlaylistItemId, t.Name as playlist_name
+                FROM TagMap tm
+                JOIN Tag t ON tm.TagId = t.TagId
+                WHERE t.Type = 2 
+                AND NOT EXISTS (
+                    SELECT 1 FROM PlaylistItem pi WHERE pi.PlaylistItemId = tm.PlaylistItemId
                 )
-                print(f"Tag ID Map: {len(tag_id_map)} entrées, TagMap ID Map: {len(tagmap_id_map)} entrées")
-                if tag_id_map:
-                    sample = list(tag_id_map.items())[:2]
-                    print(f"Échantillon Tag: {sample}")
+                LIMIT 10
+            """)
+            broken_links = cursor.fetchall()
+            print(f"🔴 TagMap avec PlaylistItemId manquant: {len(broken_links)}")
+            for tagmap_id, item_id, playlist_name in broken_links:
+                print(f"🔴   - TagMap {tagmap_id}: PlaylistItem {item_id} manquant dans '{playlist_name}'")
 
-            except Exception as e:
-                import traceback
-                print("❌ Échec de merge_tags_and_tagmap (mais on continue le merge global) :")
-                print(f"Exception capturée : {e}")
-                traceback.print_exc()
-                tag_id_map, tagmap_id_map = {}, {}
-
-            print(f"\n🔴 DEBUG CRITIQUE - ÉTAT DES TAGMAP POUR PLAYLISTS:")
-            with sqlite3.connect(merged_db_path) as conn:
-                cursor = conn.cursor()
-
-                # 1. Vérifier les TagMap problématiques
-                cursor.execute("""
-                    SELECT tm.TagMapId, tm.PlaylistItemId, t.Name as playlist_name
-                    FROM TagMap tm
-                    JOIN Tag t ON tm.TagId = t.TagId
-                    WHERE t.Type = 2 
-                    AND NOT EXISTS (
-                        SELECT 1 FROM PlaylistItem pi WHERE pi.PlaylistItemId = tm.PlaylistItemId
-                    )
-                    LIMIT 10
-                """)
-                broken_links = cursor.fetchall()
-                print(f"🔴 TagMap avec PlaylistItemId manquant: {len(broken_links)}")
-                for tagmap_id, item_id, playlist_name in broken_links:
-                    print(f"🔴   - TagMap {tagmap_id}: PlaylistItem {item_id} manquant dans '{playlist_name}'")
-
-                # 2. Vérifier les PlaylistItem avec médias indépendants mais sans playlist
-                cursor.execute("""
-                    SELECT pi.PlaylistItemId, pi.Label
-                    FROM PlaylistItem pi
-                    WHERE EXISTS (
-                        SELECT 1 FROM PlaylistItemIndependentMediaMap WHERE PlaylistItemId = pi.PlaylistItemId
-                    )
-                    AND NOT EXISTS (
-                        SELECT 1 FROM TagMap tm 
-                        JOIN Tag t ON tm.TagId = t.TagId 
-                        WHERE tm.PlaylistItemId = pi.PlaylistItemId AND t.Type = 2
-                    )
-                    LIMIT 10
-                """)
-                orphaned_independent = cursor.fetchall()
-                print(f"🔴 PlaylistItem avec médias indépendants mais SANS playlist: {len(orphaned_independent)}")
-                for item_id, label in orphaned_independent:
-                    print(f"🔴   - {item_id}: '{label}'")
+            # 2. Vérifier les PlaylistItem avec médias indépendants mais sans playlist
+            cursor.execute("""
+                SELECT pi.PlaylistItemId, pi.Label
+                FROM PlaylistItem pi
+                WHERE EXISTS (
+                    SELECT 1 FROM PlaylistItemIndependentMediaMap WHERE PlaylistItemId = pi.PlaylistItemId
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM TagMap tm 
+                    JOIN Tag t ON tm.TagId = t.TagId 
+                    WHERE tm.PlaylistItemId = pi.PlaylistItemId AND t.Type = 2
+                )
+                LIMIT 10
+            """)
+            orphaned_independent = cursor.fetchall()
+            print(f"🔴 PlaylistItem avec médias indépendants mais SANS playlist: {len(orphaned_independent)}")
+            for item_id, label in orphaned_independent:
+                print(f"🔴   - {item_id}: '{label}'")
 
             # --- Vérification Tag ---
             print("\n=== TAGS VERIFICATION ===")
@@ -2819,65 +2876,17 @@ def merge_data():
                 traceback.print_exc()
                 return jsonify({"error": "Erreur lors de la vérification des tags"}), 500
 
-            # 2. Fusionner les autres tables playlist AVEC DEBUG
-            try:
-                print("🔴 AVANT PlaylistItemLocationMap")
-                merge_playlist_item_location_map(merged_db_path, file1_db, file2_db, item_id_map, location_id_map)
-                print("🔴 APRÈS PlaylistItemLocationMap")
-                print("✅ PlaylistItemLocationMap fusionnée")
-            except Exception as e:
-                print(f"❌ ERREUR dans PlaylistItemLocationMap: {e}")
+        # IV. FIN DE LA SECTION PLAYLIST
 
-            try:
-                print("🔴 AVANT PlaylistItemIndependentMediaMap")
-                merge_playlist_item_independent_media_map(merged_db_path, file1_db, file2_db, item_id_map,
-                                                          independent_media_map)
-                print("🔴 APRÈS PlaylistItemIndependentMediaMap")
-                print("✅ PlaylistItemIndependentMediaMap fusionnée")
-            except Exception as e:
-                print(f"❌ ERREUR dans PlaylistItemIndependentMediaMap: {e}")
+        # 8. Mise à jour des variables de fin
+        playlist_item_total = len(item_id_map)
+        max_playlist_id = 0  # Plus de table Playlist
+        max_media_id = 0
+        orphaned_deleted = 0
+        integrity_result = "ok"
 
-            try:
-                print("🔴 AVANT PlaylistItemAccuracy")
-                merge_playlist_item_accuracy(merged_db_path, file1_db, file2_db)
-                print("🔴 APRÈS PlaylistItemAccuracy")
-                print("✅ PlaylistItemAccuracy fusionnée")
-            except Exception as e:
-                print(f"❌ ERREUR dans PlaylistItemAccuracy: {e}")
+        print(f"✅ Playlists fusionnées: {playlist_item_total} items")
 
-            try:
-                print("🔴 AVANT MarkerIdMap")
-                marker_id_map = merge_playlist_item_marker(merged_db_path, file1_db, file2_db, item_id_map)
-                print("🔴 APRÈS MarkerIdMap")
-                print("✅ PlaylistItemMarker fusionnée")
-            except Exception as e:
-                print(f"❌ ERREUR dans PlaylistItemMarker: {e}")
-
-            try:
-                print("🔴 AVANT MarkerMaps")
-                merge_marker_maps(merged_db_path, file1_db, file2_db, marker_id_map)
-                print("🔴 APRÈS MarkerMaps")
-                print("✅ MarkerMaps fusionnées")
-            except Exception as e:
-                print(f"❌ ERREUR dans MarkerMaps: {e}")
-
-            # ✅ CORRECTION : Définir les variables directement
-            playlist_item_total = len(item_id_map)
-            max_playlist_id = 0  # Plus de table Playlist
-            max_media_id = 0
-            orphaned_deleted = 0
-            integrity_result = "ok"
-
-            print(f"✅ Playlists fusionnées: {playlist_item_total} items")
-
-        except Exception as e:
-            print(f"❌ Erreur dans la fusion des playlists: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
-
-        # ⬇️⬇️⬇️ DÉPLACÉ ICI - APRÈS merge_playlists ⬇️⬇️⬇️
-        # (Ré)ouvrir la connexion pour PlaylistItem
         conn = sqlite3.connect(merged_db_path)
         cursor = conn.cursor()
 
