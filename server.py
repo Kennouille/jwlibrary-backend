@@ -887,8 +887,9 @@ def remove_orphaned_playlist_items(merged_db_path):
             cursor = conn.cursor()
 
             # Requête pour identifier les PlaylistItem orphelins
+            # NOUVEAU CODE (CORRECTIF FINAL)
             orphan_query = """
-                SELECT pi.PlaylistItemId, pi.Title, pi.IndependentMediaId
+                SELECT pi.PlaylistItemId, pi.Label, pi.IndependentMediaId
                 FROM PlaylistItem pi
                 WHERE pi.PlaylistItemId NOT IN (
                     SELECT PlaylistItemId FROM PlaylistItemLocationMap
@@ -909,10 +910,8 @@ def remove_orphaned_playlist_items(merged_db_path):
                 cursor.execute(orphan_query)
                 orphans = cursor.fetchall()
 
-                for item_id, title, media_id in orphans:
-                    # Le LocationId n'est pas dans la table PlaylistItem elle-même,
-                    # mais le log du titre et du MediaId est suffisant ici.
-                    print(f"🚫 Orphelin ID: {item_id}, Titre: '{title[:50]}...', MediaID: {media_id}")
+                for item_id, label, media_id in orphans:
+                    print(f"🚫 Orphelin ID: {item_id}, Titre: '{label[:50]}...', MediaID: {media_id}")
 
                 print("----------------------------------------------------------------")
 
