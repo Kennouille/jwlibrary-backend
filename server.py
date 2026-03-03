@@ -93,6 +93,10 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
         merged_conn.execute("PRAGMA foreign_keys = OFF")
         merged_cursor = merged_conn.cursor()
 
+        # 0. Initialiser le max_id une seule fois avant la boucle
+        merged_cursor.execute("SELECT COALESCE(MAX(IndependentMediaId), 0) FROM IndependentMedia")
+        current_max_id = merged_cursor.fetchone()[0]
+
         # 1. Assurer que la table existe dans la base fusionnée
         merged_cursor.execute("""
             CREATE TABLE IF NOT EXISTS IndependentMedia (
@@ -142,12 +146,13 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
                         print(f"    > Déjà présent -> ID {new_id}")
 
                     else:
+                        current_max_id += 1
                         merged_cursor.execute("""
-                            INSERT INTO IndependentMedia
-                                (OriginalFilename, FilePath, MimeType, Hash)
-                            VALUES (?, ?, ?, ?)
-                        """, (orig_fn, file_path, mime, hash_val))
-                        new_id = merged_cursor.lastrowid
+                                                INSERT INTO IndependentMedia
+                                                    (IndependentMediaId, OriginalFilename, FilePath, MimeType, Hash)
+                                                VALUES (?, ?, ?, ?, ?)
+                                            """, (current_max_id, orig_fn, file_path, mime, hash_val))
+                        new_id = current_max_id
                         # print(f"    > Insert nouveau média -> ID {new_id}")
 
                     # MAPPING PRÉCIS
@@ -581,14 +586,14 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
                     note_mapping[(source_key, old_note_id)] = new_note_id
                     inserted += 1
 
-        conn.commit() # Le commit est maintenant à l'intérieur du bloc 'with conn:'
-        print(f"✅ Total notes insérées: {inserted}")
-        return note_mapping
+            conn.commit()
+            print(f"✅ Total notes insérées: {inserted}")
+            return note_mapping
     except Exception as e:
         print(f"❌ Erreur critique dans merge_notes: {e}")
         import traceback
         traceback.print_exc()
-        raise # Re-lancer l'exception
+        raise
 
 
 def merge_usermark_with_id_relabeling(merged_db_path, source_db_path, location_id_map):
@@ -2392,6 +2397,15 @@ def merge_data():
         try:
             independent_media_map = merge_independent_media(merged_db_path, file1_db, file2_db)
             print(f"Mapping IndependentMedia: {len(independent_media_map)} entrées")
+
+            # Vérifier si des médias existent dans les sources
+            with sqlite3.connect(file1_db) as c1, sqlite3.connect(file2_db) as c2:
+                count1 = c1.execute("SELECT COUNT(*) FROM IndependentMedia").fetchone()[0]
+                count2 = c2.execute("SELECT COUNT(*) FROM IndependentMedia").fetchone()[0]
+                print(f"🔍 IndependentMedia sources: file1={count1}, file2={count2}")
+                if (count1 + count2 > 0) and not independent_media_map:
+                    raise Exception(
+                        "❌ FATAL: independent_media_map vide alors que des médias existent dans les sources !")
             if independent_media_map:
                 sample = list(independent_media_map.items())[:3]
                 print(f"Échantillon IndependentMedia: {sample}")
@@ -2685,6 +2699,16 @@ def merge_data():
 
             print(f"✅ PlaylistItems fusionnés: {len(item_id_map)} items")
 
+            if not item_id_map:
+                # Vérifier si des PlaylistItems existent dans les sources
+                with sqlite3.connect(file1_db) as c1, sqlite3.connect(file2_db) as c2:
+                    cnt1 = c1.execute("SELECT COUNT(*) FROM PlaylistItem").fetchone()[0]
+                    cnt2 = c2.execute("SELECT COUNT(*) FROM PlaylistItem").fetchone()[0]
+                    print(f"⚠️ item_id_map vide ! PlaylistItem sources: file1={cnt1}, file2={cnt2}")
+                    if cnt1 + cnt2 > 0:
+                        raise Exception(
+                            "❌ FATAL: item_id_map vide alors que des PlaylistItems existent dans les sources !")
+
             print("\n=== DEBUG POST merge_playlist_items ===")
             with sqlite3.connect(merged_db_path) as conn:
                 cursor = conn.cursor()
@@ -2726,6 +2750,17 @@ def merge_data():
             print("✅ PlaylistItemIndependentMediaMap fusionnée")
         except Exception as e:
             print(f"❌ ERREUR dans PlaylistItemIndependentMediaMap: {e}")
+
+        # Vérification critique après liaison médias
+        with sqlite3.connect(merged_db_path) as conn_verify:
+            cur_verify = conn_verify.cursor()
+            cur_verify.execute("SELECT COUNT(*) FROM PlaylistItemIndependentMediaMap")
+            pim_count = cur_verify.fetchone()[0]
+            cur_verify.execute("SELECT COUNT(*) FROM IndependentMedia")
+            im_count = cur_verify.fetchone()[0]
+            print(f"✅ Vérification: IndependentMedia={im_count}, PlaylistItemIndependentMediaMap={pim_count}")
+            if im_count > 0 and pim_count == 0:
+                print("❌ PROBLÈME CRITIQUE: IndependentMedia existe mais aucun lien créé !")
 
         # 3. Liaison PlaylistItem <-> Location
         try:
@@ -3299,7 +3334,19 @@ def merge_data():
         print(f"⏱️ Temps total du merge : {elapsed:.2f} secondes")
         debug_playlist_mappings(final_db_dest)
         debug_playlist_content(final_db_dest)
-        remove_orphaned_playlist_items(final_db_dest)
+
+        # Vérifier qu'on a bien des liaisons avant de supprimer les orphelins
+        with sqlite3.connect(final_db_dest) as conn_check:
+            cur_check = conn_check.cursor()
+            cur_check.execute("SELECT COUNT(*) FROM PlaylistItemIndependentMediaMap")
+            media_links = cur_check.fetchone()[0]
+            cur_check.execute("SELECT COUNT(*) FROM PlaylistItemLocationMap")
+            loc_links = cur_check.fetchone()[0]
+            print(f"🔍 Avant suppression orphelins: {media_links} liens média, {loc_links} liens location")
+            if media_links + loc_links > 0:
+                remove_orphaned_playlist_items(final_db_dest)
+            else:
+                print("⚠️ AUCUN lien détecté — suppression des orphelins annulée pour éviter perte de données")
 
         # 5️⃣ Retour JSON final
         final_result = {
