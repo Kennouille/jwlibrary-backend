@@ -128,7 +128,7 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
                 """)
 
                 for old_id, orig_fn, file_path, mime, hash_val in src_cursor.fetchall():
-                    print(f"  - Média : {orig_fn}, Hash={hash_val}")
+                    pass  # log supprimé
 
                     # 4. Vérifier si média identique déjà présent
                     merged_cursor.execute("""
@@ -143,7 +143,6 @@ def merge_independent_media(merged_db_path, file1_db, file2_db):
 
                     if existing:
                         new_id = existing[0]
-                        print(f"    > Déjà présent -> ID {new_id}")
 
                     else:
                         current_max_id += 1
@@ -382,12 +381,12 @@ def merge_other_tables(merged_db_path, db1_path, db2_path, exclude_tables=None):
                                           0] or 0
                             new_id = int(cur_max) + 1
                             new_row = (new_id,) + row[1:]
-                            print(f"✅ INSERT dans {table} depuis {source_path}: {new_row}")
+                            pass  # logs supprimés
                             merged_cursor.execute(
                                 f"INSERT INTO {table} ({columns_joined}) VALUES ({placeholders})", new_row
                             )
                         else:
-                            print(f"⏩ Doublon ignoré dans {table} depuis {source_path}: {row[1:]}")
+                            pass  # logs supprimés
 
             merged_conn.commit()
 
@@ -1587,6 +1586,10 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
 
                         non_null_refs = sum(x is not None for x in [new_note_id, new_location_id, new_playlist_item_id])
                         if non_null_refs != 1:
+                            if playlist_item_id is not None and new_playlist_item_id is None:
+                                print(
+                                    f"⚠️ TagMap ignoré: playlist_item_id={playlist_item_id} non trouvé dans item_id_map (source_key={source_key})")
+                                print(f"   Clés item_id_map disponibles (3 premiers): {list(item_id_map.keys())[:3]}")
                             continue
 
                         # Vérification de doublon exact
