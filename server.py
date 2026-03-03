@@ -1539,6 +1539,29 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                     print(f"🏷️ Tags dans {os.path.basename(db_path)}: {len(all_tags)} total")
                     for t in all_tags:
                         print(f"   TagId={t[0]}, Type={t[1]}, Name='{t[2]}'")
+
+                    # Insérer TOUS les Tags immédiatement, surtout Type=2 (playlists)
+                    for tag_id, tag_type, tag_name in all_tags:
+                        cursor.execute("SELECT NewTagId FROM MergeMapping_Tag WHERE SourceDb = ? AND OldTagId = ?",
+                                       (source_key, tag_id))
+                        res = cursor.fetchone()
+                        if res:
+                            tag_id_map[(source_key, tag_id)] = res[0]
+                            continue
+                        cursor.execute("SELECT TagId FROM Tag WHERE Type = ? AND Name = ?", (tag_type, tag_name))
+                        existing = cursor.fetchone()
+                        if existing:
+                            new_tag_id = existing[0]
+                        else:
+                            max_tag_id += 1
+                            new_tag_id = max_tag_id
+                            cursor.execute("INSERT INTO Tag (TagId, Type, Name) VALUES (?, ?, ?)",
+                                           (new_tag_id, tag_type, tag_name))
+                            print(f"✅ Tag inséré: Type={tag_type}, Name='{tag_name}', NewId={new_tag_id}")
+                        tag_id_map[(source_key, tag_id)] = new_tag_id
+                        cursor.execute("INSERT INTO MergeMapping_Tag (SourceDb, OldTagId, NewTagId) VALUES (?, ?, ?)",
+                                       (source_key, tag_id, new_tag_id))
+
                     for tag_id, tag_type, tag_name in all_tags:
                         cursor.execute("SELECT NewTagId FROM MergeMapping_Tag WHERE SourceDb = ? AND OldTagId = ?", (source_key, tag_id))
                         res = cursor.fetchone()
