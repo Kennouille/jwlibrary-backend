@@ -795,7 +795,7 @@ def merge_inputfields(merged_db_path, file1_db, file2_db, location_id_map):
                     VALUES (?, ?, ?, ?)
                 """, (source_key, loc_id, tag, value))
             except sqlite3.IntegrityError as e:
-                print(f"❌ Conflit à l’insertion (Loc={mapped_loc}, Tag={tag}): {e}")
+                pass  # conflit silencieux
 
         conn.commit()
 
