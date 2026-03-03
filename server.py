@@ -872,7 +872,7 @@ def debug_playlist_mappings(merged_db_path):
                 print(
                     f"⚠️  PROBLEME: Seulement {valid_location_mappings + valid_media_mappings}/{total} PlaylistItem sont valides")
             else:
-            print("✅ STRUCTURE BONNE: Le problème est ailleurs")
+                print("✅ STRUCTURE BONNE: Le problème est ailleurs")
 
             # Vérification Tags/TagMap playlists
         cursor.execute("SELECT COUNT(*) FROM Tag WHERE Type = 2")
