@@ -1541,7 +1541,11 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                 with sqlite3.connect(db_path, timeout=5) as src_conn:
                     src_cursor = src_conn.cursor()
                     src_cursor.execute("SELECT TagId, Type, Name FROM Tag")
-                    for tag_id, tag_type, tag_name in src_cursor.fetchall():
+                    all_tags = src_cursor.fetchall()
+                    print(f"🏷️ Tags dans {os.path.basename(db_path)}: {len(all_tags)} total")
+                    for t in all_tags:
+                        print(f"   TagId={t[0]}, Type={t[1]}, Name='{t[2]}'")
+                    for tag_id, tag_type, tag_name in all_tags:
                         cursor.execute("SELECT NewTagId FROM MergeMapping_Tag WHERE SourceDb = ? AND OldTagId = ?", (source_key, tag_id))
                         res = cursor.fetchone()
                         if res:
