@@ -3330,6 +3330,11 @@ def merge_data():
         # À la toute fin, juste avant return
         os.remove(os.path.join(UPLOAD_FOLDER, "merge_in_progress"))
 
+        # Forcer l'intégration du WAL dans le fichier principal
+        with sqlite3.connect(final_db_dest) as conn_wal:
+            conn_wal.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            print("✅ WAL checkpoint TRUNCATE effectué sur le fichier final")
+
         elapsed = time.time() - start_time
         print(f"⏱️ Temps total du merge : {elapsed:.2f} secondes")
         debug_playlist_mappings(final_db_dest)
