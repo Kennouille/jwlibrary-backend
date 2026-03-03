@@ -872,7 +872,29 @@ def debug_playlist_mappings(merged_db_path):
                 print(
                     f"⚠️  PROBLEME: Seulement {valid_location_mappings + valid_media_mappings}/{total} PlaylistItem sont valides")
             else:
-                print("✅ STRUCTURE BONNE: Le problème est ailleurs")
+            print("✅ STRUCTURE BONNE: Le problème est ailleurs")
+
+            # Vérification Tags/TagMap playlists
+        cursor.execute("SELECT COUNT(*) FROM Tag WHERE Type = 2")
+        playlist_tags = cursor.fetchone()[0]
+        print(f"🏷️ Tags de type playlist (Type=2): {playlist_tags}")
+
+        cursor.execute("""
+                                SELECT COUNT(*) FROM TagMap 
+                                WHERE PlaylistItemId IS NOT NULL
+                            """)
+        tagmap_links = cursor.fetchone()[0]
+        print(f"🔗 TagMap avec PlaylistItemId: {tagmap_links}")
+
+        cursor.execute("""
+                                SELECT t.Name, COUNT(tm.PlaylistItemId) as items
+                                FROM Tag t
+                                LEFT JOIN TagMap tm ON t.TagId = tm.TagId AND tm.PlaylistItemId IS NOT NULL
+                                WHERE t.Type = 2
+                                GROUP BY t.TagId, t.Name
+                            """)
+        for name, count in cursor.fetchall():
+            print(f"   📋 Playlist '{name}': {count} items")
 
     except Exception as e:
         print(f"❌ ERREUR dans debug_playlist_mappings: {e}")
