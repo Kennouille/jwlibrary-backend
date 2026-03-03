@@ -554,7 +554,6 @@ def merge_notes(merged_db_path, file1_db, file2_db, location_id_map, usermark_gu
                     if existing:
                         existing_note_id, existing_title, existing_content = existing
                         if existing_title == title and existing_content == content:
-                            print(f"Note guid={guid} déjà présente et identique (source: {db_path}), aucune action.")
                             note_mapping[(source_key, old_note_id)] = existing_note_id
                             continue
                         else:
@@ -686,7 +685,6 @@ def merge_blockrange_from_two_sources(merged_db_path, file1_db, file2_db):
                             new_usermark_id = usermark_guid_map.get(usermark_guid)
 
                             if not new_usermark_id:
-                                print(f"⚠️ GUID non mappé: {usermark_guid}")
                                 continue
 
                             try:
@@ -1313,7 +1311,6 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
             res = cur.fetchone()
             if res:
                 new_id = res[0]
-                # print(f"⏩ Location déjà fusionnée OldID={old_loc_id} → NewID={new_id} (Source: {db_source})")
                 location_id_map[(db_source, old_loc_id)] = new_id
                 continue
 
@@ -1336,7 +1333,6 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
 
             if existing:
                 new_id = existing[0]
-                # print(f"🔎 Location existante trouvée OldID={old_loc_id} → NewID={new_id} (Source: {db_source})")
             else:
                 # Pas trouvée → insertion
                 current_max_id += 1
@@ -1348,7 +1344,6 @@ def merge_location_from_sources(merged_db_path, file1_db, file2_db):
                          IssueTagNumber, KeySymbol, MepsLanguage, Type, Title)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (new_id, book_num, chap_num, doc_id, track, issue, key_sym, meps_lang, loc_type, title))
-                    # print(f"✅ Location insérée : NewID={new_id} (Source: {db_source})")
                 except sqlite3.IntegrityError as e:
                     print(f"❌ Erreur insertion Location OldID={old_loc_id}: {e}")
                     continue
