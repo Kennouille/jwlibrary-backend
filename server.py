@@ -3285,6 +3285,23 @@ def merge_data():
             leftover = [row[0] for row in cur.fetchall()]
             print(f"🧪 Tables restantes juste avant la copie (vérification finale): {leftover}")
 
+        # Nettoyer les thumbnails orphelins
+        with sqlite3.connect(merged_db_path) as conn_thumb:
+            cur_thumb = conn_thumb.cursor()
+            cur_thumb.execute("""
+                    UPDATE PlaylistItem
+                    SET ThumbnailFilePath = NULL
+                    WHERE ThumbnailFilePath IS NOT NULL
+                    AND ThumbnailFilePath != ''
+                    AND NOT EXISTS (
+                        SELECT 1 FROM IndependentMedia
+                        WHERE FilePath = PlaylistItem.ThumbnailFilePath
+                    )
+                """)
+            cleaned = cur_thumb.rowcount
+            conn_thumb.commit()
+            print(f"🧹 {cleaned} thumbnails orphelins mis à NULL")
+
         print("🧹 Libération mémoire et attente...")
         gc.collect()
         time.sleep(1.0)

@@ -25,7 +25,7 @@ def hello():
 Tu dois faire dans ton terminal :
 
 git add .
-git commit -m "fix erreur9"
+git commit -m "fix erreur10"
 git push
 
 
