@@ -1625,10 +1625,15 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
                         max_tagmap_id += 1
                         new_tagmap_id = max_tagmap_id
 
-                        cursor.execute("""
-                            INSERT INTO TagMap (TagMapId, PlaylistItemId, LocationId, NoteId, TagId, Position)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        """, (new_tagmap_id, new_playlist_item_id, new_location_id, new_note_id, new_tag_id, tentative))
+                        try:
+                            cursor.execute("""
+                                                        INSERT INTO TagMap (TagMapId, PlaylistItemId, LocationId, NoteId, TagId, Position)
+                                                        VALUES (?, ?, ?, ?, ?, ?)
+                                                    """, (
+                            new_tagmap_id, new_playlist_item_id, new_location_id, new_note_id, new_tag_id, tentative))
+                        except sqlite3.IntegrityError:
+                            print(f"⚠️ TagMap conflit ignoré: TagId={new_tag_id}, NoteId={new_note_id}")
+                            continue
 
                         cursor.execute("""
                             INSERT INTO MergeMapping_TagMap (SourceDb, OldTagMapId, NewTagMapId)
