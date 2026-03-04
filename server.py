@@ -1660,8 +1660,9 @@ def merge_tags_and_tagmap(merged_db_path, file1_db, file2_db, note_mapping, loca
         print("Fusion des Tags et TagMap terminée (idempotente).")
         return tag_id_map, tagmap_id_map
     except Exception as e:
-        print(f"❌ Erreur critique dans merge_tags_and_tagmap: {e}")
         import traceback
+        print(f"❌ ERREUR CRITIQUE merge_tags_and_tagmap: {type(e).__name__}: {e}")
+        print(f"❌ TRACEBACK COMPLET:")
         traceback.print_exc()
         raise
 
