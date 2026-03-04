@@ -3094,7 +3094,11 @@ def merge_data():
                 exclude_tables=[
                     'Note', 'UserMark', 'Location', 'BlockRange',
                     'LastModified', 'Tag', 'TagMap', 'PlaylistItem',
-                    'InputField', 'Bookmark', 'android_metadata', 'grdb_migrations'
+                    'InputField', 'Bookmark', 'android_metadata', 'grdb_migrations',
+                    'IndependentMedia', 'PlaylistItemLocationMap',
+                    'PlaylistItemIndependentMediaMap', 'PlaylistItemMarker',
+                    'PlaylistItemMarkerBibleVerseMap', 'PlaylistItemMarkerParagraphMap',
+                    'PlaylistItemAccuracy'
                 ]
             )
         except Exception as e:
